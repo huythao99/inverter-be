@@ -2,8 +2,11 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { InverterDataController } from '../controllers/inverter-data.controller';
 import { InverterDataService } from '../services/inverter-data.service';
-import { InverterData, InverterDataSchema } from '../models/inverter-data.schema';
-import { SettingDataGateway } from '../gateways/setting-data.gateway';
+import {
+  InverterData,
+  InverterDataSchema,
+} from '../models/inverter-data.schema';
+import { MqttService } from '../services/mqtt.service';
 
 @Module({
   imports: [
@@ -12,7 +15,7 @@ import { SettingDataGateway } from '../gateways/setting-data.gateway';
     ]),
   ],
   controllers: [InverterDataController],
-  providers: [InverterDataService, SettingDataGateway],
+  providers: [InverterDataService, MqttService],
   exports: [InverterDataService],
 })
-export class InverterDataModule {} 
+export class InverterDataModule {}

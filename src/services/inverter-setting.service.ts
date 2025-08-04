@@ -1,18 +1,26 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { InverterSetting, InverterSettingDocument } from '../models/inverter-setting.schema';
-import { SettingDataGateway } from '../gateways/setting-data.gateway';
+import {
+  InverterSetting,
+  InverterSettingDocument,
+} from '../models/inverter-setting.schema';
+import { MqttService } from './mqtt.service';
 
 @Injectable()
 export class InverterSettingService {
   constructor(
-    @InjectModel(InverterSetting.name) private inverterSettingModel: Model<InverterSettingDocument>,
-    private settingDataGateway: SettingDataGateway,
+    @InjectModel(InverterSetting.name)
+    private inverterSettingModel: Model<InverterSettingDocument>,
+    private mqttService: MqttService,
   ) {}
 
-  async create(createInverterSettingDto: Partial<InverterSetting>): Promise<InverterSetting> {
-    const createdInverterSetting = new this.inverterSettingModel(createInverterSettingDto);
+  async create(
+    createInverterSettingDto: Partial<InverterSetting>,
+  ): Promise<InverterSetting> {
+    const createdInverterSetting = new this.inverterSettingModel(
+      createInverterSettingDto,
+    );
     return createdInverterSetting.save();
   }
 
@@ -20,7 +28,10 @@ export class InverterSettingService {
     return this.inverterSettingModel.find().exec();
   }
 
-  async findByUserIdAndDeviceId(userId: string, deviceId: string): Promise<InverterSetting | null> {
+  async findByUserIdAndDeviceId(
+    userId: string,
+    deviceId: string,
+  ): Promise<InverterSetting | null> {
     return this.inverterSettingModel.findOne({ userId, deviceId }).exec();
   }
 
@@ -28,7 +39,10 @@ export class InverterSettingService {
     return this.inverterSettingModel.findById(_id).exec();
   }
 
-  async update(_id: string, updateInverterSettingDto: Partial<InverterSetting>): Promise<InverterSetting | null> {
+  async update(
+    _id: string,
+    updateInverterSettingDto: Partial<InverterSetting>,
+  ): Promise<InverterSetting | null> {
     updateInverterSettingDto.updatedAt = new Date();
     return this.inverterSettingModel
       .findByIdAndUpdate(_id, updateInverterSettingDto, { new: true })
@@ -39,27 +53,32 @@ export class InverterSettingService {
     return this.inverterSettingModel.findByIdAndDelete(_id).exec();
   }
 
-  async updateByUserIdAndDeviceId(userId: string, deviceId: string, updateInverterSettingDto: Partial<InverterSetting>): Promise<InverterSetting | null> {
+  async updateByUserIdAndDeviceId(
+    userId: string,
+    deviceId: string,
+    updateInverterSettingDto: Partial<InverterSetting>,
+  ): Promise<InverterSetting | null> {
     updateInverterSettingDto.updatedAt = new Date();
     return this.inverterSettingModel
-      .findOneAndUpdate({ userId, deviceId }, updateInverterSettingDto, { new: true })
+      .findOneAndUpdate({ userId, deviceId }, updateInverterSettingDto, {
+        new: true,
+      })
       .exec();
   }
 
-  async updateValueByUserIdAndDeviceId(userId: string, deviceId: string, value: string): Promise<InverterSetting | null> {
+  async updateValueByUserIdAndDeviceId(
+    userId: string,
+    deviceId: string,
+    value: string,
+  ): Promise<InverterSetting | null> {
     const updatedSetting = await this.inverterSettingModel
       .findOneAndUpdate(
-        { userId, deviceId }, 
-        { value, updatedAt: new Date() }, 
-        { new: true, upsert: true }
+        { userId, deviceId },
+        { value, updatedAt: new Date() },
+        { new: true, upsert: true },
       )
       .exec();
-    
-    // Emit socket event
-    if (updatedSetting) {
-      this.settingDataGateway.emitSettingChanged(userId, deviceId, updatedSetting);
-    }
-    
+
     return updatedSetting;
   }
 
@@ -67,4 +86,4 @@ export class InverterSettingService {
     const result = await this.inverterSettingModel.deleteMany({}).exec();
     return { deletedCount: result.deletedCount };
   }
-} 
+}

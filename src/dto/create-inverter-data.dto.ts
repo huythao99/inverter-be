@@ -18,4 +18,4 @@ export class CreateInverterDataDto {
 
   @IsNumber()
   totalA2Capacity: number;
-} 
+}

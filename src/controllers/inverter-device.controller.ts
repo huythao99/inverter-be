@@ -25,13 +25,16 @@ export class InverterDeviceController {
     return this.inverterDeviceService.findAll();
   }
 
-  @Get('data/user/:userId')
+  @Get('data/device/:userId')
   findByUserId(@Param('userId') userId: string) {
     return this.inverterDeviceService.findByUserId(userId);
   }
 
   @Get('data/:userId/:deviceId')
-  findByUserIdAndDeviceId(@Param('userId') userId: string, @Param('deviceId') deviceId: string) {
+  findByUserIdAndDeviceId(
+    @Param('userId') userId: string,
+    @Param('deviceId') deviceId: string,
+  ) {
     return this.inverterDeviceService.findByUserIdAndDeviceId(userId, deviceId);
   }
 
@@ -41,13 +44,24 @@ export class InverterDeviceController {
   }
 
   @Patch('data/:id')
-  update(@Param('id') id: string, @Body() updateInverterDeviceDto: UpdateInverterDeviceDto) {
+  update(
+    @Param('id') id: string,
+    @Body() updateInverterDeviceDto: UpdateInverterDeviceDto,
+  ) {
     return this.inverterDeviceService.update(id, updateInverterDeviceDto);
   }
 
   @Patch('data/:userId/:deviceId')
-  updateByUserIdAndDeviceId(@Param('userId') userId: string, @Param('deviceId') deviceId: string, @Body() updateInverterDeviceDto: UpdateInverterDeviceDto) {
-    return this.inverterDeviceService.updateByUserIdAndDeviceId(userId, deviceId, updateInverterDeviceDto);
+  updateByUserIdAndDeviceId(
+    @Param('userId') userId: string,
+    @Param('deviceId') deviceId: string,
+    @Body() updateInverterDeviceDto: UpdateInverterDeviceDto,
+  ) {
+    return this.inverterDeviceService.updateByUserIdAndDeviceId(
+      userId,
+      deviceId,
+      updateInverterDeviceDto,
+    );
   }
 
   @Delete('data/:id')
@@ -56,12 +70,18 @@ export class InverterDeviceController {
   }
 
   @Delete('data/:userId/:deviceId')
-  removeByUserIdAndDeviceId(@Param('userId') userId: string, @Param('deviceId') deviceId: string) {
-    return this.inverterDeviceService.removeByUserIdAndDeviceId(userId, deviceId);
+  removeByUserIdAndDeviceId(
+    @Param('userId') userId: string,
+    @Param('deviceId') deviceId: string,
+  ) {
+    return this.inverterDeviceService.removeByUserIdAndDeviceId(
+      userId,
+      deviceId,
+    );
   }
 
   @Delete('data')
   deleteAll() {
     return this.inverterDeviceService.deleteAll();
   }
-} 
+}

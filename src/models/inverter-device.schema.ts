@@ -20,7 +20,8 @@ export class InverterDevice {
   updatedAt: Date;
 }
 
-export const InverterDeviceSchema = SchemaFactory.createForClass(InverterDevice);
+export const InverterDeviceSchema =
+  SchemaFactory.createForClass(InverterDevice);
 
 // Tạo compound unique index cho userId và deviceId
-InverterDeviceSchema.index({ userId: 1, deviceId: 1 }, { unique: true }); 
+InverterDeviceSchema.index({ userId: 1, deviceId: 1 }, { unique: true });

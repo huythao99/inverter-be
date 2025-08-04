@@ -12,4 +12,4 @@ export class CreateInverterSettingDto {
   @IsString()
   @IsNotEmpty()
   value: string;
-} 
+}

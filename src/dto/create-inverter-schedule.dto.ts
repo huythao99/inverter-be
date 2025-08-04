@@ -1,6 +1,6 @@
 import { IsString, IsNotEmpty } from 'class-validator';
 
-export class CreateInverterDeviceDto {
+export class CreateInverterScheduleDto {
   @IsString()
   @IsNotEmpty()
   userId: string;
@@ -11,5 +11,5 @@ export class CreateInverterDeviceDto {
 
   @IsString()
   @IsNotEmpty()
-  deviceName: string;
+  schedule: string;
 }

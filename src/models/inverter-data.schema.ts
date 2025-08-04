@@ -26,4 +26,4 @@ export class InverterData {
   updatedAt: Date;
 }
 
-export const InverterDataSchema = SchemaFactory.createForClass(InverterData); 
+export const InverterDataSchema = SchemaFactory.createForClass(InverterData);

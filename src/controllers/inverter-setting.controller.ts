@@ -14,7 +14,9 @@ import { UpdateInverterSettingValueDto } from '../dto/update-inverter-setting-va
 
 @Controller('api/inverter-setting')
 export class InverterSettingController {
-  constructor(private readonly inverterSettingService: InverterSettingService) {}
+  constructor(
+    private readonly inverterSettingService: InverterSettingService,
+  ) {}
 
   @Post('data')
   create(@Body() createInverterSettingDto: CreateInverterSettingDto) {
@@ -27,8 +29,14 @@ export class InverterSettingController {
   }
 
   @Get('data/:userId/:deviceId')
-  findByUserIdAndDeviceId(@Param('userId') userId: string, @Param('deviceId') deviceId: string) {
-    return this.inverterSettingService.findByUserIdAndDeviceId(userId, deviceId);
+  findByUserIdAndDeviceId(
+    @Param('userId') userId: string,
+    @Param('deviceId') deviceId: string,
+  ) {
+    return this.inverterSettingService.findByUserIdAndDeviceId(
+      userId,
+      deviceId,
+    );
   }
 
   @Get('data/:id')
@@ -37,18 +45,37 @@ export class InverterSettingController {
   }
 
   @Patch('data/:id')
-  update(@Param('id') id: string, @Body() updateInverterSettingDto: UpdateInverterSettingDto) {
+  update(
+    @Param('id') id: string,
+    @Body() updateInverterSettingDto: UpdateInverterSettingDto,
+  ) {
     return this.inverterSettingService.update(id, updateInverterSettingDto);
   }
 
   @Patch('data/:userId/:deviceId')
-  updateByUserIdAndDeviceId(@Param('userId') userId: string, @Param('deviceId') deviceId: string, @Body() updateInverterSettingDto: UpdateInverterSettingDto) {
-    return this.inverterSettingService.updateByUserIdAndDeviceId(userId, deviceId, updateInverterSettingDto);
+  updateByUserIdAndDeviceId(
+    @Param('userId') userId: string,
+    @Param('deviceId') deviceId: string,
+    @Body() updateInverterSettingDto: UpdateInverterSettingDto,
+  ) {
+    return this.inverterSettingService.updateByUserIdAndDeviceId(
+      userId,
+      deviceId,
+      updateInverterSettingDto,
+    );
   }
 
   @Patch('data/:userId/:deviceId/value')
-  updateValueByUserIdAndDeviceId(@Param('userId') userId: string, @Param('deviceId') deviceId: string, @Body() updateValueDto: UpdateInverterSettingValueDto) {
-    return this.inverterSettingService.updateValueByUserIdAndDeviceId(userId, deviceId, updateValueDto.value);
+  updateValueByUserIdAndDeviceId(
+    @Param('userId') userId: string,
+    @Param('deviceId') deviceId: string,
+    @Body() updateValueDto: UpdateInverterSettingValueDto,
+  ) {
+    return this.inverterSettingService.updateValueByUserIdAndDeviceId(
+      userId,
+      deviceId,
+      updateValueDto.value,
+    );
   }
 
   @Delete('data/:id')
@@ -60,4 +87,4 @@ export class InverterSettingController {
   deleteAll() {
     return this.inverterSettingService.deleteAll();
   }
-} 
+}

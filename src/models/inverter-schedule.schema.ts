@@ -1,10 +1,10 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 
-export type InverterSettingDocument = InverterSetting & Document;
+export type InverterScheduleDocument = InverterSchedule & Document;
 
 @Schema({ timestamps: true })
-export class InverterSetting {
+export class InverterSchedule {
   _id: Types.ObjectId;
 
   @Prop({ required: true })
@@ -14,14 +14,14 @@ export class InverterSetting {
   deviceId: string;
 
   @Prop({ required: true })
-  value: string;
+  schedule: string;
 
   @Prop({ default: Date.now })
   updatedAt: Date;
 }
 
-export const InverterSettingSchema =
-  SchemaFactory.createForClass(InverterSetting);
+export const InverterScheduleSchema =
+  SchemaFactory.createForClass(InverterSchedule);
 
 // Tạo compound unique index cho userId và deviceId
-InverterSettingSchema.index({ userId: 1, deviceId: 1 }, { unique: true });
+InverterScheduleSchema.index({ userId: 1, deviceId: 1 }, { unique: true });

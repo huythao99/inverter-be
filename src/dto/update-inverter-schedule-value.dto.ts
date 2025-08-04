@@ -1,7 +1,7 @@
 import { IsString, IsNotEmpty } from 'class-validator';
 
-export class UpdateInverterSettingValueDto {
+export class UpdateInverterScheduleValueDto {
   @IsString()
   @IsNotEmpty()
-  value: string;
+  schedule: string;
 }
