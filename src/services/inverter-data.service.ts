@@ -160,10 +160,6 @@ export class InverterDataService {
         inverterDataUpdate,
       );
 
-      console.log(
-        `Successfully updated inverter data for ${payload.currentUid}/${payload.wifiSsid}:`,
-        updatedData,
-      );
     } catch (error) {
       console.error(
         `Error updating inverter data for ${payload.currentUid}/${payload.wifiSsid}:`,

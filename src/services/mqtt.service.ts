@@ -53,9 +53,6 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     this.client = mqtt.connect(mqttUrl, options);
 
     this.client.on('connect', () => {
-      console.log(
-        `MQTT client connected to ${mqttUrl} with clientId: ${options.clientId}`,
-      );
     });
 
     this.client.on('error', (error) => {
@@ -68,19 +65,15 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.client.on('offline', () => {
-      console.log('MQTT client offline - connection lost');
     });
 
     this.client.on('reconnect', () => {
-      console.log('MQTT client attempting to reconnect...');
     });
 
     this.client.on('close', () => {
-      console.log('MQTT connection closed');
     });
 
     this.client.on('disconnect', (packet) => {
-      console.log('MQTT client disconnected:', packet);
     });
 
     // Subscribe to inverter topics on connection
@@ -104,7 +97,6 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         if (err) {
           console.error(`Failed to subscribe to ${topic}:`, err);
         } else {
-          console.log(`Subscribed to ${topic}`);
         }
       });
     });
@@ -112,7 +104,6 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     // Handle messages for all inverter topics
     this.client.on('message', (topic, message) => {
       const messageStr = message.toString();
-      console.log(`Received message on ${topic}:`, messageStr);
 
       if (topic.startsWith('inverter/')) {
         // Parse topic to extract device info
@@ -151,13 +142,10 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       const data = JSON.parse(message);
       switch (messageType) {
         case 'setup':
-          console.log(`Setup data from ${currentUid}/${wifiSsid}:`, data);
           break;
         case 'schedule':
-          console.log(`Schedule data from ${currentUid}/${wifiSsid}:`, data);
           break;
         case 'data':
-          console.log(`Data from ${currentUid}/${wifiSsid}:`, data);
           this.eventEmitter.emit('inverter.data.received', {
             currentUid,
             wifiSsid,
@@ -165,17 +153,11 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
           });
           break;
         case 'status':
-          console.log(`Status from ${currentUid}/${wifiSsid}:`, data);
           break;
         default:
-          console.log(
-            `Unknown message type ${messageType} from ${currentUid}/${wifiSsid}:`,
-            data,
-          );
       }
     } catch (error) {
       console.error('Error parsing inverter message:', error);
-      console.log('Raw message:', message);
     }
   }
 
@@ -186,7 +168,6 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   ) {
     try {
       const data = JSON.parse(message);
-      console.log(`Device message from ${currentUid}/${wifiSsid}:`, data);
 
       // Emit event for device message
       this.eventEmitter.emit('device.message.received', {
@@ -196,7 +177,6 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       });
     } catch (error) {
       console.error('Error parsing device message:', error);
-      console.log('Raw message:', message);
     }
   }
 
@@ -216,7 +196,6 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     };
 
     await this.publish(topic, payload);
-    console.log(`Published deviceAdded to topic: ${topic}`, device);
   }
 
   async emitDeviceRemoved(userId: string, device: unknown) {
@@ -228,7 +207,6 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     };
 
     await this.publish(topic, payload);
-    console.log(`Published deviceRemoved to topic: ${topic}`, device);
   }
 
   async emitDeviceUpdated(userId: string, device: unknown) {
@@ -240,7 +218,6 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     };
 
     await this.publish(topic, payload);
-    console.log(`Published deviceUpdated to topic: ${topic}`, device);
   }
 
   // Setting and data events
@@ -254,7 +231,6 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     };
 
     await this.publish(topic, payload);
-    console.log(`Published settingChanged to topic: ${topic}`, setting);
   }
 
   async emitDataChanged(userId: string, deviceId: string, data: unknown) {
@@ -267,7 +243,6 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     };
 
     await this.publish(topic, payload);
-    console.log(`Published dataChanged to topic: ${topic}`, data);
   }
 
   async emitDataAdded(userId: string, deviceId: string, data: unknown) {
@@ -280,7 +255,6 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     };
 
     await this.publish(topic, payload);
-    console.log(`Published dataAdded to topic: ${topic}`, data);
   }
 
   // Generic publish method

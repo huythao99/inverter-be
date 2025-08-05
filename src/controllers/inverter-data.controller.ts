@@ -38,14 +38,12 @@ export class InverterDataController implements OnModuleInit {
     try {
       // Listen to inverter data messages
       this.mqttService.subscribe('inverter/+/data', (topic, message) => {
-        console.log(`Received data from ${topic}:`, message);
         // Process the received data
         this.handleInverterDataMessage(topic, message);
       });
 
       // Listen to inverter commands
       this.mqttService.subscribe('inverter/+/command', (topic, message) => {
-        console.log(`Received command from ${topic}:`, message);
         // Process the received command
         this.handleInverterCommandMessage(topic, message);
       });
@@ -54,14 +52,9 @@ export class InverterDataController implements OnModuleInit {
       this.mqttService.subscribeRaw(
         'inverter/+/status',
         (topic, rawMessage, decryptedMessage) => {
-          console.log(`Raw status from ${topic}: ${rawMessage}`);
-          if (decryptedMessage) {
-            console.log(`Decrypted: ${decryptedMessage}`);
-          }
         },
       );
 
-      console.log('MQTT listeners set up successfully');
     } catch (error) {
       console.error('Error setting up MQTT listeners:', error);
     }
@@ -75,7 +68,6 @@ export class InverterDataController implements OnModuleInit {
     const deviceId = topic.split('/')[1];
 
     // Process the message and save to database if needed
-    console.log(`Processing data for device ${deviceId}:`, message);
   }
 
   private handleInverterCommandMessage(
@@ -86,7 +78,6 @@ export class InverterDataController implements OnModuleInit {
     const deviceId = topic.split('/')[1];
 
     // Process the command
-    console.log(`Processing command for device ${deviceId}:`, message);
   }
 
   @Post('data')

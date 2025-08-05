@@ -145,10 +145,6 @@ export class InverterDeviceService {
         )
         .exec();
 
-      console.log(
-        `Device saved/updated for ${payload.currentUid}/${payload.wifiSsid}:`,
-        device,
-      );
 
       // Emit MQTT event for device update
       await this.mqttService.emitDeviceUpdated(payload.currentUid, device);
