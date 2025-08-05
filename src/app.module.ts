@@ -22,6 +22,9 @@ import { InverterScheduleModule } from './modules/inverter-schedule.module';
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
         uri: configService.get<string>('MONGODB_URI'),
+        user: configService.get<string>('MONGODB_USERNAME'),
+        pass: configService.get<string>('MONGODB_PASSWORD'),
+        dbName: configService.get<string>('MONGODB_DATABASE'),
       }),
       inject: [ConfigService],
     }),

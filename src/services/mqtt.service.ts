@@ -26,7 +26,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   onModuleInit() {
     const mqttUrl = this.configService.get<string>(
       'MQTT_URL',
-      'mqtt://broker.hivemq.com:1883',
+      'mqtt://test.mosquitto.org:1883',
     );
     const clientId = this.configService.get<string>(
       'MQTT_CLIENT_ID',
