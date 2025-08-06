@@ -6,6 +6,8 @@ import {
   Patch,
   Param,
   Delete,
+  HttpStatus,
+  HttpCode,
 } from '@nestjs/common';
 import { InverterDeviceService } from '../services/inverter-device.service';
 import { CreateInverterDeviceDto } from '../dto/create-inverter-device.dto';
@@ -16,8 +18,9 @@ export class InverterDeviceController {
   constructor(private readonly inverterDeviceService: InverterDeviceService) {}
 
   @Post('data')
-  create(@Body() createInverterDeviceDto: CreateInverterDeviceDto) {
-    return this.inverterDeviceService.create(createInverterDeviceDto);
+  @HttpCode(HttpStatus.CREATED)
+  async create(@Body() createInverterDeviceDto: CreateInverterDeviceDto) {
+    await this.inverterDeviceService.create(createInverterDeviceDto);
   }
 
   @Get('data')

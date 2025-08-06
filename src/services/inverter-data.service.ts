@@ -23,15 +23,15 @@ export class InverterDataService {
       createInverterDataDto,
     );
     const savedData = await createdInverterData.save();
-
+    console.log('call create data');
     // Emit MQTT event
-    if (createInverterDataDto.userId && createInverterDataDto.deviceId) {
-      await this.mqttService.emitDataAdded(
-        createInverterDataDto.userId,
-        createInverterDataDto.deviceId,
-        savedData,
-      );
-    }
+    // if (createInverterDataDto.userId && createInverterDataDto.deviceId) {
+    //   await this.mqttService.emitDataAdded(
+    //     createInverterDataDto.userId,
+    //     createInverterDataDto.deviceId,
+    //     savedData,
+    //   );
+    // }
 
     return savedData;
   }

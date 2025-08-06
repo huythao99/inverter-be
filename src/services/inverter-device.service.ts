@@ -19,18 +19,29 @@ export class InverterDeviceService {
   async create(
     createInverterDeviceDto: Partial<InverterDevice>,
   ): Promise<InverterDevice> {
-    const createdInverterDevice = new this.inverterDeviceModel(
-      createInverterDeviceDto,
-    );
-    const savedDevice = await createdInverterDevice.save();
+    // Use upsert to create or update if userId and deviceId combination exists
+    const deviceData = {
+      ...createInverterDeviceDto,
+      updatedAt: new Date(),
+    };
+    const savedDevice = await this.inverterDeviceModel
+      .findOneAndUpdate(
+        { 
+          userId: createInverterDeviceDto.userId, 
+          deviceId: createInverterDeviceDto.deviceId 
+        },
+        deviceData,
+        { new: true, upsert: true }
+      )
+      .exec();
 
-    // Emit MQTT event
-    if (createInverterDeviceDto.userId) {
-      await this.mqttService.emitDeviceAdded(
-        createInverterDeviceDto.userId,
-        savedDevice,
-      );
-    }
+    // // Emit MQTT event
+    // if (createInverterDeviceDto.userId) {
+    //   await this.mqttService.emitDeviceAdded(
+    //     createInverterDeviceDto.userId,
+    //     savedDevice,
+    //   );
+    // }
 
     return savedDevice;
   }
@@ -76,10 +87,10 @@ export class InverterDeviceService {
       })
       .exec();
 
-    // Emit MQTT event
-    if (updatedDevice) {
-      await this.mqttService.emitDeviceUpdated(userId, updatedDevice);
-    }
+    // // Emit MQTT event
+    // if (updatedDevice) {
+    //   await this.mqttService.emitDeviceUpdated(userId, updatedDevice);
+    // }
 
     return updatedDevice;
   }
@@ -89,13 +100,13 @@ export class InverterDeviceService {
       .findByIdAndDelete(_id)
       .exec();
 
-    // Emit MQTT event
-    if (deletedDevice) {
-      await this.mqttService.emitDeviceRemoved(
-        deletedDevice.userId,
-        deletedDevice,
-      );
-    }
+    // // Emit MQTT event
+    // if (deletedDevice) {
+    //   await this.mqttService.emitDeviceRemoved(
+    //     deletedDevice.userId,
+    //     deletedDevice,
+    //   );
+    // }
 
     return deletedDevice;
   }
@@ -108,10 +119,10 @@ export class InverterDeviceService {
       .findOneAndDelete({ userId, deviceId })
       .exec();
 
-    // Emit MQTT event
-    if (deletedDevice) {
-      await this.mqttService.emitDeviceRemoved(userId, deletedDevice);
-    }
+    // // Emit MQTT event
+    // if (deletedDevice) {
+    //   await this.mqttService.emitDeviceRemoved(userId, deletedDevice);
+    // }
 
     return deletedDevice;
   }
