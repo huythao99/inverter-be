@@ -9,4 +9,9 @@ export class AppController {
   getHello(): string {
     return this.appService.getHello();
   }
+
+  @Get('version')
+  getVersion(): { version: string } {
+    return { version: '0.0.1' };
+  }
 }
