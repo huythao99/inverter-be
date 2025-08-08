@@ -12,6 +12,7 @@ import * as crypto from 'crypto';
 export class MqttService implements OnModuleInit, OnModuleDestroy {
   private client: mqtt.MqttClient;
   private encryptionKey: string;
+  private isInitialized: boolean = false;
 
   constructor(
     private configService: ConfigService,
@@ -24,6 +25,10 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit() {
+    if (this.isInitialized) {
+      return;
+    }
+    
     const mqttUrl = this.configService.get<string>(
       'MQTT_URL',
       'mqtt://test.mosquitto.org:1883',
@@ -51,8 +56,10 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     }
 
     this.client = mqtt.connect(mqttUrl, options);
+    this.client.setMaxListeners(20);
 
     this.client.on('connect', () => {
+      console.log('MQTT connected');
     });
 
     this.client.on('error', (error) => {
@@ -65,21 +72,23 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.client.on('offline', () => {
+      console.log('MQTT offline');
     });
 
     this.client.on('reconnect', () => {
+      console.log('MQTT reconnecting');
     });
 
     this.client.on('close', () => {
-    });
-
-    this.client.on('disconnect', (packet) => {
+      console.log('MQTT connection closed');
     });
 
     // Subscribe to inverter topics on connection
     this.client.on('connect', () => {
       this.subscribeToInverterTopics();
     });
+    
+    this.isInitialized = true;
   }
 
   private subscribeToInverterTopics() {
@@ -258,7 +267,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   }
 
   // Generic publish method
-  private async publish(
+  async publish(
     topic: string,
     payload: Record<string, unknown>,
   ): Promise<void> {

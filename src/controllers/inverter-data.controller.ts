@@ -129,16 +129,24 @@ export class InverterDataController implements OnModuleInit {
   }
 
   @Patch('data/:userId/:deviceId')
-  upsertByUserIdAndDeviceId(
+  async upsertByUserIdAndDeviceId(
     @Param('userId') userId: string,
     @Param('deviceId') deviceId: string,
     @Body() updateInverterDataDto: UpdateInverterDataDto,
   ) {
-    return this.inverterDataService.upsertByUserIdAndDeviceId(
+    const result = await this.inverterDataService.upsertByUserIdAndDeviceId(
       userId,
       deviceId,
       updateInverterDataDto,
     );
+
+    const topic = `inverter/${userId}/${deviceId}/data`;
+    await this.mqttService.publish(
+      topic,
+      updateInverterDataDto as Record<string, unknown>,
+    );
+
+    return result;
   }
 
   @Delete('data/:id')
@@ -149,5 +157,22 @@ export class InverterDataController implements OnModuleInit {
   @Delete('data')
   deleteAll() {
     return this.inverterDataService.deleteAll();
+  }
+
+  @Post(':uid/:deviceId/status')
+  async publishStatus(
+    @Param('uid') uid: string,
+    @Param('deviceId') deviceId: string,
+    @Body() statusData: Record<string, unknown>,
+  ) {
+    const topic = `inverter/${uid}/${deviceId}/status`;
+
+    await this.mqttService.publish(topic, statusData);
+
+    return {
+      message: 'Status published successfully',
+      topic,
+      data: statusData,
+    };
   }
 }
