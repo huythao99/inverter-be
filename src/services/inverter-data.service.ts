@@ -19,6 +19,15 @@ export class InverterDataService {
   async create(
     createInverterDataDto: Partial<InverterData>,
   ): Promise<InverterData> {
+    // Calculate capacity values if they exist
+    if (createInverterDataDto.totalACapacity !== undefined) {
+      createInverterDataDto.totalACapacity =
+        createInverterDataDto.totalACapacity / 1000000;
+    }
+    if (createInverterDataDto.totalA2Capacity !== undefined) {
+      createInverterDataDto.totalA2Capacity =
+        createInverterDataDto.totalA2Capacity / 1000000;
+    }
     const createdInverterData = new this.inverterDataModel(
       createInverterDataDto,
     );
@@ -80,6 +89,16 @@ export class InverterDataService {
     updateInverterDataDto: Partial<InverterData>,
   ): Promise<InverterData | null> {
     updateInverterDataDto.updatedAt = new Date();
+    
+    // Calculate capacity values if they exist
+    if (updateInverterDataDto.totalACapacity !== undefined) {
+      updateInverterDataDto.totalACapacity =
+        updateInverterDataDto.totalACapacity / 1000000;
+    }
+    if (updateInverterDataDto.totalA2Capacity !== undefined) {
+      updateInverterDataDto.totalA2Capacity =
+        updateInverterDataDto.totalA2Capacity / 1000000;
+    }
     const updatedData = await this.inverterDataModel
       .findByIdAndUpdate(_id, updateInverterDataDto, { new: true })
       .exec();
@@ -102,6 +121,16 @@ export class InverterDataService {
     updateInverterDataDto: Partial<InverterData>,
   ): Promise<InverterData> {
     updateInverterDataDto.updatedAt = new Date();
+    
+    // Calculate capacity values if they exist
+    if (updateInverterDataDto.totalACapacity !== undefined) {
+      updateInverterDataDto.totalACapacity =
+        updateInverterDataDto.totalACapacity / 1000000;
+    }
+    if (updateInverterDataDto.totalA2Capacity !== undefined) {
+      updateInverterDataDto.totalA2Capacity =
+        updateInverterDataDto.totalA2Capacity / 1000000;
+    }
 
     const updatedData = await this.inverterDataModel
       .findOneAndUpdate(
@@ -147,14 +176,14 @@ export class InverterDataService {
       const inverterDataUpdate = {
         userId: payload.currentUid,
         deviceId: payload.wifiSsid,
-        value: payload.data.value || JSON.stringify(payload.data),
-        totalACapacity: payload.data.totalACapacity || 0,
-        totalA2Capacity: payload.data.totalA2Capacity || 0,
+        value: payload.data?.value || JSON.stringify(payload.data),
+        totalACapacity: payload.data?.totalACapacity || 0,
+        totalA2Capacity: payload.data?.totalA2Capacity || 0,
         updatedAt: new Date(),
       };
 
       // Upsert the inverter data
-      const updatedData = await this.upsertByUserIdAndDeviceId(
+      await this.upsertByUserIdAndDeviceId(
         payload.currentUid,
         payload.wifiSsid,
         inverterDataUpdate,

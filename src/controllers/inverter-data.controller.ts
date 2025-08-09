@@ -143,7 +143,7 @@ export class InverterDataController implements OnModuleInit {
     const topic = `inverter/${userId}/${deviceId}/data`;
     await this.mqttService.publish(
       topic,
-      updateInverterDataDto as Record<string, unknown>,
+      result as unknown as Record<string, unknown>,
     );
 
     return result;
