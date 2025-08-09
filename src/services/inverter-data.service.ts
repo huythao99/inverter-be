@@ -89,16 +89,6 @@ export class InverterDataService {
     updateInverterDataDto: Partial<InverterData>,
   ): Promise<InverterData | null> {
     updateInverterDataDto.updatedAt = new Date();
-    
-    // Calculate capacity values if they exist
-    if (updateInverterDataDto.totalACapacity !== undefined) {
-      updateInverterDataDto.totalACapacity =
-        updateInverterDataDto.totalACapacity / 1000000;
-    }
-    if (updateInverterDataDto.totalA2Capacity !== undefined) {
-      updateInverterDataDto.totalA2Capacity =
-        updateInverterDataDto.totalA2Capacity / 1000000;
-    }
     const updatedData = await this.inverterDataModel
       .findByIdAndUpdate(_id, updateInverterDataDto, { new: true })
       .exec();
@@ -121,16 +111,6 @@ export class InverterDataService {
     updateInverterDataDto: Partial<InverterData>,
   ): Promise<InverterData> {
     updateInverterDataDto.updatedAt = new Date();
-    
-    // Calculate capacity values if they exist
-    if (updateInverterDataDto.totalACapacity !== undefined) {
-      updateInverterDataDto.totalACapacity =
-        updateInverterDataDto.totalACapacity / 1000000;
-    }
-    if (updateInverterDataDto.totalA2Capacity !== undefined) {
-      updateInverterDataDto.totalA2Capacity =
-        updateInverterDataDto.totalA2Capacity / 1000000;
-    }
 
     const updatedData = await this.inverterDataModel
       .findOneAndUpdate(
