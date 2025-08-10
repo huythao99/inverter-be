@@ -162,6 +162,9 @@ export class InverterDataService {
     data: any;
   }) {
     try {
+      console.log(
+        `Processing MQTT data for inverter/${payload.currentUid}/${payload.wifiSsid}/data`,
+      );
       // Map MQTT data to InverterData schema
       const inverterDataUpdate = {
         userId: payload.currentUid,
@@ -169,14 +172,18 @@ export class InverterDataService {
         value: payload.data?.value || JSON.stringify(payload.data),
         totalACapacity: payload.data?.totalACapacity || 0,
         totalA2Capacity: payload.data?.totalA2Capacity || 0,
-        updatedAt: new Date(),
       };
 
-      // Upsert the inverter data
-      await this.upsertByUserIdAndDeviceId(
+      // Upsert the inverter data using optimized method
+      const result = await this.upsertByUserIdAndDeviceId(
         payload.currentUid,
         payload.wifiSsid,
         inverterDataUpdate,
+      );
+
+      console.log(
+        `Successfully upserted data for ${payload.currentUid}/${payload.wifiSsid}:`,
+        result._id,
       );
 
     } catch (error) {

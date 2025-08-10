@@ -106,6 +106,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         if (err) {
           console.error(`Failed to subscribe to ${topic}:`, err);
         } else {
+          console.log(`Successfully subscribed to MQTT topic: ${topic}`);
         }
       });
     });
