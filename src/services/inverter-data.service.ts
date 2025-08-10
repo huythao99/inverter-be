@@ -110,18 +110,26 @@ export class InverterDataService {
     deviceId: string,
     updateInverterDataDto: Partial<InverterData>,
   ): Promise<InverterData> {
-    updateInverterDataDto.updatedAt = new Date();
-
     const updatedData = await this.inverterDataModel
       .findOneAndUpdate(
         { userId, deviceId },
-        { ...updateInverterDataDto, userId, deviceId },
-        { new: true, upsert: true },
+        {
+          $set: {
+            ...updateInverterDataDto,
+            userId,
+            deviceId,
+            updatedAt: new Date(),
+          },
+        },
+        {
+          new: true,
+          upsert: true,
+          lean: false,
+          runValidators: false,
+        },
       )
+      .select('-__v')
       .exec();
-
-    // Emit MQTT event for data change
-    await this.mqttService.emitDataChanged(userId, deviceId, updatedData);
 
     return updatedData;
   }
@@ -136,7 +144,9 @@ export class InverterDataService {
   ): Promise<InverterData | null> {
     return this.inverterDataModel
       .findOne({ userId, deviceId })
-      .sort({ updatedAt: -1, createdAt: -1 })
+      .sort({ updatedAt: -1 })
+      .select('-__v')
+      .lean()
       .exec();
   }
 

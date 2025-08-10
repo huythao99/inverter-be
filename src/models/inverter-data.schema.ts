@@ -27,3 +27,9 @@ export class InverterData {
 }
 
 export const InverterDataSchema = SchemaFactory.createForClass(InverterData);
+
+// Create compound index for faster upsert operations
+InverterDataSchema.index({ userId: 1, deviceId: 1 }, { unique: true });
+
+// Create compound index for faster latest queries with sorting
+InverterDataSchema.index({ userId: 1, deviceId: 1, updatedAt: -1 });
