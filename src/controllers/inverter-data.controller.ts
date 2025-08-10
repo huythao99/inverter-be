@@ -5,12 +5,10 @@ import {
   Delete,
   Query,
   OnModuleInit,
-  UseGuards,
 } from '@nestjs/common';
 import { InverterDataService } from '../services/inverter-data.service';
 import { MqttService } from '../services/mqtt.service';
 import { QueryInverterDataDto } from '../dto/query-inverter-data.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('api/inverter')
 export class InverterDataController implements OnModuleInit {
@@ -113,8 +111,6 @@ export class InverterDataController implements OnModuleInit {
     return this.inverterDataService.findOne(id);
   }
 
-
-
   @Delete('data/:id')
   remove(@Param('id') id: string) {
     return this.inverterDataService.remove(id);
@@ -125,20 +121,4 @@ export class InverterDataController implements OnModuleInit {
     return this.inverterDataService.deleteAll();
   }
 
-  @Post(':uid/:deviceId/status')
-  async publishStatus(
-    @Param('uid') uid: string,
-    @Param('deviceId') deviceId: string,
-    @Body() statusData: Record<string, unknown>,
-  ) {
-    const topic = `inverter/${uid}/${deviceId}/status`;
-
-    await this.mqttService.publish(topic, statusData);
-
-    return {
-      message: 'Status published successfully',
-      topic,
-      data: statusData,
-    };
-  }
 }
