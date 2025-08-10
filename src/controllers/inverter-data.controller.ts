@@ -1,19 +1,16 @@
 import {
   Controller,
   Get,
-  Post,
-  Body,
-  Patch,
   Param,
   Delete,
   Query,
   OnModuleInit,
+  UseGuards,
 } from '@nestjs/common';
 import { InverterDataService } from '../services/inverter-data.service';
 import { MqttService } from '../services/mqtt.service';
-import { CreateInverterDataDto } from '../dto/create-inverter-data.dto';
-import { UpdateInverterDataDto } from '../dto/update-inverter-data.dto';
 import { QueryInverterDataDto } from '../dto/query-inverter-data.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('api/inverter')
 export class InverterDataController implements OnModuleInit {
@@ -80,10 +77,6 @@ export class InverterDataController implements OnModuleInit {
     // Process the command
   }
 
-  @Post('data')
-  create(@Body() createInverterDataDto: CreateInverterDataDto) {
-    return this.inverterDataService.create(createInverterDataDto);
-  }
 
   @Get('data')
   findAll() {
@@ -120,34 +113,7 @@ export class InverterDataController implements OnModuleInit {
     return this.inverterDataService.findOne(id);
   }
 
-  @Patch('data/:id')
-  update(
-    @Param('id') id: string,
-    @Body() updateInverterDataDto: UpdateInverterDataDto,
-  ) {
-    return this.inverterDataService.update(id, updateInverterDataDto);
-  }
 
-  @Patch('data/:userId/:deviceId')
-  async upsertByUserIdAndDeviceId(
-    @Param('userId') userId: string,
-    @Param('deviceId') deviceId: string,
-    @Body() updateInverterDataDto: UpdateInverterDataDto,
-  ) {
-    const result = await this.inverterDataService.upsertByUserIdAndDeviceId(
-      userId,
-      deviceId,
-      updateInverterDataDto,
-    );
-
-    const topic = `inverter/${userId}/${deviceId}/data`;
-    await this.mqttService.publish(
-      topic,
-      result as unknown as Record<string, unknown>,
-    );
-
-    return result;
-  }
 
   @Delete('data/:id')
   remove(@Param('id') id: string) {
