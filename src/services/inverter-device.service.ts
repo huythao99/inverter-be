@@ -46,12 +46,38 @@ export class InverterDeviceService {
     return savedDevice;
   }
 
-  async findAll(): Promise<InverterDevice[]> {
-    return this.inverterDeviceModel.find().exec();
+  async findAll(
+    page: number = 1,
+    limit: number = 100,
+  ): Promise<{
+    data: InverterDevice[];
+    total: number;
+    page: number;
+    totalPages: number;
+  }> {
+    const skip = (page - 1) * limit;
+    
+    const [data, total] = await Promise.all([
+      this.inverterDeviceModel
+        .find()
+        .sort({ updatedAt: -1, createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+        .exec(),
+      this.inverterDeviceModel.countDocuments().exec(),
+    ]);
+
+    return {
+      data,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   async findByUserId(userId: string): Promise<InverterDevice[]> {
-    return this.inverterDeviceModel.find({ userId }).exec();
+    return this.inverterDeviceModel.find({ userId }).lean().exec();
   }
 
   async findByUserIdAndDeviceId(

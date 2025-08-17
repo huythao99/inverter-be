@@ -29,6 +29,15 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       return;
     }
     
+    // Initialize MQTT connection asynchronously to prevent blocking
+    setImmediate(() => {
+      this.initializeMqttConnection();
+    });
+    
+    this.isInitialized = true;
+  }
+
+  private initializeMqttConnection() {
     const mqttUrl = this.configService.get<string>(
       'MQTT_URL',
       'mqtt://test.mosquitto.org:1883',
@@ -60,6 +69,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
 
     this.client.on('connect', () => {
       console.log('MQTT connected');
+      this.subscribeToInverterTopics();
     });
 
     this.client.on('error', (error) => {
@@ -82,13 +92,6 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     this.client.on('close', () => {
       console.log('MQTT connection closed');
     });
-
-    // Subscribe to inverter topics on connection
-    this.client.on('connect', () => {
-      this.subscribeToInverterTopics();
-    });
-    
-    this.isInitialized = true;
   }
 
   private subscribeToInverterTopics() {

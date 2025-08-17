@@ -8,10 +8,12 @@ import {
   Delete,
   HttpStatus,
   HttpCode,
+  Query,
 } from '@nestjs/common';
 import { InverterDeviceService } from '../services/inverter-device.service';
 import { CreateInverterDeviceDto } from '../dto/create-inverter-device.dto';
 import { UpdateInverterDeviceDto } from '../dto/update-inverter-device.dto';
+import { QueryInverterDataDto } from '../dto/query-inverter-data.dto';
 
 @Controller('api/inverter-device')
 export class InverterDeviceController {
@@ -24,8 +26,8 @@ export class InverterDeviceController {
   }
 
   @Get('data')
-  findAll() {
-    return this.inverterDeviceService.findAll();
+  findAll(@Query() query: QueryInverterDataDto) {
+    return this.inverterDeviceService.findAll(query.page, query.limit);
   }
 
   @Get('data/device/:userId')

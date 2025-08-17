@@ -33,3 +33,9 @@ InverterDataSchema.index({ userId: 1, deviceId: 1 }, { unique: true });
 
 // Create compound index for faster latest queries with sorting
 InverterDataSchema.index({ userId: 1, deviceId: 1, updatedAt: -1 });
+
+// Additional indexes for better query performance
+InverterDataSchema.index({ createdAt: -1 });
+InverterDataSchema.index({ updatedAt: -1 });
+InverterDataSchema.index({ userId: 1 });
+InverterDataSchema.index({ deviceId: 1 });

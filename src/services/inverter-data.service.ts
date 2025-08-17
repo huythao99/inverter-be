@@ -45,8 +45,34 @@ export class InverterDataService {
     return savedData;
   }
 
-  async findAll(): Promise<InverterData[]> {
-    return this.inverterDataModel.find().exec();
+  async findAll(
+    page: number = 1,
+    limit: number = 100,
+  ): Promise<{
+    data: InverterData[];
+    total: number;
+    page: number;
+    totalPages: number;
+  }> {
+    const skip = (page - 1) * limit;
+    
+    const [data, total] = await Promise.all([
+      this.inverterDataModel
+        .find()
+        .sort({ updatedAt: -1, createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+        .exec(),
+      this.inverterDataModel.countDocuments().exec(),
+    ]);
+
+    return {
+      data,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   async findByUserIdAndDeviceId(
@@ -68,6 +94,7 @@ export class InverterDataService {
         .sort({ updatedAt: -1, createdAt: -1 })
         .skip(skip)
         .limit(limit)
+        .lean()
         .exec(),
       this.inverterDataModel.countDocuments({ userId, deviceId }).exec(),
     ]);
