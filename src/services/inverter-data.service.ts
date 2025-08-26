@@ -55,17 +55,29 @@ export class InverterDataService {
     totalPages: number;
   }> {
     const skip = (page - 1) * limit;
-    
-    const [data, total] = await Promise.all([
-      this.inverterDataModel
-        .find()
-        .sort({ updatedAt: -1, createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean()
-        .exec(),
-      this.inverterDataModel.countDocuments().exec(),
-    ]);
+
+    // Use aggregation for better performance
+    const result = await this.inverterDataModel
+      .aggregate<{
+        data: InverterData[];
+        totalCount: [{ count: number }];
+      }>([
+        {
+          $facet: {
+            data: [
+              { $sort: { updatedAt: -1, createdAt: -1 } },
+              { $skip: skip },
+              { $limit: limit },
+              { $project: { __v: 0 } },
+            ],
+            totalCount: [{ $count: 'count' }],
+          },
+        },
+      ])
+      .exec();
+
+    const data = result[0]?.data || [];
+    const total = result[0]?.totalCount[0]?.count || 0;
 
     return {
       data,
@@ -88,16 +100,29 @@ export class InverterDataService {
   }> {
     const skip = (page - 1) * limit;
 
-    const [data, total] = await Promise.all([
-      this.inverterDataModel
-        .find({ userId, deviceId })
-        .sort({ updatedAt: -1, createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean()
-        .exec(),
-      this.inverterDataModel.countDocuments({ userId, deviceId }).exec(),
-    ]);
+    // Use aggregation for better performance with filtering
+    const result = await this.inverterDataModel
+      .aggregate<{
+        data: InverterData[];
+        totalCount: [{ count: number }];
+      }>([
+        { $match: { userId, deviceId } },
+        {
+          $facet: {
+            data: [
+              { $sort: { updatedAt: -1, createdAt: -1 } },
+              { $skip: skip },
+              { $limit: limit },
+              { $project: { __v: 0 } },
+            ],
+            totalCount: [{ $count: 'count' }],
+          },
+        },
+      ])
+      .exec();
+
+    const data = result[0]?.data || [];
+    const total = result[0]?.totalCount[0]?.count || 0;
 
     return {
       data,
@@ -108,7 +133,7 @@ export class InverterDataService {
   }
 
   async findOne(_id: string): Promise<InverterData | null> {
-    return this.inverterDataModel.findById(_id).exec();
+    return this.inverterDataModel.findById(_id).select('-__v').lean().exec();
   }
 
   async update(
@@ -212,7 +237,6 @@ export class InverterDataService {
         `Successfully upserted data for ${payload.currentUid}/${payload.wifiSsid}:`,
         result._id,
       );
-
     } catch (error) {
       console.error(
         `Error updating inverter data for ${payload.currentUid}/${payload.wifiSsid}:`,

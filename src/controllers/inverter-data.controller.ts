@@ -4,23 +4,25 @@ import {
   Param,
   Delete,
   Query,
+  UseInterceptors,
 } from '@nestjs/common';
+import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import { InverterDataService } from '../services/inverter-data.service';
 import { QueryInverterDataDto } from '../dto/query-inverter-data.dto';
 
 @Controller('api/inverter')
+@UseInterceptors(CacheInterceptor)
 export class InverterDataController {
-  constructor(
-    private readonly inverterDataService: InverterDataService,
-  ) {}
-
+  constructor(private readonly inverterDataService: InverterDataService) {}
 
   @Get('data')
+  @CacheTTL(30)
   findAll(@Query() query: QueryInverterDataDto) {
     return this.inverterDataService.findAll(query.page, query.limit);
   }
 
   @Get('data/:userId/:deviceId/latest')
+  @CacheTTL(10)
   findLatestByUserIdAndDeviceId(
     @Param('userId') userId: string,
     @Param('deviceId') deviceId: string,
@@ -32,6 +34,7 @@ export class InverterDataController {
   }
 
   @Get('data/:userId/:deviceId')
+  @CacheTTL(30)
   findByUserIdAndDeviceId(
     @Param('userId') userId: string,
     @Param('deviceId') deviceId: string,
@@ -46,6 +49,7 @@ export class InverterDataController {
   }
 
   @Get('data/:id')
+  @CacheTTL(60)
   findOne(@Param('id') id: string) {
     return this.inverterDataService.findOne(id);
   }
@@ -59,5 +63,4 @@ export class InverterDataController {
   deleteAll() {
     return this.inverterDataService.deleteAll();
   }
-
 }

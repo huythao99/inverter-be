@@ -26,12 +26,12 @@ export class InverterDeviceService {
     };
     const savedDevice = await this.inverterDeviceModel
       .findOneAndUpdate(
-        { 
-          userId: createInverterDeviceDto.userId, 
-          deviceId: createInverterDeviceDto.deviceId 
+        {
+          userId: createInverterDeviceDto.userId,
+          deviceId: createInverterDeviceDto.deviceId,
         },
         deviceData,
-        { new: true, upsert: true }
+        { new: true, upsert: true },
       )
       .exec();
 
@@ -56,7 +56,7 @@ export class InverterDeviceService {
     totalPages: number;
   }> {
     const skip = (page - 1) * limit;
-    
+
     const [data, total] = await Promise.all([
       this.inverterDeviceModel
         .find()
@@ -169,7 +169,8 @@ export class InverterDeviceService {
       const deviceData = {
         userId: payload.currentUid,
         deviceId: payload.wifiSsid,
-        deviceName: payload.data.deviceName || payload.wifiSsid || 'Unknown Device',
+        deviceName:
+          payload.data.deviceName || payload.wifiSsid || 'Unknown Device',
         updatedAt: new Date(),
       };
 
@@ -178,10 +179,9 @@ export class InverterDeviceService {
         .findOneAndUpdate(
           { userId: payload.currentUid, deviceId: payload.wifiSsid },
           deviceData,
-          { new: true, upsert: true }
+          { new: true, upsert: true },
         )
         .exec();
-
 
       // Emit MQTT event for device update
       await this.mqttService.emitDeviceUpdated(payload.currentUid, device);

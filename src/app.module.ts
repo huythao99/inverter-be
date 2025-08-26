@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Module } from '@nestjs/common';
+import { CacheModule } from '@nestjs/cache-manager';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -16,6 +17,11 @@ import { InverterScheduleModule } from './modules/inverter-schedule.module';
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    CacheModule.register({
+      isGlobal: true,
+      ttl: 60,
+      max: 1000,
+    }),
     EventEmitterModule.forRoot(),
     InverterSettingModule,
     MongooseModule.forRootAsync({
@@ -25,6 +31,9 @@ import { InverterScheduleModule } from './modules/inverter-schedule.module';
         user: configService.get<string>('MONGODB_USERNAME'),
         pass: configService.get<string>('MONGODB_PASSWORD'),
         dbName: configService.get<string>('MONGODB_DATABASE'),
+        maxPoolSize: 10,
+        serverSelectionTimeoutMS: 5000,
+        socketTimeoutMS: 45000,
       }),
       inject: [ConfigService],
     }),

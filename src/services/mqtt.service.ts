@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -28,12 +27,12 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     if (this.isInitialized) {
       return;
     }
-    
+
     // Initialize MQTT connection asynchronously to prevent blocking
     setImmediate(() => {
       this.initializeMqttConnection();
     });
-    
+
     this.isInitialized = true;
   }
 
