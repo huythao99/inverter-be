@@ -32,7 +32,11 @@ export class InverterSettingService {
     userId: string,
     deviceId: string,
   ): Promise<InverterSetting | null> {
-    return this.inverterSettingModel.findOne({ userId, deviceId }).exec();
+    return this.inverterSettingModel
+      .findOne({ userId, deviceId })
+      .lean()
+      .maxTimeMS(5000)
+      .exec();
   }
 
   async findOne(_id: string): Promise<InverterSetting | null> {
