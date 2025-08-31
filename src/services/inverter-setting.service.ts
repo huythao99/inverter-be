@@ -35,7 +35,7 @@ export class InverterSettingService {
     return this.inverterSettingModel
       .findOne({ userId, deviceId })
       .lean()
-      .maxTimeMS(5000)
+      .maxTimeMS(2000)
       .exec();
   }
 

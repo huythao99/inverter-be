@@ -41,9 +41,14 @@ export class InverterDeviceController {
     @Param('userId') userId: string,
     @Param('deviceId') deviceId: string,
   ) {
-    const device = await this.inverterDeviceService.findByUserIdAndDeviceId(userId, deviceId);
+    const device = await this.inverterDeviceService.findByUserIdAndDeviceId(
+      userId,
+      deviceId,
+    );
     if (!device) {
-      throw new NotFoundException(`Device with ID ${deviceId} not found for user ${userId}`);
+      throw new NotFoundException(
+        `Device with ID ${deviceId} not found for user ${userId}`,
+      );
     }
     return device;
   }
@@ -62,7 +67,10 @@ export class InverterDeviceController {
     @Param('id') id: string,
     @Body() updateInverterDeviceDto: UpdateInverterDeviceDto,
   ) {
-    const device = await this.inverterDeviceService.update(id, updateInverterDeviceDto);
+    const device = await this.inverterDeviceService.update(
+      id,
+      updateInverterDeviceDto,
+    );
     if (!device) {
       throw new NotFoundException(`Device with ID ${id} not found`);
     }
@@ -81,7 +89,9 @@ export class InverterDeviceController {
       updateInverterDeviceDto,
     );
     if (!device) {
-      throw new NotFoundException(`Device with ID ${deviceId} not found for user ${userId}`);
+      throw new NotFoundException(
+        `Device with ID ${deviceId} not found for user ${userId}`,
+      );
     }
     return device;
   }
@@ -105,7 +115,9 @@ export class InverterDeviceController {
       deviceId,
     );
     if (!device) {
-      throw new NotFoundException(`Device with ID ${deviceId} not found for user ${userId}`);
+      throw new NotFoundException(
+        `Device with ID ${deviceId} not found for user ${userId}`,
+      );
     }
     return device;
   }

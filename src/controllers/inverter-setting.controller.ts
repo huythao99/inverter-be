@@ -29,14 +29,31 @@ export class InverterSettingController {
   }
 
   @Get('data/:userId/:deviceId')
-  findByUserIdAndDeviceId(
+  async findByUserIdAndDeviceId(
     @Param('userId') userId: string,
     @Param('deviceId') deviceId: string,
   ) {
-    return this.inverterSettingService.findByUserIdAndDeviceId(
-      userId,
-      deviceId,
-    );
+    try {
+      const result = await this.inverterSettingService.findByUserIdAndDeviceId(
+        userId,
+        deviceId,
+      );
+      return result || { message: 'Device not found', userId, deviceId };
+    } catch (error) {
+      if (error instanceof Error) {
+        if (
+          error.name === 'MongoTimeoutError' ||
+          error.message.includes('timeout')
+        ) {
+          return {
+            message: 'Device lookup timeout - device may not exist',
+            userId,
+            deviceId,
+          };
+        }
+      }
+      throw error;
+    }
   }
 
   @Get('data/:id')
