@@ -9,6 +9,7 @@ import { InverterDataModule } from './modules/inverter-data.module';
 import { InverterSettingModule } from './modules/inverter-setting.module';
 import { InverterDeviceModule } from './modules/inverter-device.module';
 import { InverterScheduleModule } from './modules/inverter-schedule.module';
+import { DailyTotalsModule } from './modules/daily-totals.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { InverterScheduleModule } from './modules/inverter-schedule.module';
     InverterDataModule,
     InverterDeviceModule,
     InverterScheduleModule,
+    DailyTotalsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { OnEvent } from '@nestjs/event-emitter';
@@ -7,6 +9,8 @@ import {
   InverterDataDocument,
 } from '../models/inverter-data.schema';
 import { MqttService } from './mqtt.service';
+import { DailyTotalsService } from './daily-totals.service';
+import { RedisDailyTotalsService } from './redis-daily-totals.service';
 
 @Injectable()
 export class InverterDataService {
@@ -14,6 +18,8 @@ export class InverterDataService {
     @InjectModel(InverterData.name)
     private inverterDataModel: Model<InverterDataDocument>,
     private mqttService: MqttService,
+    private dailyTotalsService: DailyTotalsService,
+    private redisDailyTotalsService: RedisDailyTotalsService,
   ) {}
 
   async create(
@@ -207,6 +213,23 @@ export class InverterDataService {
     return { deletedCount: result.deletedCount };
   }
 
+  private parseTotalsFromValue(value: string): {
+    totalA: number;
+    totalA2: number;
+  } {
+    try {
+      const parts = value.split('#');
+      if (parts.length >= 10) {
+        const totalA = parseFloat(parts[parts.length - 2]) || 0; // Second to last value
+        const totalA2 = parseFloat(parts[parts.length - 1]) || 0; // Last value
+        return { totalA, totalA2 };
+      }
+    } catch (error) {
+      console.error('Error parsing totals from value:', error);
+    }
+    return { totalA: 0, totalA2: 0 };
+  }
+
   @OnEvent('inverter.data.received')
   async handleInverterDataReceived(payload: {
     currentUid: string;
@@ -217,25 +240,37 @@ export class InverterDataService {
       console.log(
         `Processing MQTT data for inverter/${payload.currentUid}/${payload.wifiSsid}/data`,
       );
+
+      const valueString =
+        (payload.data?.value as string) || JSON.stringify(payload.data);
+      const { totalA, totalA2 } = this.parseTotalsFromValue(valueString);
+
+      // Convert to proper units (divide by 1,000,000)
+      const currentTotalA = totalA / 1000000.0;
+      const currentTotalA2 = totalA2 / 1000000.0;
+
       // Map MQTT data to InverterData schema
       const inverterDataUpdate = {
         userId: payload.currentUid,
         deviceId: payload.wifiSsid,
-        value: payload.data?.value || JSON.stringify(payload.data),
+        value: valueString,
         totalACapacity: payload.data?.totalACapacity || 0,
         totalA2Capacity: payload.data?.totalA2Capacity || 0,
       };
 
       // Upsert the inverter data using optimized method
-      const result = await this.upsertByUserIdAndDeviceId(
+      await this.upsertByUserIdAndDeviceId(
         payload.currentUid,
         payload.wifiSsid,
         inverterDataUpdate,
       );
 
-      console.log(
-        `Successfully upserted data for ${payload.currentUid}/${payload.wifiSsid}:`,
-        result._id,
+      // Update daily totals using Redis cache (high performance)
+      await this.redisDailyTotalsService.incrementDailyTotals(
+        payload.currentUid,
+        payload.wifiSsid,
+        currentTotalA,
+        currentTotalA2,
       );
     } catch (error) {
       console.error(

@@ -7,12 +7,14 @@ import {
   InverterDataSchema,
 } from '../models/inverter-data.schema';
 import { MqttService } from '../services/mqtt.service';
+import { DailyTotalsModule } from './daily-totals.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: InverterData.name, schema: InverterDataSchema },
     ]),
+    DailyTotalsModule,
   ],
   controllers: [InverterDataController],
   providers: [InverterDataService, MqttService],
