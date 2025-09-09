@@ -18,7 +18,7 @@ import { DailyTotalsModule } from './modules/daily-totals.module';
     }),
     CacheModule.register({
       isGlobal: true,
-      ttl: 60,
+      ttl: 0,
       max: 1000,
     }),
     EventEmitterModule.forRoot(),
