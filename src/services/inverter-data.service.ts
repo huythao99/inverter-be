@@ -238,7 +238,8 @@ export class InverterDataService {
   }) {
     try {
       console.log(
-        `Processing MQTT data for inverter/${payload.currentUid}/${payload.wifiSsid}/data`,
+        `Processing MQTT data for inverter/${payload.currentUid}/${payload.wifiSsid}/data: `,
+        payload.data?.value
       );
 
       const valueString =
