@@ -244,7 +244,7 @@ export class InverterDataService {
       const valueString =
         (payload.data?.value as string) || JSON.stringify(payload.data);
       const { totalA, totalA2 } = this.parseTotalsFromValue(valueString);
-
+      console.log("totalA1234: ", totalA, totalA2);
       // Convert to proper units (divide by 1,000,000)
       const currentTotalA = totalA / 1000000.0;
       const currentTotalA2 = totalA2 / 1000000.0;

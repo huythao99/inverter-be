@@ -25,7 +25,7 @@ export class InverterSettingService {
   }
 
   async findAll(): Promise<InverterSetting[]> {
-    return this.inverterSettingModel.find().exec();
+    return this.inverterSettingModel.find().lean().maxTimeMS(2000).exec();
   }
 
   async findByUserIdAndDeviceId(

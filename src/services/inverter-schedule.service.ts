@@ -25,7 +25,7 @@ export class InverterScheduleService {
   }
 
   async findAll(): Promise<InverterSchedule[]> {
-    return this.inverterScheduleModel.find().exec();
+    return this.inverterScheduleModel.find().lean().maxTimeMS(2000).exec();
   }
 
   async findByUserIdAndDeviceId(
