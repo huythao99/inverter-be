@@ -77,11 +77,16 @@ export class DailyTotalsController {
       date,
     );
 
+    // Sum all records to get total values
+    const totalA = records.reduce((sum, record) => sum + record.totalA, 0);
+    const totalA2 = records.reduce((sum, record) => sum + record.totalA2, 0);
+
     return {
       userId,
       deviceId: deviceId || 'all',
       date: date || 'all',
-      records,
+      totalA,
+      totalA2,
       count: records.length,
     };
   }
@@ -114,12 +119,18 @@ export class DailyTotalsController {
       }
     }
 
-    return await this.dailyTotalsService.getMonthlyTotals(
+    const monthlyData = await this.dailyTotalsService.getMonthlyTotals(
       userId,
       deviceId,
       yearNum,
       monthNum,
     );
+
+    // Return only totalA and totalA2
+    return {
+      totalA: monthlyData.totalA,
+      totalA2: monthlyData.totalA2,
+    };
   }
 
   @Get('user/:userId/device/:deviceId/date/:date')

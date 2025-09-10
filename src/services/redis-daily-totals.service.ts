@@ -118,7 +118,6 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
     totalA2Increment: number,
   ): Promise<{ totalA: number; totalA2: number }> {
     try {
-      console.log("increment12345678: ", totalAIncrement, totalA2Increment, this.redis.status);
       if (!this.redis || this.redis.status !== 'ready') {
         console.warn('Redis not available, falling back to database increment');
         const date = this.getGMT7Date();
@@ -131,6 +130,7 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
         );
         // Return current totals from database
         const record = await this.dailyTotalsService.findByUserAndDevice(userId, deviceId, date);
+        console.log("newTotal1234678: ", record?.totalA, record?.totalA2);
         return { totalA: record?.totalA || 0, totalA2: record?.totalA2 || 0 };
       }
 
@@ -162,7 +162,7 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
       // Get the new totals from the increment results
       const newTotalA = parseFloat((results?.[0]?.[1] as string) || '0');
       const newTotalA2 = parseFloat((results?.[1]?.[1] as string) || '0');
-
+      console.log("newTotal1234: ", newTotalA, newTotalA2);
       return { totalA: newTotalA, totalA2: newTotalA2 };
     } catch (error) {
       console.error('Redis increment failed, falling back to database:', error);
