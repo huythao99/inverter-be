@@ -12,6 +12,6 @@ export class AppController {
 
   @Get('version')
   getVersion(): { version: string } {
-    return { version: '0.1.7' };
+    return { version: '0.1.8' };
   }
 }

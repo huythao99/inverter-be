@@ -14,6 +14,10 @@ import { RedisDailyTotalsService } from './redis-daily-totals.service';
 
 @Injectable()
 export class InverterDataService {
+  private lastProcessed = new Map<
+    string,
+    { timestamp: number; data: string }
+  >();
   constructor(
     @InjectModel(InverterData.name)
     private inverterDataModel: Model<InverterDataDocument>,
@@ -38,7 +42,6 @@ export class InverterDataService {
       createInverterDataDto,
     );
     const savedData = await createdInverterData.save();
-    console.log('call create data');
     // Emit MQTT event
     // if (createInverterDataDto.userId && createInverterDataDto.deviceId) {
     //   await this.mqttService.emitDataAdded(
@@ -236,20 +239,30 @@ export class InverterDataService {
     wifiSsid: string;
     data: any;
   }) {
-    try {
-      console.log(
-        `Processing MQTT data for inverter/${payload.currentUid}/${payload.wifiSsid}/data: `,
-        payload.data?.value
-      );
+    const key = `${payload.currentUid}-${payload.wifiSsid}`;
+    const dataString = JSON.stringify(payload.data);
+    const now = Date.now();
 
+    // Check if same data was processed recently (within 5 seconds)
+    const lastProcess = this.lastProcessed.get(key);
+    if (
+      lastProcess &&
+      now - lastProcess.timestamp < 5000 &&
+      lastProcess.data === dataString
+    ) {
+      return;
+    }
+
+    this.lastProcessed.set(key, { timestamp: now, data: dataString });
+
+    try {
+      console.log('receiver data mqtt: ', payload.data?.value);
       const valueString =
         (payload.data?.value as string) || JSON.stringify(payload.data);
       const { totalA, totalA2 } = this.parseTotalsFromValue(valueString);
-      console.log("totalA1234: ", totalA, totalA2);
       // Convert to proper units (divide by 1,000,000)
       const currentTotalA = totalA / 1000000.0;
       const currentTotalA2 = totalA2 / 1000000.0;
-      console.log("increment12345: ", currentTotalA, currentTotalA2);
 
       // Map MQTT data to InverterData schema
       const inverterDataUpdate = {
