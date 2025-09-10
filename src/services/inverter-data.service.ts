@@ -249,6 +249,7 @@ export class InverterDataService {
       // Convert to proper units (divide by 1,000,000)
       const currentTotalA = totalA / 1000000.0;
       const currentTotalA2 = totalA2 / 1000000.0;
+      console.log("increment12345: ", currentTotalA, currentTotalA2);
 
       // Map MQTT data to InverterData schema
       const inverterDataUpdate = {

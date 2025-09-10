@@ -118,6 +118,7 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
     totalA2Increment: number,
   ): Promise<{ totalA: number; totalA2: number }> {
     try {
+      console.log("increment12345678: ", totalAIncrement, totalA2Increment, this.redis, this.redis.status);
       if (!this.redis || this.redis.status !== 'ready') {
         console.warn('Redis not available, falling back to database increment');
         const date = this.getGMT7Date();
