@@ -1,8 +1,11 @@
 import { Injectable } from '@nestjs/common';
+import { InverterDeviceService } from './inverter-device.service';
 
 @Injectable()
 export class FirmwareService {
   private readonly FIRMWARE_BASE_URL = 'https://gticontrol.sgp1.digitaloceanspaces.com/firmware';
+
+  constructor(private readonly inverterDeviceService: InverterDeviceService) {}
 
   async getFirmwareUrl(deviceId: string): Promise<{ url: string }> {
     // You can add logic here to return different firmware URLs based on deviceId
@@ -11,6 +14,24 @@ export class FirmwareService {
 
     return {
       url: firmwareUrl,
+    };
+  }
+
+  async getDeviceFirmwareVersion(userId: string, deviceId: string): Promise<{ firmwareVersion: string | null }> {
+    const device = await this.inverterDeviceService.findByUserIdAndDeviceId(userId, deviceId);
+    
+    return {
+      firmwareVersion: device?.firmwareVersion || null,
+    };
+  }
+
+  async getNewestFirmwareVersion(): Promise<{ version: string }> {
+    // Return the current newest firmware version
+    // You can update this version number when new firmware is available
+    const newestVersion = '1.2.3';
+    
+    return {
+      version: newestVersion,
     };
   }
 }

@@ -13,4 +13,21 @@ export class FirmwareController {
 
     return this.firmwareService.getFirmwareUrl(deviceId);
   }
+
+  @Get('version')
+  async getDeviceFirmwareVersion(
+    @Query('userId') userId: string,
+    @Query('deviceId') deviceId: string,
+  ) {
+    if (!userId || !deviceId) {
+      throw new HttpException('userId and deviceId are required', HttpStatus.BAD_REQUEST);
+    }
+
+    return this.firmwareService.getDeviceFirmwareVersion(userId, deviceId);
+  }
+
+  @Get('newest')
+  async getNewestFirmwareVersion() {
+    return this.firmwareService.getNewestFirmwareVersion();
+  }
 }

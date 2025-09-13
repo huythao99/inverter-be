@@ -158,6 +158,21 @@ export class InverterDeviceService {
     return { deletedCount: result.deletedCount };
   }
 
+  async updateFirmwareVersion(
+    userId: string,
+    deviceId: string,
+    firmwareVersion: string,
+  ): Promise<InverterDevice | null> {
+    const updateData = {
+      firmwareVersion,
+      updatedAt: new Date(),
+    };
+
+    return this.inverterDeviceModel
+      .findOneAndUpdate({ userId, deviceId }, updateData, { new: true })
+      .exec();
+  }
+
   @OnEvent('device.message.received')
   async handleDeviceMessageReceived(payload: {
     currentUid: string;
