@@ -28,7 +28,7 @@ export class FirmwareService {
   async getNewestFirmwareVersion(): Promise<{ version: string }> {
     // Return the current newest firmware version
     // You can update this version number when new firmware is available
-    const newestVersion = '1.2.3';
+    const newestVersion = '1.0.1';
     
     return {
       version: newestVersion,
