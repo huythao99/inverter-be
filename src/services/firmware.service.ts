@@ -3,7 +3,7 @@ import { InverterDeviceService } from './inverter-device.service';
 
 @Injectable()
 export class FirmwareService {
-  private readonly FIRMWARE_BASE_URL = 'https://gticontrol.sgp1.digitaloceanspaces.com/firmware';
+  private readonly FIRMWARE_BASE_URL = 'https://giabao-inverter.com/firmware';
 
   constructor(private readonly inverterDeviceService: InverterDeviceService) {}
 
