@@ -26,15 +26,12 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
 
       // Add error handling for Redis connection
       this.redis.on('error', (error) => {
-        console.error('Redis connection error:', error);
       });
 
       this.redis.on('connect', () => {
-        console.log('Redis connected successfully');
       });
 
       this.redis.on('ready', () => {
-        console.log('Redis ready for commands');
       });
 
       // Initialize current day
@@ -73,7 +70,6 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
         void this.checkForNewDay();
       }, 60000); // Check every minute
 
-      console.log('Redis Daily Totals Service initialized');
     } catch (error) {
       console.error('Failed to initialize Redis Daily Totals Service:', error);
     }
@@ -130,7 +126,6 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
         );
         // Return current totals from database
         const record = await this.dailyTotalsService.findByUserAndDevice(userId, deviceId, date);
-        console.log("newTotal1234678: ", record?.totalA, record?.totalA2);
         return { totalA: record?.totalA || 0, totalA2: record?.totalA2 || 0 };
       }
 
@@ -162,7 +157,6 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
       // Get the new totals from the increment results
       const newTotalA = parseFloat((results?.[0]?.[1] as string) || '0');
       const newTotalA2 = parseFloat((results?.[1]?.[1] as string) || '0');
-      console.log("newTotal1234: ", newTotalA, newTotalA2);
       return { totalA: newTotalA, totalA2: newTotalA2 };
     } catch (error) {
       console.error('Redis increment failed, falling back to database:', error);
@@ -249,9 +243,6 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
       if (dirtyKeys.length === 0) {
         return;
       }
-
-      console.log(`Flushing ${dirtyKeys.length} dirty records to database`);
-
       // Process in batches to avoid overwhelming the database
       const batchSize = 10;
       const batches: string[][] = [];
@@ -335,9 +326,6 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
     const today = this.getGMT7Date();
 
     if (this.currentDay && this.currentDay !== today) {
-      console.log(
-        `New day detected: ${this.currentDay} -> ${today}. Starting daily reset...`,
-      );
 
       // Save previous day's data to database before reset
       await this.savePreviousDayData(this.currentDay);
@@ -348,7 +336,6 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
       // Update current day
       this.currentDay = today;
 
-      console.log(`Daily reset completed for ${today}`);
     } else if (!this.currentDay) {
       this.currentDay = today;
     }
@@ -356,7 +343,6 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
 
   private async savePreviousDayData(previousDay: string): Promise<void> {
     try {
-      console.log(`Saving previous day data for: ${previousDay}`);
 
       // Get all keys for the previous day
       const pattern = `${this.KEY_PREFIX}:*:*:${previousDay}`;
@@ -383,10 +369,6 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
               totalA,
               totalA2,
             );
-
-            console.log(
-              `Saved data for ${userId}/${deviceId}/${previousDay}: A=${totalA}, A2=${totalA2}`,
-            );
           }
         }
       }
@@ -394,13 +376,9 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
       // Clean up previous day's Redis keys
       if (keys.length > 0) {
         await this.redis.del(...keys);
-        console.log(`Cleaned up ${keys.length} Redis keys for ${previousDay}`);
       }
     } catch (error) {
-      console.error(
-        `Error saving previous day data for ${previousDay}:`,
-        error,
-      );
+      
     }
   }
 
@@ -409,9 +387,7 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
       // Clear dirty set for the new day
       await this.redis.del(this.DIRTY_SET_KEY);
 
-      console.log(`Reset daily totals for new day: ${newDay}`);
     } catch (error) {
-      console.error(`Error resetting daily totals for ${newDay}:`, error);
     }
   }
 
@@ -422,7 +398,6 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
     );
     const today = this.getGMT7Date();
 
-    console.log('Manual daily reset triggered');
     await this.savePreviousDayData(yesterday);
     await this.resetDailyTotals(today);
     this.currentDay = today;

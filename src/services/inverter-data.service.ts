@@ -256,7 +256,6 @@ export class InverterDataService {
     this.lastProcessed.set(key, { timestamp: now, data: dataString });
 
     try {
-      console.log('receiver data mqtt: ', payload.data?.value);
       const valueString =
         (payload.data?.value as string) || JSON.stringify(payload.data);
       const { totalA, totalA2 } = this.parseTotalsFromValue(valueString);

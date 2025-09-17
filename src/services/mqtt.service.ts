@@ -67,29 +67,20 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     this.client.setMaxListeners(20);
 
     this.client.on('connect', () => {
-      console.log('MQTT connected');
       this.subscribeToInverterTopics();
     });
 
     this.client.on('error', (error) => {
-      console.error('MQTT connection error:', error);
-      console.error('Connection details:', {
-        mqttUrl,
-        clientId: options.clientId,
-        username,
-      });
+      
     });
 
     this.client.on('offline', () => {
-      console.log('MQTT offline');
     });
 
     this.client.on('reconnect', () => {
-      console.log('MQTT reconnecting');
     });
 
     this.client.on('close', () => {
-      console.log('MQTT connection closed');
     });
   }
 
@@ -106,9 +97,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     inverterTopics.forEach((topic) => {
       this.client.subscribe(topic, (err) => {
         if (err) {
-          console.error(`Failed to subscribe to ${topic}:`, err);
         } else {
-          console.log(`Successfully subscribed to MQTT topic: ${topic}`);
         }
       });
     });
