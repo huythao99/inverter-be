@@ -243,6 +243,16 @@ export class InverterDataService {
     const dataString = JSON.stringify(payload.data);
     const now = Date.now();
 
+    // Log data received from GTIControl409
+    if (payload.wifiSsid === 'GTIControl409') {
+      console.log('=== GTIControl409 Data Received ===');
+      console.log('Timestamp:', new Date().toISOString());
+      console.log('Raw Data:', JSON.stringify(payload.data, null, 2));
+      if (payload.data?.value) {
+        console.log('Value String:', payload.data.value);
+      }
+    }
+
     // Check if same data was processed recently (within 5 seconds)
     const lastProcess = this.lastProcessed.get(key);
     if (
@@ -250,6 +260,9 @@ export class InverterDataService {
       now - lastProcess.timestamp < 5000 &&
       lastProcess.data === dataString
     ) {
+      if (payload.wifiSsid === 'GTIControl409') {
+        console.log('GTIControl409: Duplicate data detected, skipping...');
+      }
       return;
     }
 
@@ -262,6 +275,18 @@ export class InverterDataService {
       // Convert to proper units (divide by 1,000,000)
       const currentTotalA = totalA / 1000000.0;
       const currentTotalA2 = totalA2 / 1000000.0;
+
+      // Log parsed values for GTIControl409
+      if (payload.wifiSsid === 'GTIControl409') {
+        console.log('=== GTIControl409 Parsed Values ===');
+        console.log('Value String:', valueString);
+        console.log('Raw totalA (before division):', totalA);
+        console.log('Raw totalA2 (before division):', totalA2);
+        console.log('Converted currentTotalA (kWh):', currentTotalA);
+        console.log('Converted currentTotalA2 (kWh):', currentTotalA2);
+        console.log('TotalACapacity:', payload.data?.totalACapacity || 0);
+        console.log('TotalA2Capacity:', payload.data?.totalA2Capacity || 0);
+      }
 
       // Map MQTT data to InverterData schema
       const inverterDataUpdate = {
@@ -280,12 +305,22 @@ export class InverterDataService {
       );
 
       // Update daily totals using Redis cache (high performance)
-      await this.redisDailyTotalsService.incrementDailyTotals(
+      const dailyTotalsResult = await this.redisDailyTotalsService.incrementDailyTotals(
         payload.currentUid,
         payload.wifiSsid,
         currentTotalA,
         currentTotalA2,
       );
+
+      // Log daily totals update for GTIControl409
+      if (payload.wifiSsid === 'GTIControl409') {
+        console.log('=== GTIControl409 Daily Totals Update ===');
+        console.log('Increment totalA:', currentTotalA);
+        console.log('Increment totalA2:', currentTotalA2);
+        console.log('New daily totalA:', dailyTotalsResult.totalA);
+        console.log('New daily totalA2:', dailyTotalsResult.totalA2);
+        console.log('==========================================');
+      }
     } catch (error) {
       console.error(
         `Error updating inverter data for ${payload.currentUid}/${payload.wifiSsid}:`,

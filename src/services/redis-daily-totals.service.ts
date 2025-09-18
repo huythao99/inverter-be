@@ -387,7 +387,16 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
       // Clear dirty set for the new day
       await this.redis.del(this.DIRTY_SET_KEY);
 
+      // Get all Redis keys for the new day (should be empty, but clean up just in case)
+      const newDayPattern = `${this.KEY_PREFIX}:*:*:${newDay}`;
+      const newDayKeys = await this.redis.keys(newDayPattern);
+
+      if (newDayKeys.length > 0) {
+        await this.redis.del(...newDayKeys);
+      }
+
     } catch (error) {
+      console.error('Error resetting daily totals:', error);
     }
   }
 
