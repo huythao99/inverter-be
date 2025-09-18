@@ -64,7 +64,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     }
 
     this.client = mqtt.connect(mqttUrl, options);
-    this.client.setMaxListeners(20);
+    this.client.setMaxListeners(50); // Increase limit to prevent warnings
 
     this.client.on('connect', () => {
       this.subscribeToInverterTopics();
@@ -158,7 +158,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         default:
       }
     } catch (error) {
-      console.error('Error parsing inverter message:', error);
+      console.error('Error parsing inverter message:', error, message);
     }
   }
 
