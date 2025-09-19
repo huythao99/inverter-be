@@ -275,4 +275,12 @@ export class DailyTotalsController {
 
     return { message: 'Daily totals deleted successfully' };
   }
+
+  @Get('calculate/:userId/:deviceId')
+  async calculateTotalsByUserAndDevice(
+    @Param('userId') userId: string,
+    @Param('deviceId') deviceId: string,
+  ) {
+    return this.dailyTotalsService.calculateTotalsByUserAndDevice(userId, deviceId);
+  }
 }

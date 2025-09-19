@@ -413,4 +413,24 @@ export class DailyTotalsService {
       },
     };
   }
+
+  async calculateTotalsByUserAndDevice(
+    userId: string,
+    deviceId: string,
+  ): Promise<{
+    totalA: number;
+    totalA2: number;
+  }> {
+    const records = await this.dailyTotalsModel
+      .find({ userId, deviceId })
+      .exec();
+
+    const totalA = records.reduce((sum, record) => sum + record.totalA, 0);
+    const totalA2 = records.reduce((sum, record) => sum + record.totalA2, 0);
+
+    return {
+      totalA,
+      totalA2,
+    };
+  }
 }
