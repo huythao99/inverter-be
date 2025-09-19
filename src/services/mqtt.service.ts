@@ -158,7 +158,6 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         default:
       }
     } catch (error) {
-      console.error('Error parsing inverter message:', error, message);
     }
   }
 

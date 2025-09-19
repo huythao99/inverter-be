@@ -248,9 +248,6 @@ export class InverterDataService {
       console.log('=== GTIControl409 Data Received ===');
       console.log('Timestamp:', new Date().toISOString());
       console.log('Raw Data:', JSON.stringify(payload.data, null, 2));
-      if (payload.data?.value) {
-        console.log('Value String:', payload.data.value);
-      }
     }
 
     // Check if same data was processed recently (within 5 seconds)
@@ -279,13 +276,10 @@ export class InverterDataService {
       // Log parsed values for GTIControl409
       if (payload.wifiSsid === 'GTIControl409') {
         console.log('=== GTIControl409 Parsed Values ===');
-        console.log('Value String:', valueString);
         console.log('Raw totalA (before division):', totalA);
         console.log('Raw totalA2 (before division):', totalA2);
         console.log('Converted currentTotalA (kWh):', currentTotalA);
         console.log('Converted currentTotalA2 (kWh):', currentTotalA2);
-        console.log('TotalACapacity:', payload.data?.totalACapacity || 0);
-        console.log('TotalA2Capacity:', payload.data?.totalA2Capacity || 0);
       }
 
       // Map MQTT data to InverterData schema
