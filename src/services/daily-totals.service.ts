@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { Decimal } from 'decimal.js';
 import {
   DailyTotals,
   DailyTotalsDocument,
@@ -189,6 +190,19 @@ export class DailyTotalsService {
   ): Promise<DailyTotals> {
     const { start } = this.getGMT7DateRange(date);
 
+    // Get current values first to avoid floating point errors
+    const existingRecord = await this.dailyTotalsModel.findOne({
+      userId,
+      deviceId,
+      date: start,
+    }).exec();
+
+    // Calculate new totals using decimal.js for precision
+    const currentTotalA = new Decimal(existingRecord?.totalA || 0);
+    const currentTotalA2 = new Decimal(existingRecord?.totalA2 || 0);
+    const newTotalA = currentTotalA.plus(totalAIncrement);
+    const newTotalA2 = currentTotalA2.plus(totalA2Increment);
+
     return this.dailyTotalsModel
       .findOneAndUpdate(
         {
@@ -197,11 +211,9 @@ export class DailyTotalsService {
           date: start,
         },
         {
-          $inc: {
-            totalA: totalAIncrement,
-            totalA2: totalA2Increment,
-          },
           $set: {
+            totalA: newTotalA.toNumber(),
+            totalA2: newTotalA2.toNumber(),
             updatedAt: new Date(),
           },
           $setOnInsert: {
@@ -272,8 +284,9 @@ export class DailyTotalsService {
       .sort({ date: 1 })
       .exec();
 
-    const totalA = records.reduce((sum, record) => sum + record.totalA, 0);
-    const totalA2 = records.reduce((sum, record) => sum + record.totalA2, 0);
+    // Use decimal.js for precise aggregation to avoid floating point errors
+    const totalA = records.reduce((sum, record) => sum.plus(record.totalA), new Decimal(0)).toNumber();
+    const totalA2 = records.reduce((sum, record) => sum.plus(record.totalA2), new Decimal(0)).toNumber();
 
     return {
       totalA,
@@ -425,8 +438,9 @@ export class DailyTotalsService {
       .find({ userId, deviceId })
       .exec();
 
-    const totalA = records.reduce((sum, record) => sum + record.totalA, 0);
-    const totalA2 = records.reduce((sum, record) => sum + record.totalA2, 0);
+    // Use decimal.js for precise aggregation to avoid floating point errors
+    const totalA = records.reduce((sum, record) => sum.plus(record.totalA), new Decimal(0)).toNumber();
+    const totalA2 = records.reduce((sum, record) => sum.plus(record.totalA2), new Decimal(0)).toNumber();
 
     return {
       totalA,
