@@ -4,6 +4,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { OnEvent } from '@nestjs/event-emitter';
 import { Model } from 'mongoose';
+import { Decimal } from 'decimal.js';
 import {
   InverterData,
   InverterDataDocument,
@@ -264,9 +265,9 @@ export class InverterDataService {
       const valueString =
         (payload.data?.value as string) || JSON.stringify(payload.data);
       const { totalA, totalA2 } = this.parseTotalsFromValue(valueString);
-      // Convert to proper units (divide by 1,000,000)
-      const currentTotalA = totalA / 1000000.0;
-      const currentTotalA2 = totalA2 / 1000000.0;
+      // Convert to proper units (divide by 1,000,000) using decimal.js for precision
+      const currentTotalA = new Decimal(totalA).div(1000000).toNumber();
+      const currentTotalA2 = new Decimal(totalA2).div(1000000).toNumber();
 
       // Map MQTT data to InverterData schema
       const inverterDataUpdate = {
@@ -278,18 +279,18 @@ export class InverterDataService {
       };
 
       // Create new record for each data received
-      await this.create({
-        ...inverterDataUpdate,
-        userId: payload.currentUid,
-        deviceId: payload.wifiSsid,
-      });
+      // await this.create({
+      //   ...inverterDataUpdate,
+      //   userId: payload.currentUid,
+      //   deviceId: payload.wifiSsid,
+      // });
 
       // Previous upsert method (commented for rollback option)
-      // await this.upsertByUserIdAndDeviceId(
-      //   payload.currentUid,
-      //   payload.wifiSsid,
-      //   inverterDataUpdate,
-      // );
+      await this.upsertByUserIdAndDeviceId(
+        payload.currentUid,
+        payload.wifiSsid,
+        inverterDataUpdate,
+      );
 
       // Update daily totals using Redis cache (high performance)
       const dailyTotalsResult = await this.redisDailyTotalsService.incrementDailyTotals(
