@@ -30,14 +30,14 @@ export class InverterDataService {
     createInverterDataDto: Partial<InverterData>,
   ): Promise<InverterData> {
     // Calculate capacity values if they exist
-    if (createInverterDataDto.totalACapacity !== undefined) {
-      createInverterDataDto.totalACapacity =
-        createInverterDataDto.totalACapacity / 1000000;
-    }
-    if (createInverterDataDto.totalA2Capacity !== undefined) {
-      createInverterDataDto.totalA2Capacity =
-        createInverterDataDto.totalA2Capacity / 1000000;
-    }
+    // if (createInverterDataDto.totalACapacity !== undefined) {
+    //   createInverterDataDto.totalACapacity =
+    //     createInverterDataDto.totalACapacity / 1000000;
+    // }
+    // if (createInverterDataDto.totalA2Capacity !== undefined) {
+    //   createInverterDataDto.totalA2Capacity =
+    //     createInverterDataDto.totalA2Capacity / 1000000;
+    // }
     const createdInverterData = new this.inverterDataModel(
       createInverterDataDto,
     );
@@ -277,12 +277,19 @@ export class InverterDataService {
         totalA2Capacity: payload.data?.totalA2Capacity || 0,
       };
 
-      // Upsert the inverter data using optimized method
-      await this.upsertByUserIdAndDeviceId(
-        payload.currentUid,
-        payload.wifiSsid,
-        inverterDataUpdate,
-      );
+      // Create new record for each data received
+      await this.create({
+        ...inverterDataUpdate,
+        userId: payload.currentUid,
+        deviceId: payload.wifiSsid,
+      });
+
+      // Previous upsert method (commented for rollback option)
+      // await this.upsertByUserIdAndDeviceId(
+      //   payload.currentUid,
+      //   payload.wifiSsid,
+      //   inverterDataUpdate,
+      // );
 
       // Update daily totals using Redis cache (high performance)
       const dailyTotalsResult = await this.redisDailyTotalsService.incrementDailyTotals(
