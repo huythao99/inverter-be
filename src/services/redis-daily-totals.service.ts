@@ -10,7 +10,7 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
   private redis: Redis;
   private batchFlushTimer: NodeJS.Timeout;
   private dailyResetTimer: NodeJS.Timeout;
-  private readonly BATCH_FLUSH_INTERVAL = 60000; // 60 seconds (1 minute)
+  private readonly BATCH_FLUSH_INTERVAL = 300000; // 5 minutes (reduced CPU load)
   private readonly KEY_PREFIX = 'daily_totals';
   private readonly DIRTY_SET_KEY = 'daily_totals:dirty';
   private readonly PREVIOUS_DAY_KEY = 'daily_totals:previous_day';
@@ -66,10 +66,10 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
         void this.flushDirtyRecordsToDatabase();
       }, this.BATCH_FLUSH_INTERVAL);
 
-      // Start daily reset timer (check every minute for new day)
+      // Start daily reset timer (check every 10 minutes for new day)
       this.dailyResetTimer = setInterval(() => {
         void this.checkForNewDay();
-      }, 60000); // Check every minute
+      }, 600000); // Check every 10 minutes (reduced CPU load)
 
     } catch (error) {
       console.error('Failed to initialize Redis Daily Totals Service:', error);
@@ -172,7 +172,6 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
         totalA2: newTotalA2.toNumber()
       };
     } catch (error) {
-      console.error('Redis increment failed, falling back to database:', error);
       const date = this.getGMT7Date();
       await this.dailyTotalsService.incrementTotals(
         userId,
@@ -256,15 +255,17 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
       if (dirtyKeys.length === 0) {
         return;
       }
-      // Process in batches to avoid overwhelming the database
-      const batchSize = 10;
+      // Process in smaller batches to reduce CPU spikes
+      const batchSize = 5; // Reduced from 10
       const batches: string[][] = [];
 
       for (let i = 0; i < dirtyKeys.length; i += batchSize) {
         batches.push(dirtyKeys.slice(i, i + batchSize));
       }
 
-      for (const batch of batches) {
+      // Process batches sequentially with small delays to reduce CPU load
+      for (let i = 0; i < batches.length; i++) {
+        const batch = batches[i];
         const batchPromises = batch.map(async (dirtyKey: string) => {
           try {
             const [userId, deviceId, date] = dirtyKey.split(':');
@@ -299,6 +300,11 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
         });
 
         await Promise.allSettled(batchPromises);
+
+        // Add small delay between batches to prevent CPU spikes
+        if (i < batches.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
       }
     } catch (error) {
       console.error('Error flushing dirty records to database:', error);
@@ -357,9 +363,9 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
   private async savePreviousDayData(previousDay: string): Promise<void> {
     try {
 
-      // Get all keys for the previous day
+      // Get all keys for the previous day using SCAN instead of KEYS
       const pattern = `${this.KEY_PREFIX}:*:*:${previousDay}`;
-      const keys = await this.redis.keys(pattern);
+      const keys = await this.scanKeys(pattern);
 
       for (const key of keys) {
         const keyParts = key.split(':');
@@ -386,12 +392,16 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
         }
       }
 
-      // Clean up previous day's Redis keys
+      // Clean up previous day's Redis keys in batches
       if (keys.length > 0) {
-        await this.redis.del(...keys);
+        const batchSize = 100;
+        for (let i = 0; i < keys.length; i += batchSize) {
+          const batch = keys.slice(i, i + batchSize);
+          await this.redis.del(...batch);
+        }
       }
     } catch (error) {
-      
+
     }
   }
 
@@ -402,10 +412,14 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
 
       // Get all Redis keys for the new day (should be empty, but clean up just in case)
       const newDayPattern = `${this.KEY_PREFIX}:*:*:${newDay}`;
-      const newDayKeys = await this.redis.keys(newDayPattern);
+      const newDayKeys = await this.scanKeys(newDayPattern);
 
       if (newDayKeys.length > 0) {
-        await this.redis.del(...newDayKeys);
+        const batchSize = 100;
+        for (let i = 0; i < newDayKeys.length; i += batchSize) {
+          const batch = newDayKeys.slice(i, i + batchSize);
+          await this.redis.del(...batch);
+        }
       }
 
     } catch (error) {
@@ -446,7 +460,7 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
     } else {
       // Get all devices for user (from Redis pattern)
       const pattern = `${this.KEY_PREFIX}:${userId}:*:${today}`;
-      const keys = await this.redis.keys(pattern);
+      const keys = await this.scanKeys(pattern);
 
       for (const key of keys) {
         const keyParts = key.split(':');
@@ -488,5 +502,30 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
     gmt7.setHours(24, 0, 0, 0);
 
     return gmt7.toISOString();
+  }
+
+  // Optimized key scanning method to replace redis.keys()
+  private async scanKeys(pattern: string): Promise<string[]> {
+    const keys: string[] = [];
+    let cursor = '0';
+
+    do {
+      try {
+        const result = await this.redis.scan(
+          cursor,
+          'MATCH',
+          pattern,
+          'COUNT',
+          100,
+        );
+        cursor = result[0];
+        keys.push(...result[1]);
+      } catch (error) {
+        console.error('Error scanning Redis keys:', error);
+        break;
+      }
+    } while (cursor !== '0');
+
+    return keys;
   }
 }

@@ -19,6 +19,7 @@ export class InverterDataService {
     string,
     { timestamp: number; data: string }
   >();
+  private readonly DEDUPLICATION_WINDOW = 10000; // 10 seconds (increased from 5)
   constructor(
     @InjectModel(InverterData.name)
     private inverterDataModel: Model<InverterDataDocument>,
@@ -249,14 +250,24 @@ export class InverterDataService {
     //   console.log('Raw Data:', JSON.stringify(payload.data?.value, null, 2));
     // }
 
-    // Check if same data was processed recently (within 5 seconds)
+    // Check if same data was processed recently
     const lastProcess = this.lastProcessed.get(key);
     if (
       lastProcess &&
-      now - lastProcess.timestamp < 5000 &&
+      now - lastProcess.timestamp < this.DEDUPLICATION_WINDOW &&
       lastProcess.data === dataString
     ) {
       return;
+    }
+
+    // Clean up old entries to prevent memory leaks
+    if (this.lastProcessed.size > 1000) {
+      const cutoff = now - this.DEDUPLICATION_WINDOW * 2;
+      for (const [k, v] of this.lastProcessed.entries()) {
+        if (v.timestamp < cutoff) {
+          this.lastProcessed.delete(k);
+        }
+      }
     }
 
     this.lastProcessed.set(key, { timestamp: now, data: dataString });
