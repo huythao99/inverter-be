@@ -14,19 +14,50 @@ import { DailyTotalsService } from './daily-totals.service';
 import { RedisDailyTotalsService } from './redis-daily-totals.service';
 
 @Injectable()
-export class InverterDataService {
+export class InverterDataService implements OnModuleDestroy {
   private lastProcessed = new Map<
     string,
     { timestamp: number; data: string }
   >();
+  private cleanupTimer: NodeJS.Timeout;
   private readonly DEDUPLICATION_WINDOW = 10000; // 10 seconds (increased from 5)
+  private readonly MAX_MEMORY_ENTRIES = 50; // Aggressive limit for VPS
   constructor(
     @InjectModel(InverterData.name)
     private inverterDataModel: Model<InverterDataDocument>,
     private mqttService: MqttService,
     private dailyTotalsService: DailyTotalsService,
     private redisDailyTotalsService: RedisDailyTotalsService,
-  ) {}
+  ) {
+    // Start aggressive memory cleanup every 30 seconds
+    this.cleanupTimer = setInterval(() => {
+      this.cleanupMemory();
+    }, 30000);
+  }
+
+  // Aggressive cleanup for VPS environment
+  onModuleDestroy() {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+    }
+    this.lastProcessed.clear();
+  }
+
+  private cleanupMemory() {
+    // Very aggressive cleanup for VPS
+    if (this.lastProcessed.size > this.MAX_MEMORY_ENTRIES) {
+      this.lastProcessed.clear();
+    } else {
+      // Remove old entries
+      const now = Date.now();
+      const cutoff = now - this.DEDUPLICATION_WINDOW;
+      for (const [key, value] of this.lastProcessed.entries()) {
+        if (value.timestamp < cutoff) {
+          this.lastProcessed.delete(key);
+        }
+      }
+    }
+  }
 
   async create(
     createInverterDataDto: Partial<InverterData>,
@@ -173,28 +204,49 @@ export class InverterDataService {
     deviceId: string,
     updateInverterDataDto: Partial<InverterData>,
   ): Promise<InverterData> {
-    const updatedData = await this.inverterDataModel
-      .findOneAndUpdate(
-        { userId, deviceId },
-        {
-          $set: {
-            ...updateInverterDataDto,
-            userId,
-            deviceId,
-            updatedAt: new Date(),
+    try {
+      // Add timeout to prevent blocking on VPS
+      const operation = this.inverterDataModel
+        .findOneAndUpdate(
+          { userId, deviceId },
+          {
+            $set: {
+              ...updateInverterDataDto,
+              userId,
+              deviceId,
+              updatedAt: new Date(),
+            },
           },
-        },
-        {
-          new: true,
-          upsert: true,
-          lean: false,
-          runValidators: false,
-        },
-      )
-      .select('-__v')
-      .exec();
+          {
+            new: true,
+            upsert: true,
+            lean: true, // Use lean for better performance
+            runValidators: false,
+            maxTimeMS: 2000, // 2 second timeout
+          },
+        )
+        .select('-__v')
+        .exec();
 
-    return updatedData;
+      // Race with timeout to prevent hanging
+      const updatedData = await Promise.race([
+        operation,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Database upsert timeout')), 3000)
+        )
+      ]);
+
+      return updatedData as InverterData;
+    } catch (error) {
+      console.error(`Database upsert failed for ${userId}/${deviceId}:`, error);
+      // Return empty object to prevent app crash
+      return {
+        userId,
+        deviceId,
+        updatedAt: new Date(),
+        createdAt: new Date(),
+      } as InverterData;
+    }
   }
 
   async remove(_id: string): Promise<InverterData | null> {
@@ -260,14 +312,9 @@ export class InverterDataService {
       return;
     }
 
-    // Clean up old entries to prevent memory leaks
-    if (this.lastProcessed.size > 1000) {
-      const cutoff = now - this.DEDUPLICATION_WINDOW * 2;
-      for (const [k, v] of this.lastProcessed.entries()) {
-        if (v.timestamp < cutoff) {
-          this.lastProcessed.delete(k);
-        }
-      }
+    // Simple size-based cleanup - no expensive loops
+    if (this.lastProcessed.size > this.MAX_MEMORY_ENTRIES) {
+      this.lastProcessed.clear();
     }
 
     this.lastProcessed.set(key, { timestamp: now, data: dataString });

@@ -11,6 +11,7 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
   private batchFlushTimer: NodeJS.Timeout;
   private dailyResetTimer: NodeJS.Timeout;
   private readonly BATCH_FLUSH_INTERVAL = 300000; // 5 minutes (reduced CPU load)
+  private isShuttingDown = false;
   private readonly KEY_PREFIX = 'daily_totals';
   private readonly DIRTY_SET_KEY = 'daily_totals:dirty';
   private readonly PREVIOUS_DAY_KEY = 'daily_totals:previous_day';
@@ -77,19 +78,36 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy() {
+    this.isShuttingDown = true;
+
+    // Clear timers first to prevent new operations
     if (this.batchFlushTimer) {
       clearInterval(this.batchFlushTimer);
+      this.batchFlushTimer = null;
     }
 
     if (this.dailyResetTimer) {
       clearInterval(this.dailyResetTimer);
+      this.dailyResetTimer = null;
     }
 
-    // Flush any remaining dirty records before shutdown
-    await this.flushDirtyRecordsToDatabase();
+    try {
+      // Flush any remaining dirty records before shutdown with timeout
+      await Promise.race([
+        this.flushDirtyRecordsToDatabase(),
+        new Promise(resolve => setTimeout(resolve, 5000)) // 5 second timeout
+      ]);
+    } catch (error) {
+      console.warn('Error during final flush:', error);
+    }
 
+    // Gracefully close Redis connection
     if (this.redis) {
-      await this.redis.quit();
+      try {
+        await this.redis.quit();
+      } catch (error) {
+        console.warn('Error closing Redis connection:', error);
+      }
     }
   }
 
@@ -114,19 +132,41 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
     totalAIncrement: number,
     totalA2Increment: number,
   ): Promise<{ totalA: number; totalA2: number }> {
+    // Skip if shutting down to prevent blocking
+    if (this.isShuttingDown) {
+      return { totalA: 0, totalA2: 0 };
+    }
+
     try {
       if (!this.redis || this.redis.status !== 'ready') {
         console.warn('Redis not available, falling back to database increment');
         const date = this.getGMT7Date();
-        await this.dailyTotalsService.incrementTotals(
-          userId,
-          deviceId,
-          date,
-          totalAIncrement,
-          totalA2Increment,
-        );
-        // Return current totals from database
-        const record = await this.dailyTotalsService.findByUserAndDevice(userId, deviceId, date);
+
+        // Add timeout to prevent blocking
+        const dbOperation = Promise.race([
+          this.dailyTotalsService.incrementTotals(
+            userId,
+            deviceId,
+            date,
+            totalAIncrement,
+            totalA2Increment,
+          ),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Database timeout')), 3000)
+          )
+        ]);
+
+        await dbOperation;
+
+        // Return current totals from database with timeout
+        const recordPromise = Promise.race([
+          this.dailyTotalsService.findByUserAndDevice(userId, deviceId, date),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Database timeout')), 2000)
+          )
+        ]);
+
+        const record = await recordPromise as any;
         return { totalA: record?.totalA || 0, totalA2: record?.totalA2 || 0 };
       }
 
