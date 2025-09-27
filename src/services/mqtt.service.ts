@@ -67,7 +67,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     }
 
     this.client = mqtt.connect(mqttUrl, options);
-    this.client.setMaxListeners(20); // Reduced to prevent memory leaks
+    this.client.setMaxListeners(0); // Reduced to prevent memory leaks
 
     // Remove existing listeners to prevent accumulation
     this.client.removeAllListeners();

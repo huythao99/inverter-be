@@ -13,7 +13,7 @@ export class AppController {
 
   @Get('version')
   getVersion(): { version: string } {
-    return { version: '0.2.14' };
+    return { version: '0.2.15' };
   }
 
   @Get('app-ads.txt')
