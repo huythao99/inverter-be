@@ -21,7 +21,7 @@ export class FirmwareService {
     const device = await this.inverterDeviceService.findByUserIdAndDeviceId(userId, deviceId);
     
     return {
-      firmwareVersion: device?.firmwareVersion || null,
+      firmwareVersion: device?.firmwareVersion || "1.0.0",
     };
   }
 

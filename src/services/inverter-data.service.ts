@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { OnEvent } from '@nestjs/event-emitter';
 import { Model } from 'mongoose';
@@ -19,7 +19,7 @@ export class InverterDataService implements OnModuleDestroy {
     string,
     { timestamp: number; data: string }
   >();
-  private cleanupTimer: NodeJS.Timeout;
+  private cleanupTimer: NodeJS.Timeout | null;
   private readonly DEDUPLICATION_WINDOW = 10000; // 10 seconds (increased from 5)
   private readonly MAX_MEMORY_ENTRIES = 50; // Aggressive limit for VPS
   constructor(
@@ -39,6 +39,7 @@ export class InverterDataService implements OnModuleDestroy {
   onModuleDestroy() {
     if (this.cleanupTimer) {
       clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
     }
     this.lastProcessed.clear();
   }
@@ -239,13 +240,17 @@ export class InverterDataService implements OnModuleDestroy {
       return updatedData as InverterData;
     } catch (error) {
       console.error(`Database upsert failed for ${userId}/${deviceId}:`, error);
-      // Return empty object to prevent app crash
+      // Return minimal object to prevent app crash
       return {
+        _id: undefined,
         userId,
         deviceId,
+        value: '',
+        totalACapacity: 0,
+        totalA2Capacity: 0,
         updatedAt: new Date(),
         createdAt: new Date(),
-      } as InverterData;
+      } as unknown as InverterData;
     }
   }
 
@@ -351,7 +356,7 @@ export class InverterDataService implements OnModuleDestroy {
       );
 
       // Update daily totals using Redis cache (high performance)
-      const dailyTotalsResult = await this.redisDailyTotalsService.incrementDailyTotals(
+      await this.redisDailyTotalsService.incrementDailyTotals(
         payload.currentUid,
         payload.wifiSsid,
         currentTotalA,

@@ -8,8 +8,8 @@ import { DailyTotalsService } from './daily-totals.service';
 @Injectable()
 export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
   private redis: Redis;
-  private batchFlushTimer: NodeJS.Timeout;
-  private dailyResetTimer: NodeJS.Timeout;
+  private batchFlushTimer: NodeJS.Timeout | null;
+  private dailyResetTimer: NodeJS.Timeout | null;
   private readonly BATCH_FLUSH_INTERVAL = 300000; // 5 minutes (reduced CPU load)
   private isShuttingDown = false;
   private readonly KEY_PREFIX = 'daily_totals';
