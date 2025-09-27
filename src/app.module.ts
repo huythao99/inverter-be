@@ -38,7 +38,6 @@ import { FirmwareService } from './services/firmware.service';
         serverSelectionTimeoutMS: 5000,
         socketTimeoutMS: 30000,
         connectTimeoutMS: 10000,
-        bufferMaxEntries: 0,
         retryWrites: false,
         maxConnecting: 5,
       }),
