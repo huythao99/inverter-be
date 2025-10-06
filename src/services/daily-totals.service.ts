@@ -203,6 +203,18 @@ export class DailyTotalsService {
     const newTotalA = currentTotalA.plus(totalAIncrement);
     const newTotalA2 = currentTotalA2.plus(totalA2Increment);
 
+    // Log for GTIControl456
+    if (deviceId === 'GTIControl456') {
+      console.log('=== GTIControl456 DB incrementTotals ===');
+      console.log('Current DB totalA:', currentTotalA.toString());
+      console.log('Current DB totalA2:', currentTotalA2.toString());
+      console.log('Increment totalA:', totalAIncrement);
+      console.log('Increment totalA2:', totalA2Increment);
+      console.log('New DB totalA:', newTotalA.toString());
+      console.log('New DB totalA2:', newTotalA2.toString());
+      console.log('========================================');
+    }
+
     return this.dailyTotalsModel
       .findOneAndUpdate(
         {

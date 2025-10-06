@@ -28,16 +28,24 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
 
       // Add error handling for Redis connection
       this.redis.on('error', (error) => {
+        console.error('Redis connection error:', error.message);
       });
 
       this.redis.on('connect', () => {
+        console.log('Redis connecting...');
       });
 
       this.redis.on('ready', () => {
+        console.log('Redis connected and ready!');
       });
 
       // Initialize current day
       this.currentDay = this.getGMT7Date();
+
+      // Explicitly connect since lazyConnect is true
+      await this.redis.connect().catch((err) => {
+        console.error('Failed to connect to Redis:', err.message);
+      });
 
       // Wait for Redis to be ready with timeout
       await new Promise<void>((resolve, reject) => {
