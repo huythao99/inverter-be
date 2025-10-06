@@ -139,7 +139,7 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
 
     try {
       if (!this.redis || this.redis.status !== 'ready') {
-        console.warn('Redis not available, falling back to database increment');
+        // console.warn('Redis not available, falling back to database increment');
         const date = this.getGMT7Date();
 
         // Add timeout to prevent blocking
@@ -234,7 +234,7 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
 
     try {
       if (!this.redis || this.redis.status !== 'ready') {
-        console.warn('Redis not available, falling back to database query');
+        // console.warn('Redis not available, falling back to database query');
         const dbRecord = await this.dailyTotalsService.findByUserAndDevice(
           userId,
           deviceId,
