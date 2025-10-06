@@ -283,4 +283,18 @@ export class DailyTotalsController {
   ) {
     return this.dailyTotalsService.calculateTotalsByUserAndDevice(userId, deviceId);
   }
+
+  @Delete('clear-current-month')
+  async clearCurrentMonthTotals(
+    @Query('userId') userId: string,
+    @Query('deviceId') deviceId?: string,
+  ) {
+    if (!userId) {
+      throw new HttpException('userId is required', HttpStatus.BAD_REQUEST);
+    }
+
+    await this.dailyTotalsService.clearCurrentMonthTotals(userId, deviceId);
+
+    return { message: 'Current month totals cleared successfully' };
+  }
 }

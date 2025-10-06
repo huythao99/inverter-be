@@ -302,11 +302,6 @@ export class InverterDataService implements OnModuleDestroy {
     const dataString = JSON.stringify(payload.data);
     const now = Date.now();
 
-    // // Log data received from GTIControl409
-    // if (payload.wifiSsid === 'GTIControl409') {
-    //   console.log('Raw Data:', JSON.stringify(payload.data?.value, null, 2));
-    // }
-
     // Check if same data was processed recently
     const lastProcess = this.lastProcessed.get(key);
     if (
@@ -331,6 +326,17 @@ export class InverterDataService implements OnModuleDestroy {
       // Convert to proper units (divide by 1,000,000) using decimal.js for precision
       const currentTotalA = new Decimal(totalA).div(1000000).toNumber();
       const currentTotalA2 = new Decimal(totalA2).div(1000000).toNumber();
+
+      // Log data for GTIControl456
+      if (payload.wifiSsid === 'GTIControl456') {
+        console.log('=== GTIControl456 Data Received ===');
+        console.log('Raw totalA:', totalA);
+        console.log('Raw totalA2:', totalA2);
+        console.log('Converted totalA:', currentTotalA);
+        console.log('Converted totalA2:', currentTotalA2);
+        console.log('Full data:', JSON.stringify(payload.data, null, 2));
+        console.log('===================================');
+      }
 
       // Map MQTT data to InverterData schema
       const inverterDataUpdate = {
@@ -362,16 +368,6 @@ export class InverterDataService implements OnModuleDestroy {
         currentTotalA,
         currentTotalA2,
       );
-
-      // Log daily totals update for GTIControl409
-      // if (payload.wifiSsid === 'GTIControl409') {
-      //   console.log('=== GTIControl409 Daily Totals Update ===');
-      //   console.log('Increment totalA:', currentTotalA);
-      //   console.log('Increment totalA2:', currentTotalA2);
-      //   console.log('New daily totalA:', dailyTotalsResult.totalA);
-      //   console.log('New daily totalA2:', dailyTotalsResult.totalA2);
-      //   console.log('==========================================');
-      // }
     } catch (error) {
       console.error(
         `Error updating inverter data for ${payload.currentUid}/${payload.wifiSsid}:`,

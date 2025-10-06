@@ -447,4 +447,32 @@ export class DailyTotalsService {
       totalA2,
     };
   }
+
+  async clearCurrentMonthTotals(userId: string, deviceId?: string): Promise<void> {
+    const currentDate = new Date();
+    const targetYear = currentDate.getFullYear();
+    const targetMonth = currentDate.getMonth() + 1;
+
+    const startOfMonth = new Date(targetYear, targetMonth - 1, 1);
+    const endOfMonth = new Date(targetYear, targetMonth, 0, 23, 59, 59, 999);
+
+    const utcStart = startOfMonth.getTime() + startOfMonth.getTimezoneOffset() * 60000;
+    const gmt7Start = new Date(utcStart + 7 * 3600000);
+    gmt7Start.setHours(0, 0, 0, 0);
+
+    const utcEnd = endOfMonth.getTime() + endOfMonth.getTimezoneOffset() * 60000;
+    const gmt7End = new Date(utcEnd + 7 * 3600000);
+    gmt7End.setHours(23, 59, 59, 999);
+
+    const filter: any = {
+      userId,
+      date: { $gte: gmt7Start, $lte: gmt7End },
+    };
+
+    if (deviceId) {
+      filter.deviceId = deviceId;
+    }
+
+    await this.dailyTotalsModel.deleteMany(filter).exec();
+  }
 }

@@ -88,15 +88,15 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     this.client.on('reconnect', () => {
       this.reconnectAttempts++;
       if (this.reconnectAttempts > this.maxReconnectAttempts) {
-        console.error('Max MQTT reconnect attempts reached');
+        // console.error('Max MQTT reconnect attempts reached');
         this.client.end();
         return;
       }
-      console.log(`MQTT reconnecting attempt ${this.reconnectAttempts}`);
+      // console.log(`MQTT reconnecting attempt ${this.reconnectAttempts}`);
     });
 
     this.client.on('close', () => {
-      console.log('MQTT connection closed');
+      // console.log('MQTT connection closed');
     });
   }
 
