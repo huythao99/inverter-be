@@ -323,6 +323,12 @@ export class InverterDataService implements OnModuleDestroy {
       const valueString =
         (payload.data?.value as string) || JSON.stringify(payload.data);
       const { totalA, totalA2 } = this.parseTotalsFromValue(valueString);
+
+      // Skip processing if totalA >= 15000 or totalA2 >= 8000
+      if (totalA >= 15000 || totalA2 >= 8000) {
+        return;
+      }
+
       // Convert to proper units (divide by 1,000,000) using decimal.js for precision
       const currentTotalA = new Decimal(totalA).div(1000000).toNumber();
       const currentTotalA2 = new Decimal(totalA2).div(1000000).toNumber();
