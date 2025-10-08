@@ -13,12 +13,12 @@ export class AppController {
 
   @Get('version')
   getVersion(): { version: string } {
-    return { version: '0.2.17' };
+    return { version: '0.2.18' };
   }
 
   @Get('app-ads.txt')
   @Header('Content-Type', 'text/plain')
   getAppAdsTxt(): string {
-    return 'google.com, pub-8920491541727111, DIRECT, f08c47fec0942fa0';
+    return 'google.com, pub-3726952827286259, DIRECT, f08c47fec0942fa0';
   }
 }
