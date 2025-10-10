@@ -69,7 +69,7 @@ export class DailyTotalsService {
       sortOrder = 'desc',
     } = queryDto;
 
-    const filter: any = {};
+    const filter: any = { deletedAt: null };
 
     if (userId) filter.userId = userId;
     if (deviceId) filter.deviceId = deviceId;
@@ -106,7 +106,7 @@ export class DailyTotalsService {
   }
 
   async findOne(id: string): Promise<DailyTotals | null> {
-    return this.dailyTotalsModel.findById(id).exec() as Promise<DailyTotals | null>;
+    return this.dailyTotalsModel.findOne({ _id: id, deletedAt: null }).exec() as Promise<DailyTotals | null>;
   }
 
   async findByUserAndDevice(
@@ -121,6 +121,7 @@ export class DailyTotalsService {
         userId,
         deviceId,
         date: { $gte: start, $lte: end },
+        deletedAt: null,
       })
       .exec() as Promise<DailyTotals | null>;
   }
@@ -195,6 +196,7 @@ export class DailyTotalsService {
       userId,
       deviceId,
       date: start,
+      deletedAt: null,
     }).exec();
 
     // Calculate new totals using decimal.js for precision
@@ -245,7 +247,13 @@ export class DailyTotalsService {
   }
 
   async remove(id: string): Promise<DailyTotals | null> {
-    return this.dailyTotalsModel.findByIdAndDelete(id).exec() as Promise<DailyTotals | null>;
+    return this.dailyTotalsModel
+      .findOneAndUpdate(
+        { _id: id, deletedAt: null },
+        { deletedAt: new Date() },
+        { new: true }
+      )
+      .exec() as Promise<DailyTotals | null>;
   }
 
   async removeByUserAndDevice(
@@ -256,11 +264,16 @@ export class DailyTotalsService {
     const { start, end } = this.getGMT7DateRange(date);
 
     return this.dailyTotalsModel
-      .findOneAndDelete({
-        userId,
-        deviceId,
-        date: { $gte: start, $lte: end },
-      })
+      .findOneAndUpdate(
+        {
+          userId,
+          deviceId,
+          date: { $gte: start, $lte: end },
+          deletedAt: null,
+        },
+        { deletedAt: new Date() },
+        { new: true }
+      )
       .exec() as Promise<DailyTotals | null>;
   }
 
@@ -275,7 +288,7 @@ export class DailyTotalsService {
     count: number;
     records: DailyTotals[];
   }> {
-    const filter: any = { userId };
+    const filter: any = { userId, deletedAt: null };
 
     if (deviceId) filter.deviceId = deviceId;
 
@@ -313,7 +326,7 @@ export class DailyTotalsService {
     deviceId?: string,
     date?: string,
   ): Promise<DailyTotals[]> {
-    const filter: any = { userId };
+    const filter: any = { userId, deletedAt: null };
 
     if (deviceId) filter.deviceId = deviceId;
 
@@ -372,6 +385,7 @@ export class DailyTotalsService {
     const filter: any = {
       userId,
       date: { $gte: gmt7Start, $lte: gmt7End },
+      deletedAt: null,
     };
 
     if (deviceId) filter.deviceId = deviceId;
@@ -447,7 +461,7 @@ export class DailyTotalsService {
     totalA2: number;
   }> {
     const records = await this.dailyTotalsModel
-      .find({ userId, deviceId })
+      .find({ userId, deviceId, deletedAt: null })
       .exec();
 
     // Use decimal.js for precise aggregation to avoid floating point errors
@@ -479,12 +493,13 @@ export class DailyTotalsService {
     const filter: any = {
       userId,
       date: { $gte: gmt7Start, $lte: gmt7End },
+      deletedAt: null,
     };
 
     if (deviceId) {
       filter.deviceId = deviceId;
     }
 
-    await this.dailyTotalsModel.deleteMany(filter).exec();
+    await this.dailyTotalsModel.updateMany(filter, { deletedAt: new Date() }).exec();
   }
 }

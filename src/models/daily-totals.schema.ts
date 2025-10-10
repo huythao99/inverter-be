@@ -30,6 +30,9 @@ export class DailyTotals {
 
   @Prop({ default: Date.now })
   updatedAt: Date;
+
+  @Prop({ type: Date, default: null })
+  deletedAt: Date | null;
 }
 
 export const DailyTotalsSchema = SchemaFactory.createForClass(DailyTotals);
@@ -42,3 +45,4 @@ DailyTotalsSchema.index({ userId: 1, date: -1 });
 DailyTotalsSchema.index({ deviceId: 1, date: -1 });
 DailyTotalsSchema.index({ date: -1 });
 DailyTotalsSchema.index({ createdAt: -1 });
+DailyTotalsSchema.index({ deletedAt: 1 });
