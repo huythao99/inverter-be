@@ -145,13 +145,7 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
       return { totalA: 0, totalA2: 0 };
     }
 
-    // Log for GTIControl456
-    if (deviceId === 'GTIControl456') {
-      console.log('=== GTIControl456 incrementDailyTotals ===');
-      console.log('Increment totalA:', totalAIncrement);
-      console.log('Increment totalA2:', totalA2Increment);
-    }
-
+    
     try {
       if (!this.redis || this.redis.status !== 'ready') {
         // console.warn('Redis not available, falling back to database increment');
@@ -201,15 +195,6 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
       // Calculate new totals using decimal.js for precision
       const newTotalA = currentTotalA.plus(totalAIncrement);
       const newTotalA2 = currentTotalA2.plus(totalA2Increment);
-
-      // Log Redis calculation for GTIControl456
-      if (deviceId === 'GTIControl456') {
-        console.log('Current Redis totalA:', currentTotalA.toString());
-        console.log('Current Redis totalA2:', currentTotalA2.toString());
-        console.log('New Redis totalA:', newTotalA.toString());
-        console.log('New Redis totalA2:', newTotalA2.toString());
-        console.log('==========================================');
-      }
 
       // Use Redis pipeline for atomic operations
       const pipeline = this.redis.pipeline();

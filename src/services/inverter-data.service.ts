@@ -333,17 +333,7 @@ export class InverterDataService implements OnModuleDestroy {
       const currentTotalA = new Decimal(totalA).div(1000000).toNumber();
       const currentTotalA2 = new Decimal(totalA2).div(1000000).toNumber();
 
-      // Log data for GTIControl456
-      if (payload.wifiSsid === 'GTIControl456') {
-        console.log('=== GTIControl456 Data Received ===');
-        console.log('Raw totalA:', totalA);
-        console.log('Raw totalA2:', totalA2);
-        console.log('Converted totalA:', currentTotalA);
-        console.log('Converted totalA2:', currentTotalA2);
-        console.log('Full data:', JSON.stringify(payload.data, null, 2));
-        console.log('===================================');
-      }
-
+      
       // Map MQTT data to InverterData schema
       const inverterDataUpdate = {
         userId: payload.currentUid,
