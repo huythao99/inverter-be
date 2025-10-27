@@ -20,6 +20,13 @@ export class FirmwareService {
   async getDeviceFirmwareVersion(userId: string, deviceId: string): Promise<{ firmwareVersion: string | null }> {
     const device = await this.inverterDeviceService.findByUserIdAndDeviceId(userId, deviceId);
     
+    // Extract numeric part from deviceId (e.g., "GTIControl450" -> 450)
+    const numericMatch = deviceId.match(/\d+/);
+    if (numericMatch && parseInt(numericMatch[0], 10) < 436) {
+      return {
+        firmwareVersion: '1.0.1',
+      };
+    }
     return {
       firmwareVersion: device?.firmwareVersion || "1.0.0",
     };
@@ -28,7 +35,7 @@ export class FirmwareService {
   async getNewestFirmwareVersion(): Promise<{ version: string }> {
     // Return the current newest firmware version
     // You can update this version number when new firmware is available
-    const newestVersion = '1.0.0';
+    const newestVersion = '1.0.1';
     
     return {
       version: newestVersion,
