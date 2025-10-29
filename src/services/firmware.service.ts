@@ -24,29 +24,24 @@ export class FirmwareService {
     const numericPart = parseInt(deviceId.replace(/\D/g, ''), 10);
 
     // If device number < 436, return 1.0.1, otherwise return 1.0.0
-    // if (!isNaN(numericPart) && numericPart < 436) {
-    //   return {
-    //     firmwareVersion: '1.0.1',
-    //   };
-    // }
-    // return {
-    //   firmwareVersion: '1.0.0',
-    // };
-    if (deviceId == "GTIControl495") {
+    if (!isNaN(numericPart) && numericPart < 436) {
       return {
-        firmwareVersion: '1.0.0',
+        firmwareVersion: '1.0.1',
       };
-    } else {
+    } else if (deviceId == 'GTIControl495') {
       return {
-        firmwareVersion: '1.0.2',
+        firmwareVersion: device?.firmwareVersion ?? '1.0.0',
       };
     }
+    return {
+      firmwareVersion: '1.0.1',
+    };
   }
 
   async getNewestFirmwareVersion(): Promise<{ version: string }> {
     // Return the current newest firmware version
     // You can update this version number when new firmware is available
-    const newestVersion = '1.0.2';
+    const newestVersion = '1.0.1';
     
     return {
       version: newestVersion,
