@@ -32,11 +32,11 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
       });
 
       this.redis.on('connect', () => {
-        console.log('Redis connecting...');
+        // Redis connecting
       });
 
       this.redis.on('ready', () => {
-        console.log('Redis connected and ready!');
+        // Redis connected and ready
       });
 
       // Initialize current day

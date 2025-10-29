@@ -19,16 +19,15 @@ export class FirmwareService {
 
   async getDeviceFirmwareVersion(userId: string, deviceId: string): Promise<{ firmwareVersion: string | null }> {
     const device = await this.inverterDeviceService.findByUserIdAndDeviceId(userId, deviceId);
-    
-    // Extract numeric part from deviceId (e.g., "GTIControl450" -> 450)
-    const numericMatch = deviceId.match(/\d+/);
-    if (numericMatch && parseInt(numericMatch[0], 10) < 436) {
+
+    // Return 1.0.0 for GTIControl589, else return 1.0.1
+    if (deviceId === 'GTIControl459') {
       return {
-        firmwareVersion: '1.0.1',
+        firmwareVersion: '1.0.0',
       };
     }
     return {
-      firmwareVersion: device?.firmwareVersion || "1.0.0",
+      firmwareVersion: '1.0.1',
     };
   }
 
