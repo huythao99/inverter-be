@@ -28,13 +28,9 @@ export class FirmwareService {
       return {
         firmwareVersion: '1.0.1',
       };
-    } else if (deviceId == 'GTIControl495') {
-      return {
-        firmwareVersion: device?.firmwareVersion ?? '1.0.0',
-      };
     }
     return {
-      firmwareVersion: '1.0.1',
+      firmwareVersion: device?.firmwareVersion ?? '1.0.0',
     };
   }
 
