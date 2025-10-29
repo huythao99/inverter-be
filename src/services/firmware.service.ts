@@ -21,7 +21,7 @@ export class FirmwareService {
     const device = await this.inverterDeviceService.findByUserIdAndDeviceId(userId, deviceId);
 
     // Return 1.0.0 for GTIControl589, else return 1.0.1
-    if (deviceId === 'GTIControl459') {
+    if (deviceId === 'GTIControl495') {
       return {
         firmwareVersion: '1.0.0',
       };
