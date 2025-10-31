@@ -133,6 +133,42 @@ export class DailyTotalsController {
     };
   }
 
+  @Get('monthly/chart')
+  async getMonthlyChartData(
+    @Query('userId') userId: string,
+    @Query('deviceId') deviceId?: string,
+    @Query('year') year?: string,
+    @Query('month') month?: string,
+  ) {
+    if (!userId) {
+      throw new HttpException('userId is required', HttpStatus.BAD_REQUEST);
+    }
+
+    let yearNum: number | undefined;
+    let monthNum: number | undefined;
+
+    if (year) {
+      yearNum = parseInt(year, 10);
+      if (isNaN(yearNum) || yearNum < 2000 || yearNum > 3000) {
+        throw new HttpException('Invalid year format', HttpStatus.BAD_REQUEST);
+      }
+    }
+
+    if (month) {
+      monthNum = parseInt(month, 10);
+      if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
+        throw new HttpException('Invalid month format (1-12)', HttpStatus.BAD_REQUEST);
+      }
+    }
+
+    return this.dailyTotalsService.getMonthlyChartData(
+      userId,
+      deviceId,
+      yearNum,
+      monthNum,
+    );
+  }
+
   @Delete('clear-current-month')
   async clearCurrentMonthTotals(
     @Query('userId') userId: string,

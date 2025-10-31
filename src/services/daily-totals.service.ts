@@ -491,4 +491,65 @@ export class DailyTotalsService {
 
     await this.dailyTotalsModel.updateMany(filter, { deletedAt: new Date() }).exec();
   }
+
+  async getMonthlyChartData(
+    userId: string,
+    deviceId?: string,
+    year?: number,
+    month?: number,
+  ): Promise<Array<{ date: string; totalA: number; totalA2: number }>> {
+    const currentDate = new Date();
+    const targetYear = year || currentDate.getFullYear();
+    const targetMonth = month || currentDate.getMonth() + 1;
+
+    // Create date range for the month in GMT+7
+    const startOfMonth = new Date(targetYear, targetMonth - 1, 1);
+    const endOfMonth = new Date(targetYear, targetMonth, 0, 23, 59, 59, 999);
+
+    // Convert to GMT+7
+    const utcStart = startOfMonth.getTime() + startOfMonth.getTimezoneOffset() * 60000;
+    const gmt7Start = new Date(utcStart + 7 * 3600000);
+    gmt7Start.setHours(0, 0, 0, 0);
+
+    const utcEnd = endOfMonth.getTime() + endOfMonth.getTimezoneOffset() * 60000;
+    const gmt7End = new Date(utcEnd + 7 * 3600000);
+    gmt7End.setHours(23, 59, 59, 999);
+
+    const filter: any = {
+      userId,
+      date: { $gte: gmt7Start, $lte: gmt7End },
+      deletedAt: null,
+    };
+
+    if (deviceId) filter.deviceId = deviceId;
+
+    const records = await this.dailyTotalsModel
+      .find(filter)
+      .sort({ date: 1 })
+      .exec();
+
+    // Group by date and sum totals
+    const dailyMap = new Map<string, { totalA: Decimal; totalA2: Decimal }>();
+
+    records.forEach((record) => {
+      const dateKey = record.date.toISOString().split('T')[0];
+
+      if (!dailyMap.has(dateKey)) {
+        dailyMap.set(dateKey, { totalA: new Decimal(0), totalA2: new Decimal(0) });
+      }
+
+      const daily = dailyMap.get(dateKey)!;
+      daily.totalA = daily.totalA.plus(record.totalA);
+      daily.totalA2 = daily.totalA2.plus(record.totalA2);
+    });
+
+    // Convert to array format for charting
+    return Array.from(dailyMap.entries())
+      .map(([date, data]) => ({
+        date,
+        totalA: data.totalA.toNumber(),
+        totalA2: data.totalA2.toNumber(),
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }
 }
