@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -282,8 +281,11 @@ export class InverterDataService implements OnModuleDestroy {
     try {
       const parts = value.split('#');
       if (parts.length >= 10) {
-        const totalA = parseFloat(parts[parts.length - 2]) || 0; // Second to last value
-        const totalA2 = parseFloat(parts[parts.length - 1]) || 0; // Last value
+        const parsedTotalA = parseFloat(parts[parts.length - 2]);
+        const parsedTotalA2 = parseFloat(parts[parts.length - 1]);
+        // Explicitly check for NaN to avoid propagating invalid values
+        const totalA = Number.isNaN(parsedTotalA) ? 0 : parsedTotalA;
+        const totalA2 = Number.isNaN(parsedTotalA2) ? 0 : parsedTotalA2;
         return { totalA, totalA2 };
       }
     } catch (error) {
@@ -330,8 +332,11 @@ export class InverterDataService implements OnModuleDestroy {
       }
 
       // Convert to proper units (divide by 1,000,000) using decimal.js for precision
-      const currentTotalA = new Decimal(totalA).div(1000000).toNumber();
-      const currentTotalA2 = new Decimal(totalA2).div(1000000).toNumber();
+      // Ensure values are valid numbers before Decimal operations
+      const safeTotalA = Number.isNaN(totalA) ? 0 : totalA;
+      const safeTotalA2 = Number.isNaN(totalA2) ? 0 : totalA2;
+      const currentTotalA = new Decimal(safeTotalA).div(1000000).toNumber();
+      const currentTotalA2 = new Decimal(safeTotalA2).div(1000000).toNumber();
 
       
       // Map MQTT data to InverterData schema
