@@ -335,12 +335,14 @@ export class InverterDataService implements OnModuleDestroy {
 
       
       // Map MQTT data to InverterData schema
+      const totalACapacity = Number(payload.data?.totalACapacity);
+      const totalA2Capacity = Number(payload.data?.totalA2Capacity);
       const inverterDataUpdate = {
         userId: payload.currentUid,
         deviceId: payload.wifiSsid,
         value: valueString,
-        totalACapacity: payload.data?.totalACapacity || 0,
-        totalA2Capacity: payload.data?.totalA2Capacity || 0,
+        totalACapacity: Number.isNaN(totalACapacity) ? 0 : totalACapacity,
+        totalA2Capacity: Number.isNaN(totalA2Capacity) ? 0 : totalA2Capacity,
       };
 
       // Create new record for each data received
