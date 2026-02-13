@@ -232,8 +232,8 @@ export class InverterDataService implements OnModuleDestroy {
       const updatedData = await Promise.race([
         operation,
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Database upsert timeout')), 3000)
-        )
+          setTimeout(() => reject(new Error('Database upsert timeout')), 3000),
+        ),
       ]);
 
       return updatedData as InverterData;
@@ -278,19 +278,19 @@ export class InverterDataService implements OnModuleDestroy {
     totalA: number;
     totalA2: number;
   } {
+    if (!value || typeof value !== 'string') return { totalA: 0, totalA2: 0 };
     try {
       const parts = value.split('#');
       if (parts.length >= 10) {
-        const parsedTotalA = parseFloat(parts[parts.length - 2]);
-        const parsedTotalA2 = parseFloat(parts[parts.length - 1]);
-        // Explicitly check for NaN to avoid propagating invalid values
-        const totalA = Number.isNaN(parsedTotalA) ? 0 : parsedTotalA;
-        const totalA2 = Number.isNaN(parsedTotalA2) ? 0 : parsedTotalA2;
-        return { totalA, totalA2 };
+        // Lấy 2 phần tử cuối và ép kiểu số ngay
+        const totalA = parseFloat(parts[parts.length - 2]) || 0;
+        const totalA2 = parseFloat(parts[parts.length - 1]) || 0;
+        return {
+          totalA: isFinite(totalA) ? totalA : 0,
+          totalA2: isFinite(totalA2) ? totalA2 : 0,
+        };
       }
-    } catch (error) {
-      console.error('Error parsing totals from value:', error);
-    }
+    } catch (e) {}
     return { totalA: 0, totalA2: 0 };
   }
 
@@ -335,10 +335,9 @@ export class InverterDataService implements OnModuleDestroy {
       // Ensure values are valid numbers before Decimal operations
       const safeTotalA = Number.isNaN(totalA) ? 0 : totalA;
       const safeTotalA2 = Number.isNaN(totalA2) ? 0 : totalA2;
-      const currentTotalA = new Decimal(safeTotalA).div(1000000).toNumber();
-      const currentTotalA2 = new Decimal(safeTotalA2).div(1000000).toNumber();
+      const currentTotalA = safeTotalA / 1000000;
+      const currentTotalA2 = safeTotalA2 / 1000000;
 
-      
       // Map MQTT data to InverterData schema
       const totalACapacity = Number(payload.data?.totalACapacity);
       const totalA2Capacity = Number(payload.data?.totalA2Capacity);
