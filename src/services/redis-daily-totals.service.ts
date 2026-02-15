@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import Redis from 'ioredis';
-import { Decimal } from 'decimal.js';
 import { RedisConfig } from '../config/redis.config';
 import { DailyTotalsService } from './daily-totals.service';
 
@@ -181,46 +180,28 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
 
       const date = this.getGMT7Date();
 
-      // Check if it's a new day and reset if needed
-      await this.checkForNewDay();
+      // Note: checkForNewDay() is called by timer every 10 minutes (line 79-81)
+      // Removed from hot path to reduce CPU usage
 
       const redisKey = this.getRedisKey(userId, deviceId, date);
       const dirtyKey = this.getDirtyKey(userId, deviceId, date);
 
-      // Get current values first to avoid floating point errors in Redis
-      const currentValues = await this.redis.hmget(redisKey, 'totalA', 'totalA2');
-      const currentTotalA = new Decimal(currentValues[0] || '0');
-      const currentTotalA2 = new Decimal(currentValues[1] || '0');
-
-      // Calculate new totals using decimal.js for precision
-      const newTotalA = currentTotalA.plus(totalAIncrement);
-      const newTotalA2 = currentTotalA2.plus(totalA2Increment);
-
-      // Use Redis pipeline for atomic operations
+      // Use Redis pipeline with HINCRBYFLOAT for atomic increment (faster than get+set)
       const pipeline = this.redis.pipeline();
-
-      // Set new totals (not increment to avoid floating point errors)
-      pipeline.hset(redisKey, {
-        totalA: newTotalA.toString(),
-        totalA2: newTotalA2.toString(),
-      });
-
-      // Set expiration (keep data for 7 days)
+      pipeline.hincrbyfloat(redisKey, 'totalA', totalAIncrement);
+      pipeline.hincrbyfloat(redisKey, 'totalA2', totalA2Increment);
       pipeline.expire(redisKey, 7 * 24 * 3600);
-
-      // Mark as dirty for batch writing to database
       pipeline.sadd(this.DIRTY_SET_KEY, dirtyKey);
       pipeline.expire(this.DIRTY_SET_KEY, 7 * 24 * 3600);
 
-      // Execute all operations atomically
-      await pipeline.exec();
+      const results = await pipeline.exec();
 
-      // Return new totals as numbers
-      return {
-        totalA: newTotalA.toNumber(),
-        totalA2: newTotalA2.toNumber()
-      };
-    } catch (error) {
+      // Return new totals from HINCRBYFLOAT results
+      const newTotalA = (results?.[0]?.[1] as number) || 0;
+      const newTotalA2 = (results?.[1]?.[1] as number) || 0;
+
+      return { totalA: newTotalA, totalA2: newTotalA2 };
+    } catch {
       const date = this.getGMT7Date();
       await this.dailyTotalsService.incrementTotals(
         userId,

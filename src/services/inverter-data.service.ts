@@ -274,7 +274,10 @@ export class InverterDataService implements OnModuleDestroy {
     data: any;
   }) {
     const key = `${payload.currentUid}-${payload.wifiSsid}`;
-    const dataString = JSON.stringify(payload.data);
+    // Use value field for deduplication instead of full JSON.stringify
+    const valueString = payload.data?.value as string;
+    if (!valueString) return; // Skip if no value
+
     const now = Date.now();
 
     // Check if same data was processed recently
@@ -282,7 +285,7 @@ export class InverterDataService implements OnModuleDestroy {
     if (
       lastProcess &&
       now - lastProcess.timestamp < this.DEDUPLICATION_WINDOW &&
-      lastProcess.data === dataString
+      lastProcess.data === valueString
     ) {
       return;
     }
@@ -292,11 +295,9 @@ export class InverterDataService implements OnModuleDestroy {
       this.lastProcessed.clear();
     }
 
-    this.lastProcessed.set(key, { timestamp: now, data: dataString });
+    this.lastProcessed.set(key, { timestamp: now, data: valueString });
 
     try {
-      const valueString =
-        (payload.data?.value as string) || JSON.stringify(payload.data);
       const { totalA, totalA2 } = this.parseTotalsFromValue(valueString);
 
       // Skip processing if totalA >= 15000 or totalA2 >= 8000
