@@ -3,13 +3,11 @@ import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { OnEvent } from '@nestjs/event-emitter';
 import { Model } from 'mongoose';
-import { Decimal } from 'decimal.js';
 import {
   InverterData,
   InverterDataDocument,
 } from '../models/inverter-data.schema';
 import { MqttService } from './mqtt.service';
-import { DailyTotalsService } from './daily-totals.service';
 import { RedisDailyTotalsService } from './redis-daily-totals.service';
 
 @Injectable()
@@ -19,13 +17,12 @@ export class InverterDataService implements OnModuleDestroy {
     { timestamp: number; data: string }
   >();
   private cleanupTimer: NodeJS.Timeout | null;
-  private readonly DEDUPLICATION_WINDOW = 10000; // 10 seconds (increased from 5)
-  private readonly MAX_MEMORY_ENTRIES = 50; // Aggressive limit for VPS
+  private readonly DEDUPLICATION_WINDOW = 30000; // 10 seconds (increased from 5)
+  private readonly MAX_MEMORY_ENTRIES = 1000; // Aggressive limit for VPS
   constructor(
     @InjectModel(InverterData.name)
     private inverterDataModel: Model<InverterDataDocument>,
     private mqttService: MqttService,
-    private dailyTotalsService: DailyTotalsService,
     private redisDailyTotalsService: RedisDailyTotalsService,
   ) {
     // Start aggressive memory cleanup every 30 seconds
@@ -264,7 +261,9 @@ export class InverterDataService implements OnModuleDestroy {
           totalA2: isFinite(totalA2) ? totalA2 : 0,
         };
       }
-    } catch (e) {}
+    } catch {
+      // Parsing failed, return defaults
+    }
     return { totalA: 0, totalA2: 0 };
   }
 

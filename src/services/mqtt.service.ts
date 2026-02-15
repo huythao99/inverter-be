@@ -124,7 +124,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       // Add simple rate limiting to prevent CPU spikes
       if (this.messageHandlers.has(topic)) {
         const lastProcessed = this.messageHandlers.get(topic);
-        if (Date.now() - lastProcessed < 1000) { // 1 second minimum between same topic
+        if (Date.now() - lastProcessed < 5000) { // 5 seconds minimum between same topic
           return;
         }
       }
