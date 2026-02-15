@@ -274,82 +274,82 @@ export class InverterDataService implements OnModuleDestroy {
     data: any;
   }) {
     return;
-    const key = `${payload.currentUid}-${payload.wifiSsid}`;
-    // Use value field for deduplication instead of full JSON.stringify
-    const valueString = payload.data?.value as string;
-    if (!valueString) return; // Skip if no value
+    // const key = `${payload.currentUid}-${payload.wifiSsid}`;
+    // // Use value field for deduplication instead of full JSON.stringify
+    // const valueString = payload.data?.value as string;
+    // if (!valueString) return; // Skip if no value
 
-    const now = Date.now();
+    // const now = Date.now();
 
-    // Check if same data was processed recently
-    const lastProcess = this.lastProcessed.get(key);
-    if (
-      lastProcess &&
-      now - lastProcess.timestamp < this.DEDUPLICATION_WINDOW &&
-      lastProcess.data === valueString
-    ) {
-      return;
-    }
+    // // Check if same data was processed recently
+    // const lastProcess = this.lastProcessed.get(key);
+    // if (
+    //   lastProcess &&
+    //   now - lastProcess.timestamp < this.DEDUPLICATION_WINDOW &&
+    //   lastProcess.data === valueString
+    // ) {
+    //   return;
+    // }
 
-    // Simple size-based cleanup - no expensive loops
-    if (this.lastProcessed.size > this.MAX_MEMORY_ENTRIES) {
-      this.lastProcessed.clear();
-    }
+    // // Simple size-based cleanup - no expensive loops
+    // if (this.lastProcessed.size > this.MAX_MEMORY_ENTRIES) {
+    //   this.lastProcessed.clear();
+    // }
 
-    this.lastProcessed.set(key, { timestamp: now, data: valueString });
+    // this.lastProcessed.set(key, { timestamp: now, data: valueString });
 
-    try {
-      const { totalA, totalA2 } = this.parseTotalsFromValue(valueString);
+    // try {
+    //   const { totalA, totalA2 } = this.parseTotalsFromValue(valueString);
 
-      // Skip processing if totalA >= 15000 or totalA2 >= 8000
-      if (totalA >= 15000 || totalA2 >= 8000) {
-        return;
-      }
+    //   // Skip processing if totalA >= 15000 or totalA2 >= 8000
+    //   if (totalA >= 15000 || totalA2 >= 8000) {
+    //     return;
+    //   }
 
-      // Convert to proper units (divide by 1,000,000) using decimal.js for precision
-      // Ensure values are valid numbers before Decimal operations
-      const safeTotalA = Number.isNaN(totalA) ? 0 : totalA;
-      const safeTotalA2 = Number.isNaN(totalA2) ? 0 : totalA2;
-      const currentTotalA = safeTotalA / 1000000;
-      const currentTotalA2 = safeTotalA2 / 1000000;
+    //   // Convert to proper units (divide by 1,000,000) using decimal.js for precision
+    //   // Ensure values are valid numbers before Decimal operations
+    //   const safeTotalA = Number.isNaN(totalA) ? 0 : totalA;
+    //   const safeTotalA2 = Number.isNaN(totalA2) ? 0 : totalA2;
+    //   const currentTotalA = safeTotalA / 1000000;
+    //   const currentTotalA2 = safeTotalA2 / 1000000;
 
-      // Map MQTT data to InverterData schema
-      const totalACapacity = Number(payload.data?.totalACapacity);
-      const totalA2Capacity = Number(payload.data?.totalA2Capacity);
-      const inverterDataUpdate = {
-        userId: payload.currentUid,
-        deviceId: payload.wifiSsid,
-        value: valueString,
-        totalACapacity: Number.isNaN(totalACapacity) ? 0 : totalACapacity,
-        totalA2Capacity: Number.isNaN(totalA2Capacity) ? 0 : totalA2Capacity,
-      };
+    //   // Map MQTT data to InverterData schema
+    //   const totalACapacity = Number(payload.data?.totalACapacity);
+    //   const totalA2Capacity = Number(payload.data?.totalA2Capacity);
+    //   const inverterDataUpdate = {
+    //     userId: payload.currentUid,
+    //     deviceId: payload.wifiSsid,
+    //     value: valueString,
+    //     totalACapacity: Number.isNaN(totalACapacity) ? 0 : totalACapacity,
+    //     totalA2Capacity: Number.isNaN(totalA2Capacity) ? 0 : totalA2Capacity,
+    //   };
 
-      // Create new record for each data received
-      // await this.create({
-      //   ...inverterDataUpdate,
-      //   userId: payload.currentUid,
-      //   deviceId: payload.wifiSsid,
-      // });
+    //   // Create new record for each data received
+    //   // await this.create({
+    //   //   ...inverterDataUpdate,
+    //   //   userId: payload.currentUid,
+    //   //   deviceId: payload.wifiSsid,
+    //   // });
 
-      // Previous upsert method (commented for rollback option)
-      await this.upsertByUserIdAndDeviceId(
-        payload.currentUid,
-        payload.wifiSsid,
-        inverterDataUpdate,
-      );
+    //   // Previous upsert method (commented for rollback option)
+    //   await this.upsertByUserIdAndDeviceId(
+    //     payload.currentUid,
+    //     payload.wifiSsid,
+    //     inverterDataUpdate,
+    //   );
 
-      // Update daily totals using Redis cache (high performance)
-      await this.redisDailyTotalsService.incrementDailyTotals(
-        payload.currentUid,
-        payload.wifiSsid,
-        currentTotalA,
-        currentTotalA2,
-      );
-    } catch (error) {
-      console.error(
-        `Error updating inverter data for ${payload.currentUid}/${payload.wifiSsid}:`,
-        error,
-      );
-    }
+    //   // Update daily totals using Redis cache (high performance)
+    //   await this.redisDailyTotalsService.incrementDailyTotals(
+    //     payload.currentUid,
+    //     payload.wifiSsid,
+    //     currentTotalA,
+    //     currentTotalA2,
+    //   );
+    // } catch (error) {
+    //   console.error(
+    //     `Error updating inverter data for ${payload.currentUid}/${payload.wifiSsid}:`,
+    //     error,
+    //   );
+    // }
   }
 }
