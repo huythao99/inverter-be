@@ -149,7 +149,12 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         const messageType = topicParts[3];
         if (messageType === 'data') {
           const messageStr = message.toString();
-          void this.handleInverterMessage(currentUid, wifiSsid, messageType, messageStr);
+          void this.handleInverterMessage(
+            currentUid,
+            wifiSsid,
+            messageType,
+            messageStr,
+          );
         }
       } else if (isDevice) {
         const messageStr = message.toString();
@@ -166,45 +171,42 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     messageType: string,
     message: string,
   ) {
-    try {
-      // const data = JSON.parse(message);
-      // switch (messageType) {
-      //   case 'setup':
-      //     break;
-      //   case 'schedule':
-      //     break;
-      //   case 'data':
-      //     this.eventEmitter.emit('inverter.data.received', {
-      //       currentUid,
-      //       wifiSsid,
-      //       data,
-      //     });
-      //     break;
-      //   case 'status':
-      //     break;
-      //   default:
-      // }
-    } catch (error) {
-    }
+    if (messageType !== 'data') return;
+
+    // Extract value field without full JSON.parse (faster)
+    // Message format: {"value":"...","totalACapacity":...,"totalA2Capacity":...}
+    const valueMatch = message.match(/"value"\s*:\s*"([^"]+)"/);
+    const totalAMatch = message.match(/"totalACapacity"\s*:\s*([\d.]+)/);
+    const totalA2Match = message.match(/"totalA2Capacity"\s*:\s*([\d.]+)/);
+
+    if (!valueMatch) return;
+
+    this.eventEmitter.emit('inverter.data.received', {
+      currentUid,
+      wifiSsid,
+      data: {
+        value: valueMatch[1],
+        totalACapacity: totalAMatch ? parseFloat(totalAMatch[1]) : 0,
+        totalA2Capacity: totalA2Match ? parseFloat(totalA2Match[1]) : 0,
+      },
+    });
   }
 
-  private async handleDeviceMessage(
+  private handleDeviceMessage(
     currentUid: string,
     wifiSsid: string,
     message: string,
   ) {
-    try {
-      const data = JSON.parse(message);
+    // Extract deviceName without full JSON.parse
+    const deviceNameMatch = message.match(/"deviceName"\s*:\s*"([^"]+)"/);
 
-      // Emit event for device message
-      this.eventEmitter.emit('device.message.received', {
-        currentUid,
-        wifiSsid,
-        data,
-      });
-    } catch (error) {
-      console.error('Error parsing device message:', error);
-    }
+    this.eventEmitter.emit('device.message.received', {
+      currentUid,
+      wifiSsid,
+      data: {
+        deviceName: deviceNameMatch ? deviceNameMatch[1] : wifiSsid,
+      },
+    });
   }
 
   async onModuleDestroy() {
