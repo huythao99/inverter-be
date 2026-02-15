@@ -204,53 +204,27 @@ export class InverterDataService implements OnModuleDestroy {
     deviceId: string,
     updateInverterDataDto: Partial<InverterData>,
   ): Promise<InverterData> {
-    try {
-      // Add timeout to prevent blocking on VPS
-      const operation = this.inverterDataModel
-        .findOneAndUpdate(
-          { userId, deviceId },
-          {
-            $set: {
-              ...updateInverterDataDto,
-              userId,
-              deviceId,
-              updatedAt: new Date(),
-            },
+    const updatedData = await this.inverterDataModel
+      .findOneAndUpdate(
+        { userId, deviceId },
+        {
+          $set: {
+            ...updateInverterDataDto,
+            userId,
+            deviceId,
+            updatedAt: new Date(),
           },
-          {
-            new: true,
-            upsert: true,
-            lean: true, // Use lean for better performance
-            runValidators: false,
-            maxTimeMS: 2000, // 2 second timeout
-          },
-        )
-        .select('-__v')
-        .exec();
+        },
+        {
+          new: true,
+          upsert: true,
+          lean: true,
+        },
+      )
+      .select('-__v')
+      .exec();
 
-      // Race with timeout to prevent hanging
-      const updatedData = await Promise.race([
-        operation,
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Database upsert timeout')), 3000),
-        ),
-      ]);
-
-      return updatedData as InverterData;
-    } catch (error) {
-      console.error(`Database upsert failed for ${userId}/${deviceId}:`, error);
-      // Return minimal object to prevent app crash
-      return {
-        _id: undefined,
-        userId,
-        deviceId,
-        value: '',
-        totalACapacity: 0,
-        totalA2Capacity: 0,
-        updatedAt: new Date(),
-        createdAt: new Date(),
-      } as unknown as InverterData;
-    }
+    return updatedData as InverterData;
   }
 
   async remove(_id: string): Promise<InverterData | null> {
