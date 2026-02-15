@@ -167,23 +167,23 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     message: string,
   ) {
     try {
-      const data = JSON.parse(message);
-      switch (messageType) {
-        case 'setup':
-          break;
-        case 'schedule':
-          break;
-        case 'data':
-          this.eventEmitter.emit('inverter.data.received', {
-            currentUid,
-            wifiSsid,
-            data,
-          });
-          break;
-        case 'status':
-          break;
-        default:
-      }
+      // const data = JSON.parse(message);
+      // switch (messageType) {
+      //   case 'setup':
+      //     break;
+      //   case 'schedule':
+      //     break;
+      //   case 'data':
+      //     this.eventEmitter.emit('inverter.data.received', {
+      //       currentUid,
+      //       wifiSsid,
+      //       data,
+      //     });
+      //     break;
+      //   case 'status':
+      //     break;
+      //   default:
+      // }
     } catch (error) {
     }
   }
