@@ -331,19 +331,19 @@ export class InverterDataService implements OnModuleDestroy {
       // });
 
       // Previous upsert method (commented for rollback option)
-      await this.upsertByUserIdAndDeviceId(
-        payload.currentUid,
-        payload.wifiSsid,
-        inverterDataUpdate,
-      );
+      // await this.upsertByUserIdAndDeviceId(
+      //   payload.currentUid,
+      //   payload.wifiSsid,
+      //   inverterDataUpdate,
+      // );
 
-      // Update daily totals using Redis cache (high performance)
-      await this.redisDailyTotalsService.incrementDailyTotals(
-        payload.currentUid,
-        payload.wifiSsid,
-        currentTotalA,
-        currentTotalA2,
-      );
+      // // Update daily totals using Redis cache (high performance)
+      // await this.redisDailyTotalsService.incrementDailyTotals(
+      //   payload.currentUid,
+      //   payload.wifiSsid,
+      //   currentTotalA,
+      //   currentTotalA2,
+      // );
     } catch (error) {
       console.error(
         `Error updating inverter data for ${payload.currentUid}/${payload.wifiSsid}:`,

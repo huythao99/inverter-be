@@ -119,60 +119,41 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     // Remove existing message handlers to prevent accumulation
     this.client.removeAllListeners('message');
 
-    // Single message handler to prevent duplicates
+    // Single message handler with device-based rate limiting
     const messageHandler = (topic: string, message: Buffer) => {
-      // Add simple rate limiting to prevent CPU spikes
-      if (this.messageHandlers.has(topic)) {
-        const lastProcessed = this.messageHandlers.get(topic);
-        if (Date.now() - lastProcessed < 5000) { // 5 seconds minimum between same topic
-          return;
-        }
+      const topicParts = topic.split('/');
+      if (topicParts.length < 4) return;
+
+      // Rate limit by device key (uid-ssid), not by topic
+      const isInverter = topic.startsWith('inverter/');
+      const isDevice = topic.startsWith('devices/inverter/');
+      if (!isInverter && !isDevice) return;
+
+      const currentUid = isInverter ? topicParts[1] : topicParts[2];
+      const wifiSsid = isInverter ? topicParts[2] : topicParts[3];
+      const deviceKey = `${currentUid}-${wifiSsid}`;
+
+      const now = Date.now();
+      const lastProcessed = this.messageHandlers.get(deviceKey);
+      if (lastProcessed && now - lastProcessed < 10000) { // 10 seconds per device
+        return;
       }
-      this.messageHandlers.set(topic, Date.now());
+      this.messageHandlers.set(deviceKey, now);
 
-      // Clean up old entries to prevent memory leaks
-      if (this.messageHandlers.size > 100) {
-        const cutoff = Date.now() - 10000; // 10 seconds
-        for (const [key, timestamp] of this.messageHandlers.entries()) {
-          if (timestamp < cutoff) {
-            this.messageHandlers.delete(key);
-          }
-        }
+      // Cleanup only when map gets large (moved from every message)
+      if (this.messageHandlers.size > 500) {
+        this.messageHandlers.clear();
       }
 
-      const messageStr = message.toString();
-
-      try {
-        if (topic.startsWith('inverter/')) {
-          // Parse topic to extract device info
-          const topicParts = topic.split('/');
-          if (topicParts.length >= 4) {
-            const currentUid = topicParts[1];
-            const wifiSsid = topicParts[2];
-            const messageType = topicParts[3];
-            // Handle different message types (non-blocking)
-            setImmediate(() => {
-              void this.handleInverterMessage(
-                currentUid,
-                wifiSsid,
-                messageType,
-                messageStr,
-              );
-            });
-          }
-        } else if (topic.startsWith('devices/inverter/')) {
-          // Handle device topic: devices/inverter/{currentUid}/{wifiSsid}
-          const topicParts = topic.split('/');
-          if (topicParts.length >= 4) {
-            const currentUid = topicParts[2];
-            const wifiSsid = topicParts[3];
-            setImmediate(() => {
-              void this.handleDeviceMessage(currentUid, wifiSsid, messageStr);
-            });
-          }
+      if (isInverter) {
+        const messageType = topicParts[3];
+        if (messageType === 'data') {
+          const messageStr = message.toString();
+          void this.handleInverterMessage(currentUid, wifiSsid, messageType, messageStr);
         }
-      } catch (error) {
-        console.error('Error processing MQTT message:', error);
+      } else if (isDevice) {
+        const messageStr = message.toString();
+        void this.handleDeviceMessage(currentUid, wifiSsid, messageStr);
       }
     };
 
