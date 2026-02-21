@@ -17,7 +17,7 @@ export class InverterDataService implements OnModuleDestroy {
     { timestamp: number; data: string }
   >();
   private cleanupTimer: NodeJS.Timeout | null;
-  private readonly DEDUPLICATION_WINDOW = 30000; // 10 seconds (increased from 5)
+  private readonly DEDUPLICATION_WINDOW = 3000; // 10 seconds (increased from 5)
   private readonly MAX_MEMORY_ENTRIES = 1000; // Aggressive limit for VPS
   constructor(
     @InjectModel(InverterData.name)

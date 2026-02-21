@@ -1,30 +1,20 @@
-/* eslint-disable @typescript-eslint/require-await */
-
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as mqtt from 'mqtt';
-import * as crypto from 'crypto';
 
 @Injectable()
 export class MqttService implements OnModuleInit, OnModuleDestroy {
   private client: mqtt.MqttClient;
-  private encryptionKey: string;
-  private isInitialized: boolean = false;
-  private messageHandlers: Map<string, any> = new Map();
+  private isInitialized = false;
+  private messageHandlers = new Map<string, number>();
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 10;
 
   constructor(
     private configService: ConfigService,
     private eventEmitter: EventEmitter2,
-  ) {
-    this.encryptionKey = this.configService.get<string>(
-      'MQTT_ENCRYPTION_KEY',
-      'default-secret-key',
-    );
-  }
+  ) {}
 
   onModuleInit() {
     if (this.isInitialized) {
@@ -67,14 +57,15 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     }
 
     this.client = mqtt.connect(mqttUrl, options);
-    this.client.setMaxListeners(0); // Reduced to prevent memory leaks
 
-    // Remove existing listeners to prevent accumulation
-    this.client.removeAllListeners();
+    // Register message handler ONCE here (not in subscribeToInverterTopics)
+    this.client.on('message', (topic, message) => {
+      this.handleMessage(topic, message);
+    });
 
     this.client.on('connect', () => {
-      this.reconnectAttempts = 0; // Reset on successful connect
-      this.subscribeToInverterTopics();
+      this.reconnectAttempts = 0;
+      this.subscribeToInverterTopics(); // Only subscribes topics now
     });
 
     this.client.on('error', (error) => {
@@ -98,71 +89,45 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  // Only subscribe to topics - NO listener registration here
   private subscribeToInverterTopics() {
-    // Subscribe to all inverter topics using wildcards
-    const inverterTopics = [
-      'inverter/+/+/setup/value',
-      'inverter/+/+/schedule/value',
-      'inverter/+/+/data',
-      'inverter/+/+/status',
-      'devices/inverter/+/+',
-    ];
+    const topics = ['inverter/+/+/data', 'devices/inverter/+/+'];
+    topics.forEach((topic) => this.client.subscribe(topic));
+  }
 
-    inverterTopics.forEach((topic) => {
-      this.client.subscribe(topic, (err) => {
-        if (err) {
-        } else {
-        }
-      });
-    });
+  // Global message handler - called from the single listener registered in init
+  private handleMessage(topic: string, message: Buffer) {
+    const topicParts = topic.split('/');
+    if (topicParts.length < 4) return;
 
-    // Remove existing message handlers to prevent accumulation
-    this.client.removeAllListeners('message');
+    const isInverter = topic.startsWith('inverter/');
+    const isDevice = topic.startsWith('devices/inverter/');
+    if (!isInverter && !isDevice) return;
 
-    // Single message handler with device-based rate limiting
-    const messageHandler = (topic: string, message: Buffer) => {
-      const topicParts = topic.split('/');
-      if (topicParts.length < 4) return;
+    const currentUid = isInverter ? topicParts[1] : topicParts[2];
+    const wifiSsid = isInverter ? topicParts[2] : topicParts[3];
+    const deviceKey = `${currentUid}-${wifiSsid}`;
 
-      // Rate limit by device key (uid-ssid), not by topic
-      const isInverter = topic.startsWith('inverter/');
-      const isDevice = topic.startsWith('devices/inverter/');
-      if (!isInverter && !isDevice) return;
+    // Rate limit: 10 seconds per device
+    const now = Date.now();
+    const lastProcessed = this.messageHandlers.get(deviceKey);
+    if (lastProcessed && now - lastProcessed < 3000) {
+      return;
+    }
+    this.messageHandlers.set(deviceKey, now);
 
-      const currentUid = isInverter ? topicParts[1] : topicParts[2];
-      const wifiSsid = isInverter ? topicParts[2] : topicParts[3];
-      const deviceKey = `${currentUid}-${wifiSsid}`;
+    // Cleanup when map gets large
+    if (this.messageHandlers.size > 500) {
+      this.messageHandlers.clear();
+    }
 
-      const now = Date.now();
-      const lastProcessed = this.messageHandlers.get(deviceKey);
-      if (lastProcessed && now - lastProcessed < 10000) { // 10 seconds per device
-        return;
-      }
-      this.messageHandlers.set(deviceKey, now);
+    const messageStr = message.toString();
 
-      // Cleanup only when map gets large (moved from every message)
-      if (this.messageHandlers.size > 500) {
-        this.messageHandlers.clear();
-      }
-
-      if (isInverter) {
-        const messageType = topicParts[3];
-        if (messageType === 'data') {
-          const messageStr = message.toString();
-          void this.handleInverterMessage(
-            currentUid,
-            wifiSsid,
-            messageType,
-            messageStr,
-          );
-        }
-      } else if (isDevice) {
-        const messageStr = message.toString();
-        void this.handleDeviceMessage(currentUid, wifiSsid, messageStr);
-      }
-    };
-
-    this.client.on('message', messageHandler);
+    if (isInverter && topicParts[3] === 'data') {
+      void this.handleInverterMessage(currentUid, wifiSsid, 'data', messageStr);
+    } else if (isDevice) {
+      void this.handleDeviceMessage(currentUid, wifiSsid, messageStr);
+    }
   }
 
   private handleInverterMessage(
@@ -318,121 +283,6 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
           }
         },
       );
-    });
-  }
-
-  // Decrypt message using AES-256-GCM with SHA256-derived key
-  private decryptMessage(encryptedData: string): string {
-    try {
-      // Create SHA256 hash of the encryption key
-      const keyHash = crypto
-        .createHash('sha256')
-        .update(this.encryptionKey)
-        .digest();
-
-      // Parse the encrypted data (format: iv:authTag:encryptedText)
-      const parts = encryptedData.split(':');
-      if (parts.length !== 3) {
-        throw new Error('Invalid encrypted message format');
-      }
-
-      const iv = Buffer.from(parts[0], 'hex');
-      const authTag = Buffer.from(parts[1], 'hex');
-      const encrypted = Buffer.from(parts[2], 'hex');
-
-      // Create decipher
-      const decipher = crypto.createDecipheriv('aes-256-gcm', keyHash, iv);
-      decipher.setAuthTag(authTag);
-
-      // Decrypt
-      let decrypted = decipher.update(encrypted, undefined, 'utf8');
-      decrypted += decipher.final('utf8');
-
-      return decrypted;
-    } catch (error) {
-      console.error('Error decrypting message:', error);
-      throw new Error('Failed to decrypt message');
-    }
-  }
-
-  // Encrypt message using AES-256-GCM with SHA256-derived key
-  private encryptMessage(data: string): string {
-    try {
-      // Create SHA256 hash of the encryption key
-      const keyHash = crypto
-        .createHash('sha256')
-        .update(this.encryptionKey)
-        .digest();
-
-      // Generate random IV
-      const iv = crypto.randomBytes(16);
-
-      // Create cipher
-      const cipher = crypto.createCipheriv('aes-256-gcm', keyHash, iv);
-
-      // Encrypt
-      let encrypted = cipher.update(data, 'utf8', 'hex');
-      encrypted += cipher.final('hex');
-
-      // Get auth tag
-      const authTag = cipher.getAuthTag();
-
-      // Return format: iv:authTag:encryptedText
-      return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
-    } catch (error) {
-      console.error('Error encrypting message:', error);
-      throw new Error('Failed to encrypt message');
-    }
-  }
-
-  // Subscribe to topics with automatic decryption
-  subscribe(
-    topic: string,
-    callback: (topic: string, message: Record<string, unknown>) => void,
-    encrypted: boolean = true,
-  ) {
-    this.client.subscribe(topic);
-    this.client.on('message', (receivedTopic, message) => {
-      if (receivedTopic === topic) {
-        try {
-          let messageStr = message.toString();
-
-          // Decrypt message if it's encrypted
-          if (encrypted) {
-            messageStr = this.decryptMessage(messageStr);
-          }
-
-          const payload = JSON.parse(messageStr) as Record<string, unknown>;
-          callback(receivedTopic, payload);
-        } catch (error) {
-          console.error('Error processing MQTT message:', error);
-        }
-      }
-    });
-  }
-
-  // Subscribe to topics with raw message handling
-  subscribeRaw(
-    topic: string,
-    callback: (topic: string, message: string, decrypted?: string) => void,
-    encrypted: boolean = true,
-  ) {
-    this.client.subscribe(topic);
-    this.client.on('message', (receivedTopic, message) => {
-      if (receivedTopic === topic) {
-        const rawMessage = message.toString();
-        let decryptedMessage: string | undefined;
-
-        if (encrypted) {
-          try {
-            decryptedMessage = this.decryptMessage(rawMessage);
-          } catch (error) {
-            console.error('Error decrypting message:', error);
-          }
-        }
-
-        callback(receivedTopic, rawMessage, decryptedMessage);
-      }
     });
   }
 }
