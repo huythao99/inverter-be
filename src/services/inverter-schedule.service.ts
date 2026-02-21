@@ -7,17 +7,39 @@ import {
 } from '../models/inverter-schedule.schema';
 import { MqttService } from './mqtt.service';
 
+interface CacheEntry {
+  data: InverterSchedule | null;
+  timestamp: number;
+}
+
 @Injectable()
 export class InverterScheduleService {
+  private cache = new Map<string, CacheEntry>();
+  private readonly CACHE_TTL_MS = 10000; // 10 seconds cache
+
   constructor(
     @InjectModel(InverterSchedule.name)
     private inverterScheduleModel: Model<InverterScheduleDocument>,
     private mqttService: MqttService,
   ) {}
 
+  private getCacheKey(userId: string, deviceId: string): string {
+    return `${userId}:${deviceId}`;
+  }
+
+  private invalidateCache(userId: string, deviceId: string): void {
+    this.cache.delete(this.getCacheKey(userId, deviceId));
+  }
+
   async create(
     createInverterScheduleDto: Partial<InverterSchedule>,
   ): Promise<InverterSchedule> {
+    if (createInverterScheduleDto.userId && createInverterScheduleDto.deviceId) {
+      this.invalidateCache(
+        createInverterScheduleDto.userId,
+        createInverterScheduleDto.deviceId,
+      );
+    }
     const createdInverterSchedule = new this.inverterScheduleModel(
       createInverterScheduleDto,
     );
@@ -32,11 +54,21 @@ export class InverterScheduleService {
     userId: string,
     deviceId: string,
   ): Promise<InverterSchedule | null> {
-    return this.inverterScheduleModel
+    const cacheKey = this.getCacheKey(userId, deviceId);
+    const cached = this.cache.get(cacheKey);
+
+    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL_MS) {
+      return cached.data;
+    }
+
+    const result = await this.inverterScheduleModel
       .findOne({ userId, deviceId })
       .lean()
       .maxTimeMS(2000)
       .exec();
+
+    this.cache.set(cacheKey, { data: result, timestamp: Date.now() });
+    return result;
   }
 
   async findOne(_id: string): Promise<InverterSchedule | null> {
@@ -63,6 +95,7 @@ export class InverterScheduleService {
     updateInverterScheduleDto: Partial<InverterSchedule>,
   ): Promise<InverterSchedule | null> {
     updateInverterScheduleDto.updatedAt = new Date();
+    this.invalidateCache(userId, deviceId);
     return this.inverterScheduleModel
       .findOneAndUpdate({ userId, deviceId }, updateInverterScheduleDto, {
         new: true,
@@ -75,6 +108,7 @@ export class InverterScheduleService {
     deviceId: string,
     schedule: string,
   ): Promise<InverterSchedule | null> {
+    this.invalidateCache(userId, deviceId);
     const updatedSchedule = await this.inverterScheduleModel
       .findOneAndUpdate(
         { userId, deviceId },
@@ -87,6 +121,7 @@ export class InverterScheduleService {
   }
 
   async deleteAll(): Promise<{ deletedCount: number }> {
+    this.cache.clear();
     const result = await this.inverterScheduleModel.deleteMany({}).exec();
     return { deletedCount: result.deletedCount };
   }
