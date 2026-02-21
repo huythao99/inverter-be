@@ -111,14 +111,18 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     // Rate limit: 10 seconds per device
     const now = Date.now();
     const lastProcessed = this.messageHandlers.get(deviceKey);
-    if (lastProcessed && now - lastProcessed < 3000) {
+    if (lastProcessed && now - lastProcessed < 10000) {
       return;
     }
     this.messageHandlers.set(deviceKey, now);
 
-    // Cleanup when map gets large
-    if (this.messageHandlers.size > 500) {
-      this.messageHandlers.clear();
+    // Cleanup expired entries (not all) - only when map is large
+    if (this.messageHandlers.size > 1000) {
+      for (const [key, timestamp] of this.messageHandlers.entries()) {
+        if (now - timestamp > 60000) {
+          this.messageHandlers.delete(key);
+        }
+      }
     }
 
     const messageStr = message.toString();
@@ -138,23 +142,47 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   ) {
     if (messageType !== 'data') return;
 
-    // Extract value field without full JSON.parse (faster)
-    // Message format: {"value":"...","totalACapacity":...,"totalA2Capacity":...}
-    const valueMatch = message.match(/"value"\s*:\s*"([^"]+)"/);
-    const totalAMatch = message.match(/"totalACapacity"\s*:\s*([\d.]+)/);
-    const totalA2Match = message.match(/"totalA2Capacity"\s*:\s*([\d.]+)/);
+    // Fast extraction using indexOf (faster than regex at scale)
+    const value = this.extractStringValue(message, '"value":"');
+    if (!value) return;
 
-    if (!valueMatch) return;
+    const totalACapacity = this.extractNumberValue(message, '"totalACapacity":');
+    const totalA2Capacity = this.extractNumberValue(message, '"totalA2Capacity":');
 
     this.eventEmitter.emit('inverter.data.received', {
       currentUid,
       wifiSsid,
-      data: {
-        value: valueMatch[1],
-        totalACapacity: totalAMatch ? parseFloat(totalAMatch[1]) : 0,
-        totalA2Capacity: totalA2Match ? parseFloat(totalA2Match[1]) : 0,
-      },
+      data: { value, totalACapacity, totalA2Capacity },
     });
+  }
+
+  // Fast string extraction using indexOf (no regex)
+  private extractStringValue(str: string, key: string): string | null {
+    const start = str.indexOf(key);
+    if (start === -1) return null;
+    const valueStart = start + key.length;
+    const valueEnd = str.indexOf('"', valueStart);
+    if (valueEnd === -1) return null;
+    return str.substring(valueStart, valueEnd);
+  }
+
+  // Fast number extraction using indexOf (no regex)
+  private extractNumberValue(str: string, key: string): number {
+    const start = str.indexOf(key);
+    if (start === -1) return 0;
+    const valueStart = start + key.length;
+    let valueEnd = valueStart;
+    while (valueEnd < str.length) {
+      const c = str.charCodeAt(valueEnd);
+      // 0-9 = 48-57, . = 46
+      if ((c >= 48 && c <= 57) || c === 46) {
+        valueEnd++;
+      } else {
+        break;
+      }
+    }
+    const num = parseFloat(str.substring(valueStart, valueEnd));
+    return Number.isNaN(num) ? 0 : num;
   }
 
   private handleDeviceMessage(
@@ -162,15 +190,13 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     wifiSsid: string,
     message: string,
   ) {
-    // Extract deviceName without full JSON.parse
-    const deviceNameMatch = message.match(/"deviceName"\s*:\s*"([^"]+)"/);
+    // Fast extraction using indexOf (no regex)
+    const deviceName = this.extractStringValue(message, '"deviceName":"') || wifiSsid;
 
     this.eventEmitter.emit('device.message.received', {
       currentUid,
       wifiSsid,
-      data: {
-        deviceName: deviceNameMatch ? deviceNameMatch[1] : wifiSsid,
-      },
+      data: { deviceName },
     });
   }
 

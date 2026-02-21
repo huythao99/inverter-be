@@ -290,9 +290,14 @@ export class InverterDataService implements OnModuleDestroy {
       return;
     }
 
-    // Simple size-based cleanup - no expensive loops
+    // Cleanup expired entries only (not all) when map is large
     if (this.lastProcessed.size > this.MAX_MEMORY_ENTRIES) {
-      this.lastProcessed.clear();
+      const cutoff = now - this.DEDUPLICATION_WINDOW;
+      for (const [k, v] of this.lastProcessed.entries()) {
+        if (v.timestamp < cutoff) {
+          this.lastProcessed.delete(k);
+        }
+      }
     }
 
     this.lastProcessed.set(key, { timestamp: now, data: valueString });
