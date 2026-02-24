@@ -145,9 +145,15 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     // Fast extraction using indexOf (faster than regex at scale)
     const value = this.extractStringValue(message, '"value":"');
     if (!value) return;
-
-    const totalACapacity = this.extractNumberValue(message, '"totalACapacity":');
-    const totalA2Capacity = this.extractNumberValue(message, '"totalA2Capacity":');
+    console.log('message1234: ', message);
+    const totalACapacity = this.extractNumberValue(
+      message,
+      '"totalACapacity":',
+    );
+    const totalA2Capacity = this.extractNumberValue(
+      message,
+      '"totalA2Capacity":',
+    );
 
     this.eventEmitter.emit('inverter.data.received', {
       currentUid,
@@ -191,7 +197,8 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     message: string,
   ) {
     // Fast extraction using indexOf (no regex)
-    const deviceName = this.extractStringValue(message, '"deviceName":"') || wifiSsid;
+    const deviceName =
+      this.extractStringValue(message, '"deviceName":"') || wifiSsid;
 
     this.eventEmitter.emit('device.message.received', {
       currentUid,
@@ -212,7 +219,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         // Gracefully close connection with timeout
         await Promise.race([
           this.client.endAsync(),
-          new Promise((resolve) => setTimeout(resolve, 3000)) // 3 second timeout
+          new Promise((resolve) => setTimeout(resolve, 3000)), // 3 second timeout
         ]);
       }
     } catch (error) {
