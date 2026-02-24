@@ -143,8 +143,9 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
     if (this.isShuttingDown) {
       return { totalA: 0, totalA2: 0 };
     }
+    console.log("totalA2Increment: ", totalA2Increment);
+    console.log("totalAIncrement: ", totalAIncrement);
 
-    
     try {
       if (!this.redis || this.redis.status !== 'ready') {
         // console.warn('Redis not available, falling back to database increment');

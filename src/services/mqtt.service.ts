@@ -145,7 +145,6 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     // Fast extraction using indexOf (faster than regex at scale)
     const value = this.extractStringValue(message, '"value":"');
     if (!value) return;
-    console.log('message1234: ', message);
     const totalACapacity = this.extractNumberValue(
       message,
       '"totalACapacity":',
