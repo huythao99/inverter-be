@@ -19,9 +19,9 @@ export class InverterDataService implements OnModuleDestroy {
   private cleanupTimer: NodeJS.Timeout | null;
   private batchTimer: NodeJS.Timeout | null;
   private readonly DEDUPLICATION_WINDOW = 3000; // 3 seconds
-  private readonly MAX_MEMORY_ENTRIES = 1000; // Aggressive limit for VPS
-  private readonly BATCH_INTERVAL = 2000; // Redis batch every 2 seconds
-  private readonly DB_FLUSH_INTERVAL = 30000; // MongoDB flush every 30 seconds
+  private readonly MAX_MEMORY_ENTRIES = 2000; // Support 1000 devices
+  private readonly BATCH_INTERVAL = 5000; // Redis batch every 5 seconds
+  private readonly DB_FLUSH_INTERVAL = 60000; // MongoDB flush every 60 seconds
 
   // Use Maps for O(1) lookup instead of arrays
   private inverterDataMap = new Map<string, {
@@ -374,14 +374,9 @@ export class InverterDataService implements OnModuleDestroy {
       return;
     }
 
-    // Cleanup expired entries only (not all) when map is large
+    // Clear map when too large (O(1) instead of loop)
     if (this.lastProcessed.size > this.MAX_MEMORY_ENTRIES) {
-      const cutoff = now - this.DEDUPLICATION_WINDOW;
-      for (const [k, v] of this.lastProcessed.entries()) {
-        if (v.timestamp < cutoff) {
-          this.lastProcessed.delete(k);
-        }
-      }
+      this.lastProcessed.clear();
     }
 
     this.lastProcessed.set(key, { timestamp: now, data: valueString });
