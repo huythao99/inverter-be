@@ -9,12 +9,19 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
   private redis: Redis;
   private batchFlushTimer: NodeJS.Timeout | null;
   private dailyResetTimer: NodeJS.Timeout | null;
+  private healthCheckTimer: NodeJS.Timeout | null;
   private readonly BATCH_FLUSH_INTERVAL = 300000; // 5 minutes (reduced CPU load)
   private isShuttingDown = false;
   private readonly KEY_PREFIX = 'daily_totals';
   private readonly DIRTY_SET_KEY = 'daily_totals:dirty';
   private readonly PREVIOUS_DAY_KEY = 'daily_totals:previous_day';
   private currentDay: string;
+
+  // Redis health tracking
+  private redisHealthy = false;
+  private redisFailCount = 0;
+  private lastHealthCheck: Date | null = null;
+  private readonly MAX_FAIL_COUNT = 5;
 
   constructor(
     private redisConfig: RedisConfig,
@@ -79,6 +86,11 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
         void this.checkForNewDay();
       }, 600000); // Check every 10 minutes (reduced CPU load)
 
+      // Start Redis health check timer (every 30 seconds)
+      this.healthCheckTimer = setInterval(() => {
+        void this.checkRedisHealth();
+      }, 30000);
+
     } catch (error) {
       console.error('Failed to initialize Redis Daily Totals Service:', error);
     }
@@ -96,6 +108,11 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
     if (this.dailyResetTimer) {
       clearInterval(this.dailyResetTimer);
       this.dailyResetTimer = null;
+    }
+
+    if (this.healthCheckTimer) {
+      clearInterval(this.healthCheckTimer);
+      this.healthCheckTimer = null;
     }
 
     try {
@@ -510,12 +527,69 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
     return results;
   }
 
+  // Redis health check - runs every 30 seconds
+  private async checkRedisHealth(): Promise<void> {
+    if (this.isShuttingDown) return;
+
+    try {
+      const start = Date.now();
+      const pong = await Promise.race([
+        this.redis.ping(),
+        new Promise<null>((_, reject) =>
+          setTimeout(() => reject(new Error('Redis ping timeout')), 2000)
+        ),
+      ]);
+
+      const latency = Date.now() - start;
+
+      if (pong === 'PONG') {
+        this.redisHealthy = true;
+        this.redisFailCount = 0;
+        this.lastHealthCheck = new Date();
+
+        // Log warning if latency is high
+        if (latency > 100) {
+          console.warn(`Redis latency high: ${latency}ms`);
+        }
+      }
+    } catch (error) {
+      this.redisFailCount++;
+      this.redisHealthy = false;
+
+      if (this.redisFailCount >= this.MAX_FAIL_COUNT) {
+        console.error(
+          `Redis health check failed ${this.redisFailCount} times. ` +
+          `All operations falling back to database. Error: ${error instanceof Error ? error.message : 'Unknown'}`
+        );
+      }
+    }
+  }
+
   // Get Redis connection info for debugging
   async getRedisInfo(): Promise<any> {
+    let keyCount = 0;
+    let dirtyKeys = 0;
+    let pingLatency = -1;
+
+    try {
+      const start = Date.now();
+      await this.redis.ping();
+      pingLatency = Date.now() - start;
+
+      keyCount = await this.redis.dbsize();
+      dirtyKeys = await this.redis.scard(this.DIRTY_SET_KEY);
+    } catch {
+      // Redis not available
+    }
+
     return {
-      status: this.redis.status,
-      keyCount: await this.redis.dbsize(),
-      dirtyKeys: await this.redis.scard(this.DIRTY_SET_KEY),
+      status: this.redis?.status || 'disconnected',
+      healthy: this.redisHealthy,
+      failCount: this.redisFailCount,
+      lastHealthCheck: this.lastHealthCheck?.toISOString() || null,
+      pingLatencyMs: pingLatency,
+      keyCount,
+      dirtyKeys,
       currentDay: this.currentDay,
       nextResetTime: this.getNextMidnightGMT7(),
     };
