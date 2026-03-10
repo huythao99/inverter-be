@@ -17,8 +17,25 @@ export class InverterDataService implements OnModuleDestroy {
     { timestamp: number; data: string }
   >();
   private cleanupTimer: NodeJS.Timeout | null;
-  private readonly DEDUPLICATION_WINDOW = 3000; // 10 seconds (increased from 5)
+  private batchTimer: NodeJS.Timeout | null;
+  private readonly DEDUPLICATION_WINDOW = 3000; // 3 seconds
   private readonly MAX_MEMORY_ENTRIES = 1000; // Aggressive limit for VPS
+  private readonly BATCH_INTERVAL = 1000; // Process batch every 1 second
+  private readonly MAX_BATCH_SIZE = 50; // Max items per batch
+
+  // Batch queues for non-blocking operations
+  private inverterDataQueue: Array<{
+    userId: string;
+    deviceId: string;
+    data: Partial<InverterData>;
+  }> = [];
+  private dailyTotalsQueue: Array<{
+    userId: string;
+    deviceId: string;
+    totalA: number;
+    totalA2: number;
+  }> = [];
+
   constructor(
     @InjectModel(InverterData.name)
     private inverterDataModel: Model<InverterDataDocument>,
@@ -29,15 +46,79 @@ export class InverterDataService implements OnModuleDestroy {
     this.cleanupTimer = setInterval(() => {
       this.cleanupMemory();
     }, 30000);
+
+    // Start batch processing timer
+    this.batchTimer = setInterval(() => {
+      void this.processBatches();
+    }, this.BATCH_INTERVAL);
   }
 
   // Aggressive cleanup for VPS environment
-  onModuleDestroy() {
+  async onModuleDestroy() {
     if (this.cleanupTimer) {
       clearInterval(this.cleanupTimer);
       this.cleanupTimer = null;
     }
+    if (this.batchTimer) {
+      clearInterval(this.batchTimer);
+      this.batchTimer = null;
+    }
+    // Process remaining batches before shutdown
+    await this.processBatches();
     this.lastProcessed.clear();
+  }
+
+  // Process batched operations - runs every BATCH_INTERVAL
+  private async processBatches(): Promise<void> {
+    // Process inverter data batch
+    if (this.inverterDataQueue.length > 0) {
+      const batch = this.inverterDataQueue.splice(0, this.MAX_BATCH_SIZE);
+      const bulkOps = batch.map((item) => ({
+        updateOne: {
+          filter: { userId: item.userId, deviceId: item.deviceId },
+          update: {
+            $set: {
+              ...item.data,
+              userId: item.userId,
+              deviceId: item.deviceId,
+              updatedAt: new Date(),
+            },
+          },
+          upsert: true,
+        },
+      }));
+
+      try {
+        await this.inverterDataModel.bulkWrite(bulkOps, { ordered: false });
+      } catch {
+        // Bulk write error - silent
+      }
+    }
+
+    // Process daily totals batch
+    if (this.dailyTotalsQueue.length > 0) {
+      const batch = this.dailyTotalsQueue.splice(0, this.MAX_BATCH_SIZE);
+      // Group by userId+deviceId to avoid duplicate increments
+      const grouped = new Map<string, { userId: string; deviceId: string; totalA: number; totalA2: number }>();
+
+      for (const item of batch) {
+        const key = `${item.userId}:${item.deviceId}`;
+        const existing = grouped.get(key);
+        if (existing) {
+          existing.totalA += item.totalA;
+          existing.totalA2 += item.totalA2;
+        } else {
+          grouped.set(key, { ...item });
+        }
+      }
+
+      // Process grouped increments
+      for (const item of grouped.values()) {
+        this.redisDailyTotalsService
+          .incrementDailyTotals(item.userId, item.deviceId, item.totalA, item.totalA2)
+          .catch(() => { /* silent */ });
+      }
+    }
   }
 
   private cleanupMemory() {
@@ -268,7 +349,7 @@ export class InverterDataService implements OnModuleDestroy {
   }
 
   @OnEvent('inverter.data.received')
-  async handleInverterDataReceived(payload: {
+  handleInverterDataReceived(payload: {
     currentUid: string;
     wifiSsid: string;
     data: any;
@@ -302,55 +383,41 @@ export class InverterDataService implements OnModuleDestroy {
 
     this.lastProcessed.set(key, { timestamp: now, data: valueString });
 
-    try {
-      const { totalA, totalA2 } = this.parseTotalsFromValue(valueString);
+    const { totalA, totalA2 } = this.parseTotalsFromValue(valueString);
 
-      // Skip processing if totalA >= 15000 or totalA2 >= 8000
-      if (totalA >= 15000 || totalA2 >= 8000) {
-        return;
-      }
-
-      // Convert to proper units (divide by 1,000,000) using decimal.js for precision
-      // Ensure values are valid numbers before Decimal operations
-      const safeTotalA = Number.isNaN(totalA) ? 0 : totalA;
-      const safeTotalA2 = Number.isNaN(totalA2) ? 0 : totalA2;
-      const currentTotalA = safeTotalA / 1000000;
-      const currentTotalA2 = safeTotalA2 / 1000000;
-
-      // Map MQTT data to InverterData schema
-      const totalACapacity = Number(payload.data?.totalACapacity);
-      const totalA2Capacity = Number(payload.data?.totalA2Capacity);
-      const inverterDataUpdate = {
-        userId: payload.currentUid,
-        deviceId: payload.wifiSsid,
-        value: valueString,
-        totalACapacity: Number.isNaN(totalACapacity) ? 0 : totalACapacity,
-        totalA2Capacity: Number.isNaN(totalA2Capacity) ? 0 : totalA2Capacity,
-      };
-
-      // Create new record for each data received
-      // await this.create({
-      //   ...inverterDataUpdate,
-      //   userId: payload.currentUid,
-      //   deviceId: payload.wifiSsid,
-      // });
-
-      // Previous upsert method (commented for rollback option)
-      await this.upsertByUserIdAndDeviceId(
-        payload.currentUid,
-        payload.wifiSsid,
-        inverterDataUpdate,
-      );
-
-      // Update daily totals using Redis cache (high performance)
-      await this.redisDailyTotalsService.incrementDailyTotals(
-        payload.currentUid,
-        payload.wifiSsid,
-        currentTotalA,
-        currentTotalA2,
-      );
-    } catch {
-      // Error updating inverter data - silent
+    // Skip processing if totalA >= 15000 or totalA2 >= 8000
+    if (totalA >= 15000 || totalA2 >= 8000) {
+      return;
     }
+
+    // Convert to proper units (divide by 1,000,000)
+    const safeTotalA = Number.isNaN(totalA) ? 0 : totalA;
+    const safeTotalA2 = Number.isNaN(totalA2) ? 0 : totalA2;
+    const currentTotalA = safeTotalA / 1000000;
+    const currentTotalA2 = safeTotalA2 / 1000000;
+
+    // Map MQTT data to InverterData schema
+    const totalACapacity = Number(payload.data?.totalACapacity);
+    const totalA2Capacity = Number(payload.data?.totalA2Capacity);
+    const inverterDataUpdate = {
+      value: valueString,
+      totalACapacity: Number.isNaN(totalACapacity) ? 0 : totalACapacity,
+      totalA2Capacity: Number.isNaN(totalA2Capacity) ? 0 : totalA2Capacity,
+    };
+
+    // Queue for batch processing (non-blocking)
+    this.inverterDataQueue.push({
+      userId: payload.currentUid,
+      deviceId: payload.wifiSsid,
+      data: inverterDataUpdate,
+    });
+
+    // Queue daily totals for batch processing
+    this.dailyTotalsQueue.push({
+      userId: payload.currentUid,
+      deviceId: payload.wifiSsid,
+      totalA: currentTotalA,
+      totalA2: currentTotalA2,
+    });
   }
 }
