@@ -21,7 +21,6 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
   private redisHealthy = false;
   private redisFailCount = 0;
   private lastHealthCheck: Date | null = null;
-  private readonly MAX_FAIL_COUNT = 5;
 
   constructor(
     private redisConfig: RedisConfig,
@@ -33,8 +32,8 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
       this.redis = this.redisConfig.createRedisClient();
 
       // Add error handling for Redis connection
-      this.redis.on('error', (error) => {
-        console.error('Redis connection error:', error.message);
+      this.redis.on('error', () => {
+        // Redis connection error - silent
       });
 
       this.redis.on('connect', () => {
@@ -49,14 +48,13 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
       this.currentDay = this.getGMT7Date();
 
       // Explicitly connect since lazyConnect is true
-      await this.redis.connect().catch((err) => {
-        console.error('Failed to connect to Redis:', err.message);
+      await this.redis.connect().catch(() => {
+        // Failed to connect to Redis - silent
       });
 
       // Wait for Redis to be ready with timeout
-      await new Promise<void>((resolve, reject) => {
+      await new Promise<void>((resolve) => {
         const timeout = setTimeout(() => {
-          console.warn('Redis connection timeout, continuing without Redis...');
           resolve();
         }, 5000); // 5 second timeout
 
@@ -70,7 +68,6 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
           });
           this.redis.once('error', () => {
             clearTimeout(timeout);
-            console.warn('Redis connection failed, continuing without Redis...');
             resolve();
           });
         }
@@ -91,8 +88,8 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
         void this.checkRedisHealth();
       }, 30000);
 
-    } catch (error) {
-      console.error('Failed to initialize Redis Daily Totals Service:', error);
+    } catch {
+      // Failed to initialize Redis Daily Totals Service - silent
     }
   }
 
@@ -121,16 +118,16 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
         this.flushDirtyRecordsToDatabase(),
         new Promise(resolve => setTimeout(resolve, 5000)) // 5 second timeout
       ]);
-    } catch (error) {
-      console.warn('Error during final flush:', error);
+    } catch {
+      // Error during final flush - silent
     }
 
     // Gracefully close Redis connection
     if (this.redis) {
       try {
         await this.redis.quit();
-      } catch (error) {
-        console.warn('Error closing Redis connection:', error);
+      } catch {
+        // Error closing Redis connection - silent
       }
     }
   }
@@ -267,8 +264,8 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
               totalA2: dbRecord.totalA2.toString(),
             });
             await this.redis.expire(redisKey, 7 * 24 * 3600);
-          } catch (cacheError) {
-            console.warn('Failed to cache data in Redis:', cacheError);
+          } catch {
+            // Failed to cache data in Redis - silent
           }
 
           return { totalA: dbRecord.totalA, totalA2: dbRecord.totalA2 };
@@ -281,8 +278,7 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
         totalA: parseFloat(result[0] || '0'),
         totalA2: parseFloat(result[1] || '0'),
       };
-    } catch (error) {
-      console.error('Redis query failed, falling back to database:', error);
+    } catch {
       const dbRecord = await this.dailyTotalsService.findByUserAndDevice(
         userId,
         deviceId,
@@ -339,8 +335,8 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
               // Remove from dirty set after successful write
               await this.redis.srem(this.DIRTY_SET_KEY, dirtyKey);
             }
-          } catch (error) {
-            console.error(`Error flushing record ${dirtyKey}:`, error);
+          } catch {
+            // Error flushing record - silent
           }
         });
 
@@ -351,8 +347,8 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
           await new Promise((resolve) => setTimeout(resolve, 50));
         }
       }
-    } catch (error) {
-      console.error('Error flushing dirty records to database:', error);
+    } catch {
+      // Error flushing dirty records to database - silent
     }
   }
 
@@ -467,8 +463,8 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
         }
       }
 
-    } catch (error) {
-      console.error('Error resetting daily totals:', error);
+    } catch {
+      // Error resetting daily totals - silent
     }
   }
 
@@ -532,7 +528,6 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
     if (this.isShuttingDown) return;
 
     try {
-      const start = Date.now();
       const pong = await Promise.race([
         this.redis.ping(),
         new Promise<null>((_, reject) =>
@@ -540,28 +535,14 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
         ),
       ]);
 
-      const latency = Date.now() - start;
-
       if (pong === 'PONG') {
         this.redisHealthy = true;
         this.redisFailCount = 0;
         this.lastHealthCheck = new Date();
-
-        // Log warning if latency is high
-        if (latency > 100) {
-          console.warn(`Redis latency high: ${latency}ms`);
-        }
       }
-    } catch (error) {
+    } catch {
       this.redisFailCount++;
       this.redisHealthy = false;
-
-      if (this.redisFailCount >= this.MAX_FAIL_COUNT) {
-        console.error(
-          `Redis health check failed ${this.redisFailCount} times. ` +
-          `All operations falling back to database. Error: ${error instanceof Error ? error.message : 'Unknown'}`
-        );
-      }
     }
   }
 
@@ -622,8 +603,7 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
         );
         cursor = result[0];
         keys.push(...result[1]);
-      } catch (error) {
-        console.error('Error scanning Redis keys:', error);
+      } catch {
         break;
       }
     } while (cursor !== '0');

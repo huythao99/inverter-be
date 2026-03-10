@@ -34,10 +34,12 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       'MQTT_URL',
       'mqtt://test.mosquitto.org:1883',
     );
-    const clientId = this.configService.get<string>(
+    const baseClientId = this.configService.get<string>(
       'MQTT_CLIENT_ID',
       'nestjs-app',
     );
+    // Make clientId unique per cluster instance to prevent disconnection conflicts
+    const clientId = `${baseClientId}-${process.pid}`;
     const username = this.configService.get<string>('MQTT_USERNAME');
     const password = this.configService.get<string>('MQTT_PASSWORD');
 
@@ -68,12 +70,12 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       this.subscribeToInverterTopics(); // Only subscribes topics now
     });
 
-    this.client.on('error', (error) => {
-      console.error('MQTT Error:', error);
+    this.client.on('error', () => {
+      // MQTT error - silent
     });
 
     this.client.on('offline', () => {
-      console.warn('MQTT client offline');
+      // MQTT offline - silent
     });
 
     this.client.on('reconnect', () => {
@@ -221,8 +223,8 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
           new Promise((resolve) => setTimeout(resolve, 3000)), // 3 second timeout
         ]);
       }
-    } catch (error) {
-      console.warn('Error closing MQTT connection:', error);
+    } catch {
+      // Error closing MQTT connection - silent
     }
   }
 

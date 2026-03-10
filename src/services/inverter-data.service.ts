@@ -349,11 +349,8 @@ export class InverterDataService implements OnModuleDestroy {
         currentTotalA,
         currentTotalA2,
       );
-    } catch (error) {
-      console.error(
-        `Error updating inverter data for ${payload.currentUid}/${payload.wifiSsid}:`,
-        error,
-      );
+    } catch {
+      // Error updating inverter data - silent
     }
   }
 }

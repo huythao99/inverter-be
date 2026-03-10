@@ -200,11 +200,8 @@ export class InverterDeviceService {
 
       // Emit MQTT event for device update
       await this.mqttService.emitDeviceUpdated(payload.currentUid, device);
-    } catch (error) {
-      console.error(
-        `Error saving device for ${payload.currentUid}/${payload.wifiSsid}:`,
-        error,
-      );
+    } catch {
+      // Error saving device - silent
     }
   }
 }
