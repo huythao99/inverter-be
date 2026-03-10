@@ -20,8 +20,8 @@ export class InverterDataService implements OnModuleDestroy {
   private batchTimer: NodeJS.Timeout | null;
   private readonly DEDUPLICATION_WINDOW = 3000; // 3 seconds
   private readonly MAX_MEMORY_ENTRIES = 1000; // Aggressive limit for VPS
-  private readonly BATCH_INTERVAL = 3000; // Process batch every 3 seconds (reduced CPU)
-  private readonly MAX_BATCH_SIZE = 100; // Max items per batch
+  private readonly BATCH_INTERVAL = 2000; // Process batch every 2 seconds
+  private readonly MAX_BATCH_SIZE = 600; // Handle all 500 devices in one batch
 
   // Batch queues for non-blocking operations
   private inverterDataQueue: Array<{
@@ -70,10 +70,18 @@ export class InverterDataService implements OnModuleDestroy {
 
   // Process batched operations - runs every BATCH_INTERVAL
   private async processBatches(): Promise<void> {
-    // Process inverter data batch
+    // Process ALL inverter data in queue (deduplicate by device)
     if (this.inverterDataQueue.length > 0) {
-      const batch = this.inverterDataQueue.splice(0, this.MAX_BATCH_SIZE);
-      const bulkOps = batch.map((item) => ({
+      // Deduplicate: keep only latest data per device
+      const deviceMap = new Map<string, { userId: string; deviceId: string; data: Partial<InverterData> }>();
+      const allItems = this.inverterDataQueue.splice(0, this.inverterDataQueue.length);
+
+      for (const item of allItems) {
+        const key = `${item.userId}:${item.deviceId}`;
+        deviceMap.set(key, item); // Latest wins
+      }
+
+      const bulkOps = Array.from(deviceMap.values()).map((item) => ({
         updateOne: {
           filter: { userId: item.userId, deviceId: item.deviceId },
           update: {
@@ -88,20 +96,22 @@ export class InverterDataService implements OnModuleDestroy {
         },
       }));
 
-      try {
-        await this.inverterDataModel.bulkWrite(bulkOps, { ordered: false });
-      } catch {
-        // Bulk write error - silent
+      if (bulkOps.length > 0) {
+        try {
+          await this.inverterDataModel.bulkWrite(bulkOps, { ordered: false });
+        } catch {
+          // Bulk write error - silent
+        }
       }
     }
 
-    // Process daily totals batch
+    // Process ALL daily totals in queue (group by device)
     if (this.dailyTotalsQueue.length > 0) {
-      const batch = this.dailyTotalsQueue.splice(0, this.MAX_BATCH_SIZE);
-      // Group by userId+deviceId to avoid duplicate increments
+      const allItems = this.dailyTotalsQueue.splice(0, this.dailyTotalsQueue.length);
+      // Group by userId+deviceId and sum totals
       const grouped = new Map<string, { userId: string; deviceId: string; totalA: number; totalA2: number }>();
 
-      for (const item of batch) {
+      for (const item of allItems) {
         const key = `${item.userId}:${item.deviceId}`;
         const existing = grouped.get(key);
         if (existing) {
@@ -112,7 +122,7 @@ export class InverterDataService implements OnModuleDestroy {
         }
       }
 
-      // Process grouped increments
+      // Process grouped increments (non-blocking)
       for (const item of grouped.values()) {
         this.redisDailyTotalsService
           .incrementDailyTotals(item.userId, item.deviceId, item.totalA, item.totalA2)
