@@ -20,21 +20,23 @@ export class InverterDataService implements OnModuleDestroy {
   private batchTimer: NodeJS.Timeout | null;
   private readonly DEDUPLICATION_WINDOW = 3000; // 3 seconds
   private readonly MAX_MEMORY_ENTRIES = 1000; // Aggressive limit for VPS
-  private readonly BATCH_INTERVAL = 2000; // Process batch every 2 seconds
-  private readonly MAX_BATCH_SIZE = 600; // Handle all 500 devices in one batch
+  private readonly BATCH_INTERVAL = 2000; // Redis batch every 2 seconds
+  private readonly DB_FLUSH_INTERVAL = 30000; // MongoDB flush every 30 seconds
 
-  // Batch queues for non-blocking operations
-  private inverterDataQueue: Array<{
+  // Use Maps for O(1) lookup instead of arrays
+  private inverterDataMap = new Map<string, {
     userId: string;
     deviceId: string;
     data: Partial<InverterData>;
-  }> = [];
-  private dailyTotalsQueue: Array<{
+  }>();
+  private dailyTotalsMap = new Map<string, {
     userId: string;
     deviceId: string;
     totalA: number;
     totalA2: number;
-  }> = [];
+  }>();
+
+  private dbFlushTimer: NodeJS.Timeout | null;
 
   constructor(
     @InjectModel(InverterData.name)
@@ -47,10 +49,15 @@ export class InverterDataService implements OnModuleDestroy {
       this.cleanupMemory();
     }, 60000);
 
-    // Start batch processing timer
+    // Start Redis batch processing timer (every 2 seconds)
     this.batchTimer = setInterval(() => {
-      void this.processBatches();
+      void this.processRedisBatch();
     }, this.BATCH_INTERVAL);
+
+    // Start MongoDB flush timer (every 30 seconds - reduced CPU)
+    this.dbFlushTimer = setInterval(() => {
+      void this.flushToMongoDB();
+    }, this.DB_FLUSH_INTERVAL);
   }
 
   // Aggressive cleanup for VPS environment
@@ -63,69 +70,57 @@ export class InverterDataService implements OnModuleDestroy {
       clearInterval(this.batchTimer);
       this.batchTimer = null;
     }
-    // Process remaining batches before shutdown
-    await this.processBatches();
+    if (this.dbFlushTimer) {
+      clearInterval(this.dbFlushTimer);
+      this.dbFlushTimer = null;
+    }
+    // Process remaining data before shutdown
+    await this.processRedisBatch();
+    await this.flushToMongoDB();
     this.lastProcessed.clear();
   }
 
-  // Process batched operations - runs every BATCH_INTERVAL
-  private async processBatches(): Promise<void> {
-    // Process ALL inverter data in queue (deduplicate by device)
-    if (this.inverterDataQueue.length > 0) {
-      // Deduplicate: keep only latest data per device
-      const deviceMap = new Map<string, { userId: string; deviceId: string; data: Partial<InverterData> }>();
-      const allItems = this.inverterDataQueue.splice(0, this.inverterDataQueue.length);
+  // Process Redis batch - runs every 2 seconds (fast)
+  private async processRedisBatch(): Promise<void> {
+    if (this.dailyTotalsMap.size === 0) return;
 
-      for (const item of allItems) {
-        const key = `${item.userId}:${item.deviceId}`;
-        deviceMap.set(key, item); // Latest wins
-      }
+    // Get all items and clear map
+    const items = Array.from(this.dailyTotalsMap.values());
+    this.dailyTotalsMap.clear();
 
-      const bulkOps = Array.from(deviceMap.values()).map((item) => ({
-        updateOne: {
-          filter: { userId: item.userId, deviceId: item.deviceId },
-          update: {
-            $set: {
-              ...item.data,
-              userId: item.userId,
-              deviceId: item.deviceId,
-              updatedAt: new Date(),
-            },
+    // Process ALL increments in single Redis pipeline
+    this.redisDailyTotalsService
+      .incrementDailyTotalsBatch(items)
+      .catch(() => { /* silent */ });
+  }
+
+  // Flush to MongoDB - runs every 30 seconds (slow, batched)
+  private async flushToMongoDB(): Promise<void> {
+    if (this.inverterDataMap.size === 0) return;
+
+    // Get all items and clear map
+    const items = Array.from(this.inverterDataMap.values());
+    this.inverterDataMap.clear();
+
+    const bulkOps = items.map((item) => ({
+      updateOne: {
+        filter: { userId: item.userId, deviceId: item.deviceId },
+        update: {
+          $set: {
+            ...item.data,
+            userId: item.userId,
+            deviceId: item.deviceId,
+            updatedAt: new Date(),
           },
-          upsert: true,
         },
-      }));
+        upsert: true,
+      },
+    }));
 
-      if (bulkOps.length > 0) {
-        try {
-          await this.inverterDataModel.bulkWrite(bulkOps, { ordered: false });
-        } catch {
-          // Bulk write error - silent
-        }
-      }
-    }
-
-    // Process ALL daily totals in queue (group by device)
-    if (this.dailyTotalsQueue.length > 0) {
-      const allItems = this.dailyTotalsQueue.splice(0, this.dailyTotalsQueue.length);
-      // Group by userId+deviceId and sum totals
-      const grouped = new Map<string, { userId: string; deviceId: string; totalA: number; totalA2: number }>();
-
-      for (const item of allItems) {
-        const key = `${item.userId}:${item.deviceId}`;
-        const existing = grouped.get(key);
-        if (existing) {
-          existing.totalA += item.totalA;
-          existing.totalA2 += item.totalA2;
-        } else {
-          grouped.set(key, { ...item });
-        }
-      }
-
-      // Process ALL grouped increments in single Redis pipeline (non-blocking)
-      this.redisDailyTotalsService
-        .incrementDailyTotalsBatch(Array.from(grouped.values()))
-        .catch(() => { /* silent */ });
+    try {
+      await this.inverterDataModel.bulkWrite(bulkOps, { ordered: false });
+    } catch {
+      // Bulk write error - silent
     }
   }
 
@@ -413,19 +408,27 @@ export class InverterDataService implements OnModuleDestroy {
       totalA2Capacity: Number.isNaN(totalA2Capacity) ? 0 : totalA2Capacity,
     };
 
-    // Queue for batch processing (non-blocking)
-    this.inverterDataQueue.push({
+    // Store in Map (auto-deduplicates, O(1) lookup)
+    const deviceKey = `${payload.currentUid}:${payload.wifiSsid}`;
+
+    this.inverterDataMap.set(deviceKey, {
       userId: payload.currentUid,
       deviceId: payload.wifiSsid,
       data: inverterDataUpdate,
     });
 
-    // Queue daily totals for batch processing
-    this.dailyTotalsQueue.push({
-      userId: payload.currentUid,
-      deviceId: payload.wifiSsid,
-      totalA: currentTotalA,
-      totalA2: currentTotalA2,
-    });
+    // Accumulate daily totals in Map
+    const existing = this.dailyTotalsMap.get(deviceKey);
+    if (existing) {
+      existing.totalA += currentTotalA;
+      existing.totalA2 += currentTotalA2;
+    } else {
+      this.dailyTotalsMap.set(deviceKey, {
+        userId: payload.currentUid,
+        deviceId: payload.wifiSsid,
+        totalA: currentTotalA,
+        totalA2: currentTotalA2,
+      });
+    }
   }
 }
