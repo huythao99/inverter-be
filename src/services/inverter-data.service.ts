@@ -20,8 +20,8 @@ export class InverterDataService implements OnModuleDestroy {
   private batchTimer: NodeJS.Timeout | null;
   private readonly DEDUPLICATION_WINDOW = 3000; // 3 seconds
   private readonly MAX_MEMORY_ENTRIES = 1000; // Aggressive limit for VPS
-  private readonly BATCH_INTERVAL = 1000; // Process batch every 1 second
-  private readonly MAX_BATCH_SIZE = 50; // Max items per batch
+  private readonly BATCH_INTERVAL = 3000; // Process batch every 3 seconds (reduced CPU)
+  private readonly MAX_BATCH_SIZE = 100; // Max items per batch
 
   // Batch queues for non-blocking operations
   private inverterDataQueue: Array<{
@@ -42,10 +42,10 @@ export class InverterDataService implements OnModuleDestroy {
     private mqttService: MqttService,
     private redisDailyTotalsService: RedisDailyTotalsService,
   ) {
-    // Start aggressive memory cleanup every 30 seconds
+    // Start memory cleanup every 60 seconds (reduced CPU)
     this.cleanupTimer = setInterval(() => {
       this.cleanupMemory();
-    }, 30000);
+    }, 60000);
 
     // Start batch processing timer
     this.batchTimer = setInterval(() => {

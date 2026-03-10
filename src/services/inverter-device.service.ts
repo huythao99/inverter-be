@@ -174,34 +174,34 @@ export class InverterDeviceService {
   }
 
   @OnEvent('device.message.received')
-  async handleDeviceMessageReceived(payload: {
+  handleDeviceMessageReceived(payload: {
     currentUid: string;
     wifiSsid: string;
     data: any;
   }) {
-    try {
-      // Create or update device in database
-      const deviceData = {
-        userId: payload.currentUid,
-        deviceId: payload.wifiSsid,
-        deviceName:
-          payload.data.deviceName || payload.wifiSsid || 'Unknown Device',
-        updatedAt: new Date(),
-      };
+    // Non-blocking device update - fire and forget
+    const deviceData = {
+      userId: payload.currentUid,
+      deviceId: payload.wifiSsid,
+      deviceName:
+        payload.data.deviceName || payload.wifiSsid || 'Unknown Device',
+      updatedAt: new Date(),
+    };
 
-      // Use upsert to create or update the device
-      const device = await this.inverterDeviceModel
-        .findOneAndUpdate(
-          { userId: payload.currentUid, deviceId: payload.wifiSsid },
-          deviceData,
-          { new: true, upsert: true },
-        )
-        .exec();
-
-      // Emit MQTT event for device update
-      await this.mqttService.emitDeviceUpdated(payload.currentUid, device);
-    } catch {
-      // Error saving device - silent
-    }
+    // Use upsert to create or update the device (non-blocking)
+    this.inverterDeviceModel
+      .findOneAndUpdate(
+        { userId: payload.currentUid, deviceId: payload.wifiSsid },
+        deviceData,
+        { new: true, upsert: true },
+      )
+      .exec()
+      .then((device) => {
+        if (device) {
+          // Emit MQTT event for device update (non-blocking)
+          this.mqttService.emitDeviceUpdated(payload.currentUid, device).catch(() => {});
+        }
+      })
+      .catch(() => {});
   }
 }

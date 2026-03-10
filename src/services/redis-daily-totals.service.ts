@@ -83,10 +83,10 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
         void this.checkForNewDay();
       }, 600000); // Check every 10 minutes (reduced CPU load)
 
-      // Start Redis health check timer (every 30 seconds)
+      // Start Redis health check timer (every 60 seconds - reduced CPU)
       this.healthCheckTimer = setInterval(() => {
         void this.checkRedisHealth();
-      }, 30000);
+      }, 60000);
 
     } catch {
       // Failed to initialize Redis Daily Totals Service - silent
