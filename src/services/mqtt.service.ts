@@ -21,6 +21,13 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    // Only initialize MQTT on first cluster instance (pm_id = 0)
+    // This prevents duplicate message processing across cluster instances
+    const instanceId = process.env.pm_id || process.env.NODE_APP_INSTANCE || '0';
+    if (instanceId !== '0') {
+      return; // Skip MQTT on non-primary instances
+    }
+
     // Initialize MQTT connection asynchronously to prevent blocking
     setImmediate(() => {
       this.initializeMqttConnection();
