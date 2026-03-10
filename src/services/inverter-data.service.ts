@@ -122,12 +122,10 @@ export class InverterDataService implements OnModuleDestroy {
         }
       }
 
-      // Process grouped increments (non-blocking)
-      for (const item of grouped.values()) {
-        this.redisDailyTotalsService
-          .incrementDailyTotals(item.userId, item.deviceId, item.totalA, item.totalA2)
-          .catch(() => { /* silent */ });
-      }
+      // Process ALL grouped increments in single Redis pipeline (non-blocking)
+      this.redisDailyTotalsService
+        .incrementDailyTotalsBatch(Array.from(grouped.values()))
+        .catch(() => { /* silent */ });
     }
   }
 

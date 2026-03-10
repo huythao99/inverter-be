@@ -147,6 +147,39 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
     return gmt7.toISOString().split('T')[0]; // YYYY-MM-DD
   }
 
+  // Batch increment for multiple devices at once - single Redis pipeline
+  async incrementDailyTotalsBatch(
+    items: Array<{ userId: string; deviceId: string; totalA: number; totalA2: number }>
+  ): Promise<void> {
+    if (this.isShuttingDown || items.length === 0) return;
+
+    try {
+      if (!this.redis || this.redis.status !== 'ready') {
+        return; // Skip if Redis not available
+      }
+
+      const date = this.getGMT7Date();
+      const pipeline = this.redis.pipeline();
+
+      for (const item of items) {
+        const redisKey = this.getRedisKey(item.userId, item.deviceId, date);
+        const dirtyKey = this.getDirtyKey(item.userId, item.deviceId, date);
+
+        pipeline.hincrbyfloat(redisKey, 'totalA', item.totalA);
+        pipeline.hincrbyfloat(redisKey, 'totalA2', item.totalA2);
+        pipeline.expire(redisKey, 7 * 24 * 3600);
+        pipeline.sadd(this.DIRTY_SET_KEY, dirtyKey);
+      }
+
+      // Set expiry for dirty set once
+      pipeline.expire(this.DIRTY_SET_KEY, 7 * 24 * 3600);
+
+      await pipeline.exec();
+    } catch {
+      // Batch increment error - silent
+    }
+  }
+
   async incrementDailyTotals(
     userId: string,
     deviceId: string,
