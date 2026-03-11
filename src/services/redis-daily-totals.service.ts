@@ -151,10 +151,12 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
   async incrementDailyTotalsBatch(
     items: Array<{ userId: string; deviceId: string; totalA: number; totalA2: number }>
   ): Promise<void> {
+    console.log('[DEBUG Redis] incrementDailyTotalsBatch called with', items.length, 'items');
     if (this.isShuttingDown || items.length === 0) return;
 
     try {
       if (!this.redis || this.redis.status !== 'ready') {
+        console.log('[DEBUG Redis] Redis not ready, status:', this.redis?.status);
         return; // Skip if Redis not available
       }
 
@@ -174,9 +176,10 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
       // Set expiry for dirty set once
       pipeline.expire(this.DIRTY_SET_KEY, 7 * 24 * 3600);
 
-      await pipeline.exec();
-    } catch {
-      // Batch increment error - silent
+      const results = await pipeline.exec();
+      console.log('[DEBUG Redis] Pipeline executed, results count:', results?.length);
+    } catch (err) {
+      console.log('[DEBUG Redis] Batch increment error:', err);
     }
   }
 

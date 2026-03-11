@@ -88,10 +88,13 @@ export class InverterDataService implements OnModuleDestroy {
     const items = Array.from(this.dailyTotalsMap.values());
     this.dailyTotalsMap.clear();
 
+    console.log('[DEBUG] processRedisBatch: sending', items.length, 'items to Redis');
+    console.log('[DEBUG] Items:', JSON.stringify(items));
+
     // Process ALL increments in single Redis pipeline
     this.redisDailyTotalsService
       .incrementDailyTotalsBatch(items)
-      .catch(() => { /* silent */ });
+      .catch((err) => { console.log('[DEBUG] Redis batch error:', err); });
   }
 
   // Flush to MongoDB - runs every 30 seconds (slow, batched)
@@ -357,10 +360,14 @@ export class InverterDataService implements OnModuleDestroy {
     wifiSsid: string;
     data: any;
   }) {
+    console.log('[DEBUG] Event received:', payload.currentUid, payload.wifiSsid);
     const key = `${payload.currentUid}-${payload.wifiSsid}`;
     // Use value field for deduplication instead of full JSON.stringify
     const valueString = payload.data?.value as string;
-    if (!valueString) return; // Skip if no value
+    if (!valueString) {
+      console.log('[DEBUG] No value string, skipping');
+      return;
+    }
 
     const now = Date.now();
 
@@ -382,9 +389,11 @@ export class InverterDataService implements OnModuleDestroy {
     this.lastProcessed.set(key, { timestamp: now, data: valueString });
 
     const { totalA, totalA2 } = this.parseTotalsFromValue(valueString);
+    console.log('[DEBUG] Parsed totalA:', totalA, 'totalA2:', totalA2);
 
     // Skip processing if totalA >= 15000 or totalA2 >= 8000
     if (totalA >= 15000 || totalA2 >= 8000) {
+      console.log('[DEBUG] Filtered out: totalA >= 15000 or totalA2 >= 8000');
       return;
     }
 
@@ -425,5 +434,6 @@ export class InverterDataService implements OnModuleDestroy {
         totalA2: currentTotalA2,
       });
     }
+    console.log('[DEBUG] Added to dailyTotalsMap. Size:', this.dailyTotalsMap.size, 'currentTotalA:', currentTotalA, 'currentTotalA2:', currentTotalA2);
   }
 }
