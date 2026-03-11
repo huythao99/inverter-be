@@ -73,13 +73,11 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.client.on('connect', () => {
-      console.log('[DEBUG MQTT] Connected to broker:', mqttUrl);
       this.reconnectAttempts = 0;
       this.subscribeToInverterTopics(); // Only subscribes topics now
     });
 
     this.client.on('error', (err) => {
-      console.log('[DEBUG MQTT] Error:', err.message);
     });
 
     this.client.on('offline', () => {
@@ -107,7 +105,6 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
 
   // Global message handler - called from the single listener registered in init
   private handleMessage(topic: string, message: Buffer) {
-    console.log('[DEBUG MQTT] Message received on topic:', topic);
     const topicParts = topic.split('/');
     if (topicParts.length < 4) return;
 
