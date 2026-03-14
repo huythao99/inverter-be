@@ -26,20 +26,9 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     const instanceId = process.env.pm_id || process.env.NODE_APP_INSTANCE;
     const primaryInstanceId = process.env.MQTT_PRIMARY_INSTANCE || '1';
 
-    console.log(
-      `[MqttService] Instance ID: ${instanceId}, Primary: ${primaryInstanceId}`,
-    );
-
     if (instanceId && instanceId !== primaryInstanceId) {
-      console.log(
-        `[MqttService] Skipping MQTT on instance ${instanceId} (primary is ${primaryInstanceId})`,
-      );
       return;
     }
-
-    console.log(
-      `[MqttService] Initializing MQTT on instance ${instanceId || 'default'}`,
-    );
 
     // Initialize MQTT connection asynchronously to prevent blocking
     setImmediate(() => {
