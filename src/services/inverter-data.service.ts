@@ -80,7 +80,7 @@ export class InverterDataService implements OnModuleDestroy {
     this.lastProcessed.clear();
   }
 
-  // Process Redis batch - runs every 2 seconds (fast)
+  // Process Redis batch - runs every 5 seconds (fast)
   private async processRedisBatch(): Promise<void> {
     if (this.dailyTotalsMap.size === 0) return;
 
@@ -88,11 +88,18 @@ export class InverterDataService implements OnModuleDestroy {
     const items = Array.from(this.dailyTotalsMap.values());
     this.dailyTotalsMap.clear();
 
+    // Log batch details for debugging
+    console.log(`[RedisBatch] Processing ${items.length} devices:`);
+    items.forEach((item) => {
+      console.log(`  [${item.userId}:${item.deviceId}] totalA: +${item.totalA.toFixed(6)}, totalA2: +${item.totalA2.toFixed(6)}`);
+    });
 
     // Process ALL increments in single Redis pipeline
     this.redisDailyTotalsService
       .incrementDailyTotalsBatch(items)
-      .catch((err) => { });
+      .catch((err) => {
+        console.error('[RedisBatch] Error:', err);
+      });
   }
 
   // Flush to MongoDB - runs every 30 seconds (slow, batched)
@@ -418,6 +425,7 @@ export class InverterDataService implements OnModuleDestroy {
     if (existing) {
       existing.totalA += currentTotalA;
       existing.totalA2 += currentTotalA2;
+      console.log(`[InverterData] ${deviceKey} accumulated: totalA=${existing.totalA.toFixed(6)}, totalA2=${existing.totalA2.toFixed(6)} (+${currentTotalA.toFixed(6)}, +${currentTotalA2.toFixed(6)})`);
     } else {
       this.dailyTotalsMap.set(deviceKey, {
         userId: payload.currentUid,
@@ -425,6 +433,7 @@ export class InverterDataService implements OnModuleDestroy {
         totalA: currentTotalA,
         totalA2: currentTotalA2,
       });
+      console.log(`[InverterData] ${deviceKey} new: totalA=${currentTotalA.toFixed(6)}, totalA2=${currentTotalA2.toFixed(6)}`);
     }
   }
 }

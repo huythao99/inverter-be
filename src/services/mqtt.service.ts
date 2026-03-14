@@ -21,12 +21,25 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // // Only initialize MQTT on first cluster instance (pm_id = 0)
-    // // This prevents duplicate message processing across cluster instances
-    // const instanceId = process.env.pm_id || process.env.NODE_APP_INSTANCE || '0';
-    // if (instanceId !== '0') {
-    //   return; // Skip MQTT on non-primary instances
-    // }
+    // Only initialize MQTT on primary cluster instance
+    // This prevents duplicate message processing across cluster instances
+    const instanceId = process.env.pm_id || process.env.NODE_APP_INSTANCE;
+    const primaryInstanceId = process.env.MQTT_PRIMARY_INSTANCE || '1';
+
+    console.log(
+      `[MqttService] Instance ID: ${instanceId}, Primary: ${primaryInstanceId}`,
+    );
+
+    if (instanceId && instanceId !== primaryInstanceId) {
+      console.log(
+        `[MqttService] Skipping MQTT on instance ${instanceId} (primary is ${primaryInstanceId})`,
+      );
+      return;
+    }
+
+    console.log(
+      `[MqttService] Initializing MQTT on instance ${instanceId || 'default'}`,
+    );
 
     // Initialize MQTT connection asynchronously to prevent blocking
     setImmediate(() => {
@@ -77,7 +90,8 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       this.subscribeToInverterTopics(); // Only subscribes topics now
     });
 
-    this.client.on('error', (err) => {
+    this.client.on('error', () => {
+      // MQTT error - silent
     });
 
     this.client.on('offline', () => {
