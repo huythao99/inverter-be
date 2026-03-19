@@ -1,8 +1,9 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { HomeAssistantService } from '../services/home-assistant.service';
 import { HomeAssistantConfig } from '../config/home-assistant.config';
 import { MqttService } from '../services/mqtt.service';
+import { MqttAuthModule } from './mqtt-auth.module';
 import {
   InverterDevice,
   InverterDeviceSchema,
@@ -30,6 +31,7 @@ import {
       { name: InverterSetting.name, schema: InverterSettingSchema },
       { name: InverterSchedule.name, schema: InverterScheduleSchema },
     ]),
+    forwardRef(() => MqttAuthModule),
   ],
   providers: [HomeAssistantService, HomeAssistantConfig, MqttService],
   exports: [HomeAssistantService, HomeAssistantConfig],

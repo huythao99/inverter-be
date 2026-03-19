@@ -3,11 +3,14 @@ import {
   OnModuleInit,
   OnModuleDestroy,
   Logger,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { MqttService } from './mqtt.service';
+import { MqttAuthService } from './mqtt-auth.service';
 import { HomeAssistantConfig } from '../config/home-assistant.config';
 import {
   HADeviceInfo,
@@ -54,6 +57,8 @@ export class HomeAssistantService implements OnModuleInit, OnModuleDestroy {
     private mqttService: MqttService,
     private haConfig: HomeAssistantConfig,
     private eventEmitter: EventEmitter2,
+    @Inject(forwardRef(() => MqttAuthService))
+    private mqttAuthService: MqttAuthService,
     @InjectModel(InverterDevice.name)
     private inverterDeviceModel: Model<InverterDeviceDocument>,
     @InjectModel(InverterData.name)
@@ -708,7 +713,7 @@ export class HomeAssistantService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Handle new device added - publish discovery
+   * Handle new device added - publish discovery and generate MQTT credentials
    */
   @OnEvent('device.message.received')
   async handleDeviceAdded(payload: {
@@ -720,6 +725,20 @@ export class HomeAssistantService implements OnModuleInit, OnModuleDestroy {
 
     // Only publish discovery if not already discovered
     if (!this.discoveredDevices.has(deviceKey)) {
+      // Auto-generate MQTT credentials for the user
+      try {
+        await this.mqttAuthService.getOrCreateCredentials(payload.currentUid);
+        await this.mqttAuthService.addAllowedDevice(
+          payload.currentUid,
+          payload.wifiSsid,
+        );
+      } catch (error) {
+        this.logger.error(
+          `Failed to generate MQTT credentials for user ${payload.currentUid}`,
+          error,
+        );
+      }
+
       await this.publishDeviceDiscovery(
         payload.currentUid,
         payload.wifiSsid,
