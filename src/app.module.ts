@@ -10,6 +10,7 @@ import { InverterSettingModule } from './modules/inverter-setting.module';
 import { InverterDeviceModule } from './modules/inverter-device.module';
 import { InverterScheduleModule } from './modules/inverter-schedule.module';
 import { DailyTotalsModule } from './modules/daily-totals.module';
+import { HomeAssistantModule } from './modules/home-assistant.module';
 import { FirmwareController } from './controllers/firmware.controller';
 import { FirmwareService } from './services/firmware.service';
 
@@ -47,6 +48,7 @@ import { FirmwareService } from './services/firmware.service';
     InverterDeviceModule,
     InverterScheduleModule,
     DailyTotalsModule,
+    HomeAssistantModule,
   ],
   controllers: [AppController, FirmwareController],
   providers: [AppService, FirmwareService],

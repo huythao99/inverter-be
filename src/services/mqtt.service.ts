@@ -10,11 +10,17 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   private messageHandlers = new Map<string, number>();
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 10;
+  private haStatePrefix: string;
 
   constructor(
     private configService: ConfigService,
     private eventEmitter: EventEmitter2,
-  ) {}
+  ) {
+    this.haStatePrefix = this.configService.get<string>(
+      'HA_STATE_PREFIX',
+      'inverter_ha',
+    );
+  }
 
   onModuleInit() {
     if (this.isInitialized) {
@@ -102,13 +108,24 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
 
   // Only subscribe to topics - NO listener registration here
   private subscribeToInverterTopics() {
-    const topics = ['inverter/+/+/data', 'devices/inverter/+/+'];
+    const topics = [
+      'inverter/+/+/data',
+      'devices/inverter/+/+',
+      `${this.haStatePrefix}/+/+/set/+`, // Home Assistant command topics
+    ];
     topics.forEach((topic) => this.client.subscribe(topic));
   }
 
   // Global message handler - called from the single listener registered in init
   private handleMessage(topic: string, message: Buffer) {
     const topicParts = topic.split('/');
+
+    // Handle Home Assistant command topics
+    if (topic.startsWith(`${this.haStatePrefix}/`) && topic.includes('/set/')) {
+      this.handleHACommandMessage(topic, message);
+      return;
+    }
+
     if (topicParts.length < 4) return;
 
     const isInverter = topic.startsWith('inverter/');
@@ -214,6 +231,25 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       currentUid,
       wifiSsid,
       data: { deviceName },
+    });
+  }
+
+  // Handle Home Assistant command messages
+  private handleHACommandMessage(topic: string, message: Buffer) {
+    // Topic format: inverter_ha/{userId}/{deviceId}/set/{entity}
+    const parts = topic.split('/');
+    if (parts.length < 5) return;
+
+    const userId = parts[1];
+    const deviceId = parts[2];
+    const entity = parts[4];
+    const value = message.toString();
+
+    this.eventEmitter.emit('ha.command.received', {
+      userId,
+      deviceId,
+      entity,
+      value,
     });
   }
 
@@ -327,5 +363,33 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         },
       );
     });
+  }
+
+  // Publish with retain flag for Home Assistant discovery
+  async publishWithRetain(
+    topic: string,
+    payload: unknown,
+    retain: boolean = true,
+  ): Promise<void> {
+    if (!this.client || !this.client.connected) {
+      return;
+    }
+
+    return new Promise((resolve, reject) => {
+      const message =
+        typeof payload === 'string' ? payload : JSON.stringify(payload);
+      this.client.publish(topic, message, { qos: 1, retain }, (error) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve();
+        }
+      });
+    });
+  }
+
+  // Check if MQTT client is connected
+  isConnected(): boolean {
+    return this.client && this.client.connected;
   }
 }
