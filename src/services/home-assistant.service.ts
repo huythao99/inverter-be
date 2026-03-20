@@ -210,7 +210,8 @@ export class HomeAssistantService implements OnModuleInit, OnModuleDestroy {
 
       const discoveryTopic = this.haConfig.getDiscoveryTopic(
         entity.type,
-        `${userId}_${deviceId}`,
+        userId,
+        deviceId,
         entity.id,
       );
 

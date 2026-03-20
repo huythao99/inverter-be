@@ -319,13 +319,17 @@ export class MqttAuthService {
       availabilityTopic: `${this.statePrefix}/${userId}/${device.deviceId}/availability`,
     }));
 
+    // User-specific discovery prefix
+    const shortUserId = userId.substring(0, 8);
+    const userDiscoveryPrefix = `homeassistant_${shortUserId}`;
+
     return {
       broker: this.mqttBroker,
       port: this.mqttPort,
       username: credential.mqttUsername,
       password,
       ssl: false,
-      discoveryPrefix: 'homeassistant',
+      discoveryPrefix: userDiscoveryPrefix,
       stateTopicPrefix: `${this.statePrefix}/${userId}`,
       devices: deviceConfigs,
     };
@@ -400,18 +404,20 @@ export class MqttAuthService {
       '# Auto-generated ACL file by NestJS',
       '# Do not edit manually - changes will be overwritten',
       '',
-      '# Allow all users to read homeassistant discovery topics',
-      'pattern read homeassistant/#',
-      '',
       '# Allow all users to read bridge status',
       `pattern read ${this.statePrefix}/bridge/#`,
       '',
     ];
 
     for (const cred of credentials) {
+      const shortUserId = cred.userId.substring(0, 8);
+      const userDiscoveryPrefix = `homeassistant_${shortUserId}`;
+
       lines.push(`# User: ${cred.userId}`);
       lines.push(`user ${cred.mqttUsername}`);
-      // Read own topics
+      // Read own discovery topics (user-specific)
+      lines.push(`topic read ${userDiscoveryPrefix}/#`);
+      // Read own state topics
       lines.push(`topic read ${this.statePrefix}/${cred.userId}/#`);
       // Write only to set topics
       lines.push(`topic write ${this.statePrefix}/${cred.userId}/+/set/#`);

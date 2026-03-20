@@ -97,15 +97,27 @@ export class HomeAssistantConfig {
 
   /**
    * Get discovery topic for an entity
+   * Uses user-specific discovery prefix so each user only sees their devices
    */
   getDiscoveryTopic(
     type: 'sensor' | 'number' | 'switch' | 'select',
+    userId: string,
     deviceId: string,
     entityId: string,
   ): string {
     // Sanitize deviceId for MQTT topic (replace special chars)
     const safeDeviceId = deviceId.replace(/[^a-zA-Z0-9_-]/g, '_');
-    return `${this.discoveryPrefix}/${type}/${safeDeviceId}/${entityId}/config`;
+    const shortUserId = userId.substring(0, 8);
+    // User-specific discovery prefix: homeassistant_ha_6jgAGTN7
+    return `${this.discoveryPrefix}_${shortUserId}/${type}/${safeDeviceId}/${entityId}/config`;
+  }
+
+  /**
+   * Get user-specific discovery prefix for Home Assistant configuration
+   */
+  getUserDiscoveryPrefix(userId: string): string {
+    const shortUserId = userId.substring(0, 8);
+    return `${this.discoveryPrefix}_${shortUserId}`;
   }
 
   /**
