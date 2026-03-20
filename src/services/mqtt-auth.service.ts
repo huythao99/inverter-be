@@ -31,6 +31,8 @@ export class MqttAuthService {
   private readonly mqttBroker: string;
   private readonly mqttPort: number;
   private readonly statePrefix: string;
+  private readonly superusers: string[];
+  private readonly superuserPassword: string;
 
   constructor(
     @InjectModel(MqttCredential.name)
@@ -49,6 +51,18 @@ export class MqttAuthService {
     this.statePrefix = this.configService.get<string>(
       'HA_STATE_PREFIX',
       'inverter_ha',
+    );
+    // Superusers can read/write all topics (comma-separated list)
+    const superuserList = this.configService.get<string>(
+      'MQTT_SUPERUSERS',
+      'giabao',
+    );
+    this.superusers = superuserList.split(',').map((u) => u.trim());
+
+    // Superuser password (for static superuser auth)
+    this.superuserPassword = this.configService.get<string>(
+      'MQTT_SUPERUSER_PASSWORD',
+      '',
     );
   }
 
@@ -197,6 +211,15 @@ export class MqttAuthService {
     username: string,
     password: string,
   ): Promise<boolean> {
+    // Check if it's a superuser with static password
+    if (this.superusers.includes(username) && this.superuserPassword) {
+      if (password === this.superuserPassword) {
+        this.logger.debug(`MQTT auth success: superuser - ${username}`);
+        return true;
+      }
+    }
+
+    // Check database credentials
     const credential = await this.mqttCredentialModel
       .findOne({ mqttUsername: username, isActive: true })
       .exec();
@@ -432,5 +455,20 @@ export class MqttAuthService {
    */
   async getAllCredentials(): Promise<MqttCredentialDocument[]> {
     return this.mqttCredentialModel.find({ isActive: true }).exec();
+  }
+
+  /**
+   * Check if username is a superuser
+   * Superusers can read/write all topics without ACL restrictions
+   */
+  async isSuperuser(username: string): Promise<boolean> {
+    return this.superusers.includes(username);
+  }
+
+  /**
+   * Get list of superusers
+   */
+  getSuperusers(): string[] {
+    return [...this.superusers];
   }
 }

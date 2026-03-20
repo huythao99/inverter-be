@@ -217,16 +217,22 @@ export class MqttAuthController {
    * Check if user is superuser (called by Mosquitto auth plugin)
    * POST /api/mqtt-auth/superuser
    *
-   * Superusers bypass ACL checks entirely.
-   * Currently, no users are superusers - all users go through ACL.
+   * Superusers bypass ACL checks entirely - can read/write all topics.
    *
    * Response: HTTP 200 = is superuser, HTTP 403 = not superuser
    */
   @Post('superuser')
   @HttpCode(HttpStatus.OK)
   async checkSuperuser(@Body() body: { username: string }) {
-    // No superusers - all users go through ACL
-    // If you want to add superuser support, check against a list here
+    const { username } = body;
+
+    // Check if user is superuser via service
+    const isSuperuser = await this.mqttAuthService.isSuperuser(username);
+
+    if (isSuperuser) {
+      return { ok: true };
+    }
+
     throw new HttpException('Forbidden', HttpStatus.FORBIDDEN);
   }
 
