@@ -7,6 +7,7 @@ import {
   Body,
   HttpCode,
   HttpStatus,
+  HttpException,
   Logger,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -147,7 +148,7 @@ export class MqttAuthController {
 
     if (!username || !password) {
       this.logger.debug('Validate: missing username or password');
-      return { result: 'deny' };
+      throw new HttpException('Forbidden', HttpStatus.FORBIDDEN);
     }
 
     const isValid = await this.mqttAuthService.validateCredentials(
@@ -156,10 +157,10 @@ export class MqttAuthController {
     );
 
     if (isValid) {
-      return { result: 'allow' };
+      return { ok: true };
     }
 
-    return { result: 'deny' };
+    throw new HttpException('Forbidden', HttpStatus.FORBIDDEN);
   }
 
   /**
@@ -179,7 +180,7 @@ export class MqttAuthController {
     const { username, topic, acc } = body;
 
     if (!username || !topic) {
-      return { result: 'deny' };
+      throw new HttpException('Forbidden', HttpStatus.FORBIDDEN);
     }
 
     // Convert acc number to access type
@@ -206,10 +207,27 @@ export class MqttAuthController {
     );
 
     if (isAllowed) {
-      return { result: 'allow' };
+      return { ok: true };
     }
 
-    return { result: 'deny' };
+    throw new HttpException('Forbidden', HttpStatus.FORBIDDEN);
+  }
+
+  /**
+   * Check if user is superuser (called by Mosquitto auth plugin)
+   * POST /api/mqtt-auth/superuser
+   *
+   * Superusers bypass ACL checks entirely.
+   * Currently, no users are superusers - all users go through ACL.
+   *
+   * Response: HTTP 200 = is superuser, HTTP 403 = not superuser
+   */
+  @Post('superuser')
+  @HttpCode(HttpStatus.OK)
+  async checkSuperuser(@Body() body: { username: string }) {
+    // No superusers - all users go through ACL
+    // If you want to add superuser support, check against a list here
+    throw new HttpException('Forbidden', HttpStatus.FORBIDDEN);
   }
 
   /**
