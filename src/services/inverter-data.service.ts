@@ -88,17 +88,15 @@ export class InverterDataService implements OnModuleDestroy {
     const items = Array.from(this.dailyTotalsMap.values());
     this.dailyTotalsMap.clear();
 
-    console.log('[INVERTER] Processing Redis batch, items:', items.length);
-    items.forEach((item) => {
-      console.log('[INVERTER] Redis batch item:', item.userId, item.deviceId, 'totalA:', item.totalA, 'totalA2:', item.totalA2);
-    });
+    const debugItem = items.find((item) => item.deviceId === 'GTIControl830');
+    if (debugItem) {
+      console.log('[INVERTER] Redis batch - GTIControl830 totalA:', debugItem.totalA, 'totalA2:', debugItem.totalA2);
+    }
 
     // Process ALL increments in single Redis pipeline
     this.redisDailyTotalsService
       .incrementDailyTotalsBatch(items)
-      .catch((err) => {
-        console.log('[INVERTER] Redis batch error:', err);
-      });
+      .catch(() => {});
   }
 
   // Flush to MongoDB - runs every 30 seconds (slow, batched)
@@ -364,15 +362,13 @@ export class InverterDataService implements OnModuleDestroy {
     wifiSsid: string;
     data: any;
   }) {
-    console.log('[INVERTER] Event received:', payload.currentUid, payload.wifiSsid);
+    const isDebugDevice = payload.wifiSsid === 'GTIControl830';
+    if (isDebugDevice) console.log('[INVERTER] Event received:', payload.currentUid, payload.wifiSsid);
 
     const key = `${payload.currentUid}-${payload.wifiSsid}`;
     // Use value field for deduplication instead of full JSON.stringify
     const valueString = payload.data?.value as string;
-    if (!valueString) {
-      console.log('[INVERTER] No value string, skipping');
-      return;
-    }
+    if (!valueString) return;
 
     const now = Date.now();
 
@@ -383,7 +379,6 @@ export class InverterDataService implements OnModuleDestroy {
       now - lastProcess.timestamp < this.DEDUPLICATION_WINDOW &&
       lastProcess.data === valueString
     ) {
-      console.log('[INVERTER] Duplicate data, skipping');
       return;
     }
 
@@ -395,11 +390,11 @@ export class InverterDataService implements OnModuleDestroy {
     this.lastProcessed.set(key, { timestamp: now, data: valueString });
 
     const { totalA, totalA2 } = this.parseTotalsFromValue(valueString);
-    console.log('[INVERTER] Parsed values - totalA:', totalA, 'totalA2:', totalA2);
+    if (isDebugDevice) console.log('[INVERTER] Parsed - totalA:', totalA, 'totalA2:', totalA2);
 
     // Skip processing if totalA >= 15000 or totalA2 >= 8000
     if (totalA >= 15000 || totalA2 >= 8000) {
-      console.log('[INVERTER] Values exceed limit, skipping');
+      if (isDebugDevice) console.log('[INVERTER] Values exceed limit, skipping');
       return;
     }
 
@@ -408,7 +403,7 @@ export class InverterDataService implements OnModuleDestroy {
     const safeTotalA2 = Number.isNaN(totalA2) ? 0 : totalA2;
     const currentTotalA = safeTotalA / 1000000;
     const currentTotalA2 = safeTotalA2 / 1000000;
-    console.log('[INVERTER] Converted - currentTotalA:', currentTotalA, 'currentTotalA2:', currentTotalA2);
+    if (isDebugDevice) console.log('[INVERTER] Converted - totalA:', currentTotalA, 'totalA2:', currentTotalA2);
 
     // Map MQTT data to InverterData schema
     const totalACapacity = Number(payload.data?.totalACapacity);
@@ -433,7 +428,7 @@ export class InverterDataService implements OnModuleDestroy {
     if (existing) {
       existing.totalA += currentTotalA;
       existing.totalA2 += currentTotalA2;
-      console.log('[INVERTER] Updated daily totals - totalA:', existing.totalA, 'totalA2:', existing.totalA2);
+      if (isDebugDevice) console.log('[INVERTER] Updated totals - totalA:', existing.totalA, 'totalA2:', existing.totalA2);
     } else {
       this.dailyTotalsMap.set(deviceKey, {
         userId: payload.currentUid,
@@ -441,7 +436,7 @@ export class InverterDataService implements OnModuleDestroy {
         totalA: currentTotalA,
         totalA2: currentTotalA2,
       });
-      console.log('[INVERTER] New daily totals - totalA:', currentTotalA, 'totalA2:', currentTotalA2);
+      if (isDebugDevice) console.log('[INVERTER] New totals - totalA:', currentTotalA, 'totalA2:', currentTotalA2);
     }
   }
 }

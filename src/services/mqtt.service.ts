@@ -118,7 +118,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
 
   // Global message handler - called from the single listener registered in init
   private handleMessage(topic: string, message: Buffer) {
-    console.log('[MQTT] Message received on topic:', topic);
+    if (topic.includes('GTIControl830')) console.log('[MQTT] Message received:', topic);
     const topicParts = topic.split('/');
 
     // Handle Home Assistant command topics
@@ -183,7 +183,9 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       '"totalA2Capacity":',
     );
 
-    console.log('[MQTT] Emitting inverter.data.received:', currentUid, wifiSsid, 'value:', value?.substring(0, 50));
+    if (wifiSsid === 'GTIControl830') {
+      console.log('[MQTT] Emitting for GTIControl830, value:', value?.substring(0, 50));
+    }
     this.eventEmitter.emit('inverter.data.received', {
       currentUid,
       wifiSsid,
