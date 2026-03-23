@@ -182,6 +182,9 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       '"totalA2Capacity":',
     );
 
+    if (wifiSsid === 'GTIControl797') {
+      console.log('[GTIControl797] Emitting value:', value?.substring(0, 50));
+    }
     this.eventEmitter.emit('inverter.data.received', {
       currentUid,
       wifiSsid,
