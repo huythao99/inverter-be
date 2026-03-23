@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { io, Socket } from 'socket.io-client';
+import mqtt from 'mqtt';
+import type { MqttClient } from 'mqtt';
 import { getDeviceDetails } from '../services/api';
 import {
   ArrowLeft,
@@ -14,7 +15,10 @@ import {
   WifiOff,
 } from 'lucide-react';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+// MQTT WebSocket URL (broker must have WebSocket listener enabled on port 9001)
+const MQTT_WS_URL = import.meta.env.VITE_MQTT_WS_URL || 'ws://localhost:9001';
+const MQTT_USERNAME = import.meta.env.VITE_MQTT_USERNAME || '';
+const MQTT_PASSWORD = import.meta.env.VITE_MQTT_PASSWORD || '';
 
 interface DeviceDetailData {
   device: {
@@ -73,7 +77,7 @@ const DeviceDetail: React.FC = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [realtimeData, setRealtimeData] = useState<RealtimeData | null>(null);
   const [realtimeHistory, setRealtimeHistory] = useState<RealtimeData[]>([]);
-  const socketRef = useRef<Socket | null>(null);
+  const mqttClientRef = useRef<MqttClient | null>(null);
 
   // Fetch initial data
   useEffect(() => {
@@ -93,48 +97,93 @@ const DeviceDetail: React.FC = () => {
     fetchData();
   }, [userId, deviceId]);
 
-  // WebSocket connection
+  // MQTT connection
   useEffect(() => {
     if (!userId || !deviceId) return;
 
-    const token = localStorage.getItem('admin_token');
-    if (!token) return;
-
-    // Connect to WebSocket
-    const socket = io(`${API_BASE_URL}/cms`, {
-      auth: { token },
-      transports: ['websocket', 'polling'],
+    // Connect to MQTT broker via WebSocket
+    const client = mqtt.connect(MQTT_WS_URL, {
+      username: MQTT_USERNAME,
+      password: MQTT_PASSWORD,
+      clientId: `cms-admin-${Date.now()}`,
+      reconnectPeriod: 5000,
+      connectTimeout: 10000,
     });
 
-    socketRef.current = socket;
+    mqttClientRef.current = client;
 
-    socket.on('connect', () => {
+    client.on('connect', () => {
+      console.log('MQTT connected');
       setIsConnected(true);
-      // Subscribe to this device
-      socket.emit('subscribe', { userId, deviceId });
-    });
 
-    socket.on('disconnect', () => {
-      setIsConnected(false);
-    });
-
-    socket.on('deviceData', (data: RealtimeData) => {
-      setRealtimeData(data);
-      setRealtimeHistory((prev) => {
-        const newHistory = [data, ...prev].slice(0, 50); // Keep last 50 messages
-        return newHistory;
+      // Subscribe to device data topic
+      const topic = `inverter/${userId}/${deviceId}/data`;
+      client.subscribe(topic, { qos: 0 }, (err) => {
+        if (err) {
+          console.error('MQTT subscribe error:', err);
+        } else {
+          console.log(`Subscribed to ${topic}`);
+        }
       });
     });
 
-    socket.on('connect_error', (err) => {
-      console.error('WebSocket connection error:', err);
+    client.on('disconnect', () => {
+      console.log('MQTT disconnected');
       setIsConnected(false);
     });
 
+    client.on('offline', () => {
+      console.log('MQTT offline');
+      setIsConnected(false);
+    });
+
+    client.on('error', (err) => {
+      console.error('MQTT error:', err);
+      setIsConnected(false);
+    });
+
+    client.on('message', (_topic, message) => {
+      try {
+        const messageStr = message.toString();
+        const payload = JSON.parse(messageStr);
+
+        // Parse the value field if it's a JSON string
+        let parsedValue: any = null;
+        if (payload.value) {
+          try {
+            parsedValue = JSON.parse(payload.value);
+          } catch {
+            // Value is not JSON, keep as string
+          }
+        }
+
+        const realtimeEntry: RealtimeData = {
+          userId: userId!,
+          deviceId: deviceId!,
+          data: {
+            value: payload.value || messageStr,
+            parsedValue,
+            totalACapacity: payload.totalACapacity || 0,
+            totalA2Capacity: payload.totalA2Capacity || 0,
+          },
+          timestamp: new Date().toISOString(),
+        };
+
+        setRealtimeData(realtimeEntry);
+        setRealtimeHistory((prev) => {
+          const newHistory = [realtimeEntry, ...prev].slice(0, 50); // Keep last 50 messages
+          return newHistory;
+        });
+      } catch (err) {
+        console.error('Error parsing MQTT message:', err);
+      }
+    });
+
     return () => {
-      if (socket) {
-        socket.emit('unsubscribe', { userId, deviceId });
-        socket.disconnect();
+      if (client) {
+        const topic = `inverter/${userId}/${deviceId}/data`;
+        client.unsubscribe(topic);
+        client.end();
       }
     };
   }, [userId, deviceId]);
@@ -170,7 +219,7 @@ const DeviceDetail: React.FC = () => {
             <span className="monospace">{userId}</span> / <span className="monospace">{deviceId}</span>
             <span className={`connection-status ${isConnected ? 'connected' : 'disconnected'}`}>
               {isConnected ? <Wifi size={16} /> : <WifiOff size={16} />}
-              {isConnected ? 'Live' : 'Offline'}
+              {isConnected ? 'MQTT Live' : 'MQTT Offline'}
             </span>
           </p>
         </div>
@@ -255,7 +304,7 @@ const DeviceDetail: React.FC = () => {
         {activeTab === 'realtime' && (
           <div className="content-section">
             <div className="realtime-header">
-              <h3>Real-time Data</h3>
+              <h3>Real-time MQTT Data</h3>
               <span className={`status-indicator ${isConnected ? 'connected' : 'disconnected'}`}>
                 {isConnected ? 'Connected' : 'Disconnected'}
               </span>
@@ -264,7 +313,7 @@ const DeviceDetail: React.FC = () => {
             {!isConnected && (
               <div className="connection-warning">
                 <WifiOff size={24} />
-                <p>Not connected to real-time stream. Waiting for connection...</p>
+                <p>Not connected to MQTT broker. Check broker WebSocket configuration (port 9001).</p>
               </div>
             )}
 

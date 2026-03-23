@@ -1,0 +1,126 @@
+# Mosquitto Configuration for User-Specific MQTT Authentication
+# ================================================================
+#
+# This configuration uses the go-auth HTTP plugin for real-time
+# credential validation against the NestJS API.
+
+# =============================================================================
+# BASIC SETTINGS
+# =============================================================================
+
+listener 1883
+allow_anonymous false
+
+persistence true
+persistence_location /var/lib/mosquitto/
+
+log_dest file /var/log/mosquitto/mosquitto.log
+log_type error
+log_type warning
+log_type notice
+log_type information
+
+# =============================================================================
+# HTTP AUTH PLUGIN (mosquitto-go-auth)
+# =============================================================================
+#
+# This plugin validates credentials in real-time via HTTP calls to NestJS.
+# Changes take effect immediately - no need to restart Mosquitto.
+#
+# Installation:
+# -------------
+# Ubuntu/Debian:
+#   wget https://github.com/iegomez/mosquitto-go-auth/releases/download/v2.1.0/mosquitto-go-auth_2.1.0_linux_amd64.tar.gz
+#   tar -xzf mosquitto-go-auth_2.1.0_linux_amd64.tar.gz
+#   sudo cp go-auth.so /usr/lib/mosquitto/
+#
+# Docker:
+#   Use the image: iegomez/mosquitto-go-auth
+#
+# Configuration:
+# --------------
+
+auth_plugin /usr/lib/mosquitto/go-auth.so
+
+# Use HTTP backend
+auth_opt_backends http
+auth_opt_check_prefix false
+
+# NestJS API connection settings
+# Change these to match your NestJS server
+auth_opt_http_host localhost
+auth_opt_http_port 3000
+auth_opt_http_with_tls false
+
+# Response mode: check HTTP status code (200=allow, 403=deny)
+auth_opt_http_response_mode status
+
+# API endpoints
+auth_opt_http_getuser_uri /api/mqtt-auth/validate
+auth_opt_http_superuser_uri /api/mqtt-auth/superuser
+auth_opt_http_aclcheck_uri /api/mqtt-auth/acl
+
+# Request settings
+auth_opt_http_timeout 5
+auth_opt_http_retry_count 3
+
+# Cache settings (reduce API calls)
+# Cache auth results for 60 seconds
+auth_opt_cache true
+auth_opt_cache_type go-cache
+auth_opt_cache_reset true
+auth_opt_auth_cache_seconds 60
+auth_opt_acl_cache_seconds 60
+
+# Logging
+auth_opt_log_level info
+auth_opt_log_dest file
+auth_opt_log_file /var/log/mosquitto/go-auth.log
+
+# =============================================================================
+# ALTERNATIVE: PASSWORD FILE + ACL (Static file-based auth)
+# =============================================================================
+#
+# Use this if you prefer file-based authentication instead of HTTP plugin.
+# Requires manual sync or API calls to update files.
+#
+# Uncomment these and comment out the auth_plugin section above:
+#
+# password_file /etc/mosquitto/passwd
+# acl_file /etc/mosquitto/acl.conf
+#
+# To sync files from NestJS API:
+#   1. GET /api/mqtt-auth/files/passwd -> save to /etc/mosquitto/passwd
+#   2. Run: sudo mosquitto_passwd -U /etc/mosquitto/passwd
+#   3. GET /api/mqtt-auth/files/acl -> save to /etc/mosquitto/acl.conf
+#   4. Run: sudo systemctl reload mosquitto
+
+# =============================================================================
+# SSL/TLS (Recommended for production)
+# =============================================================================
+
+# listener 8883
+# cafile /etc/mosquitto/certs/ca.crt
+# certfile /etc/mosquitto/certs/server.crt
+# keyfile /etc/mosquitto/certs/server.key
+# require_certificate false
+
+# =============================================================================
+# WEBSOCKETS (Required for CMS real-time data)
+# =============================================================================
+# Enable this for the CMS admin panel to receive real-time MQTT data
+
+listener 9001
+protocol websockets
+# Use the same auth_plugin settings as above
+
+# =============================================================================
+# PRODUCTION CHECKLIST
+# =============================================================================
+#
+# 1. Update auth_opt_http_host to your NestJS server hostname/IP
+# 2. Update auth_opt_http_port to your NestJS server port
+# 3. Enable TLS for MQTT connections (listener 8883)
+# 4. Enable TLS for HTTP auth (auth_opt_http_with_tls true)
+# 5. Set appropriate cache timeouts based on your needs
+# 6. Review log levels for production (reduce verbosity)
