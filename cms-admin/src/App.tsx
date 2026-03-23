@@ -4,6 +4,7 @@ import Layout from './components/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Devices from './pages/Devices';
+import DeviceDetail from './pages/DeviceDetail';
 import Users from './pages/Users';
 import Settings from './pages/Settings';
 import './App.css';
@@ -56,6 +57,7 @@ function AppRoutes() {
       >
         <Route path="/" element={<Dashboard />} />
         <Route path="/devices" element={<Devices />} />
+        <Route path="/devices/:userId/:deviceId" element={<DeviceDetail />} />
         <Route path="/users" element={<Users />} />
         <Route path="/settings" element={<Settings />} />
       </Route>

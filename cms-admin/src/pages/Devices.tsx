@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getDevices, updateDevice, deleteDevice } from '../services/api';
 import {
   Search,
@@ -8,6 +9,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Eye,
 } from 'lucide-react';
 
 interface Device {
@@ -27,6 +29,7 @@ interface DevicesResponse {
 }
 
 const Devices: React.FC = () => {
+  const navigate = useNavigate();
   const [devices, setDevices] = useState<DevicesResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -201,6 +204,13 @@ const Devices: React.FC = () => {
                         </>
                       ) : (
                         <>
+                          <button
+                            className="btn-icon"
+                            onClick={() => navigate(`/devices/${device.userId}/${device.deviceId}`)}
+                            title="View Details"
+                          >
+                            <Eye size={16} />
+                          </button>
                           <button
                             className="btn-icon"
                             onClick={() => startEdit(device)}

@@ -93,6 +93,15 @@ export class CmsController {
     return this.cmsService.deleteDevice(id);
   }
 
+  @Get('devices/:userId/:deviceId/details')
+  @UseGuards(AdminGuard)
+  async getDeviceDetails(
+    @Param('userId') userId: string,
+    @Param('deviceId') deviceId: string,
+  ) {
+    return this.cmsService.getDeviceDetails(userId, deviceId);
+  }
+
   // ==================== User Management ====================
 
   @Get('users')

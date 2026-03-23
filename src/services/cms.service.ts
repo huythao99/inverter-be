@@ -22,6 +22,18 @@ import {
 } from '../models/mqtt-credential.schema';
 import { DailyTotals, DailyTotalsDocument } from '../models/daily-totals.schema';
 import {
+  InverterData,
+  InverterDataDocument,
+} from '../models/inverter-data.schema';
+import {
+  InverterSetting,
+  InverterSettingDocument,
+} from '../models/inverter-setting.schema';
+import {
+  InverterSchedule,
+  InverterScheduleDocument,
+} from '../models/inverter-schedule.schema';
+import {
   DeviceQueryDto,
   UserQueryDto,
   AnalyticsQueryDto,
@@ -80,6 +92,12 @@ export class CmsService implements OnModuleInit {
     private mqttCredentialModel: Model<MqttCredentialDocument>,
     @InjectModel(DailyTotals.name)
     private dailyTotalsModel: Model<DailyTotalsDocument>,
+    @InjectModel(InverterData.name)
+    private inverterDataModel: Model<InverterDataDocument>,
+    @InjectModel(InverterSetting.name)
+    private inverterSettingModel: Model<InverterSettingDocument>,
+    @InjectModel(InverterSchedule.name)
+    private inverterScheduleModel: Model<InverterScheduleDocument>,
     private configService: ConfigService,
     private jwtService: JwtService,
   ) {
@@ -441,6 +459,76 @@ export class CmsService implements OnModuleInit {
       throw new NotFoundException(`Device with ID ${id} not found`);
     }
     return { message: `Device ${device.deviceId} deleted successfully` };
+  }
+
+  async getDeviceDetails(
+    userId: string,
+    deviceId: string,
+  ): Promise<{
+    device: InverterDevice | null;
+    data: any;
+    settings: any;
+    schedule: any;
+    dailyTotals: DailyTotals[];
+  }> {
+    const [device, data, settings, schedule, dailyTotals] = await Promise.all([
+      this.inverterDeviceModel.findOne({ userId, deviceId }).lean().exec(),
+      this.inverterDataModel.findOne({ userId, deviceId }).lean().exec(),
+      this.inverterSettingModel.findOne({ userId, deviceId }).lean().exec(),
+      this.inverterScheduleModel.findOne({ userId, deviceId }).lean().exec(),
+      this.dailyTotalsModel
+        .find({ userId, deviceId, deletedAt: null })
+        .sort({ date: -1 })
+        .limit(30)
+        .lean()
+        .exec(),
+    ]);
+
+    // Parse JSON values
+    let parsedData: any = null;
+    let parsedSettings: any = null;
+    let parsedSchedule: any = null;
+
+    if (data?.value) {
+      try {
+        parsedData = {
+          ...data,
+          parsedValue: JSON.parse(data.value),
+        };
+      } catch {
+        parsedData = data;
+      }
+    }
+
+    if (settings?.value) {
+      try {
+        parsedSettings = {
+          ...settings,
+          parsedValue: JSON.parse(settings.value),
+        };
+      } catch {
+        parsedSettings = settings;
+      }
+    }
+
+    if (schedule?.schedule) {
+      try {
+        parsedSchedule = {
+          ...schedule,
+          parsedSchedule: JSON.parse(schedule.schedule),
+        };
+      } catch {
+        parsedSchedule = schedule;
+      }
+    }
+
+    return {
+      device,
+      data: parsedData,
+      settings: parsedSettings,
+      schedule: parsedSchedule,
+      dailyTotals,
+    };
   }
 
   // ==================== User Management ====================

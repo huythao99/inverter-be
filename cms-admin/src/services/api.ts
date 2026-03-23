@@ -25,7 +25,7 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('admin_token');
-      window.location.href = '/login';
+      window.location.href = '/cms/login';
     }
     return Promise.reject(error);
   }
@@ -63,6 +63,9 @@ export const updateDevice = (id: string, data: { deviceName?: string; firmwareVe
   api.put(`/devices/${id}`, data);
 
 export const deleteDevice = (id: string) => api.delete(`/devices/${id}`);
+
+export const getDeviceDetails = (userId: string, deviceId: string) =>
+  api.get(`/devices/${userId}/${deviceId}/details`);
 
 // Users
 export const getUsers = (params?: {

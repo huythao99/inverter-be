@@ -15,6 +15,18 @@ import {
   MqttCredentialSchema,
 } from '../models/mqtt-credential.schema';
 import { DailyTotals, DailyTotalsSchema } from '../models/daily-totals.schema';
+import {
+  InverterData,
+  InverterDataSchema,
+} from '../models/inverter-data.schema';
+import {
+  InverterSetting,
+  InverterSettingSchema,
+} from '../models/inverter-setting.schema';
+import {
+  InverterSchedule,
+  InverterScheduleSchema,
+} from '../models/inverter-schedule.schema';
 import { AdminJwtStrategy } from '../auth/strategies/admin-jwt.strategy';
 
 @Module({
@@ -48,6 +60,9 @@ import { AdminJwtStrategy } from '../auth/strategies/admin-jwt.strategy';
       { name: InverterDevice.name, schema: InverterDeviceSchema },
       { name: MqttCredential.name, schema: MqttCredentialSchema },
       { name: DailyTotals.name, schema: DailyTotalsSchema },
+      { name: InverterData.name, schema: InverterDataSchema },
+      { name: InverterSetting.name, schema: InverterSettingSchema },
+      { name: InverterSchedule.name, schema: InverterScheduleSchema },
     ]),
   ],
   controllers: [CmsController],
