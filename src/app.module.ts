@@ -12,6 +12,7 @@ import { InverterScheduleModule } from './modules/inverter-schedule.module';
 import { DailyTotalsModule } from './modules/daily-totals.module';
 import { HomeAssistantModule } from './modules/home-assistant.module';
 import { MqttAuthModule } from './modules/mqtt-auth.module';
+import { CmsModule } from './modules/cms.module';
 import { FirmwareController } from './controllers/firmware.controller';
 import { FirmwareService } from './services/firmware.service';
 
@@ -51,6 +52,7 @@ import { FirmwareService } from './services/firmware.service';
     DailyTotalsModule,
     HomeAssistantModule,
     MqttAuthModule,
+    CmsModule,
   ],
   controllers: [AppController, FirmwareController],
   providers: [AppService, FirmwareService],
