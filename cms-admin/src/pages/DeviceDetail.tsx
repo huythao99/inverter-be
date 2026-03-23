@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { io, Socket } from 'socket.io-client';
 import { getDeviceDetails } from '../services/api';
 import {
   ArrowLeft,
@@ -8,7 +9,12 @@ import {
   Calendar,
   Activity,
   Database,
+  Radio,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 interface DeviceDetailData {
   device: {
@@ -43,14 +49,33 @@ interface DeviceDetailData {
   }>;
 }
 
+interface RealtimeData {
+  userId: string;
+  deviceId: string;
+  data: {
+    value: string;
+    parsedValue?: any;
+    totalACapacity: number;
+    totalA2Capacity: number;
+  };
+  timestamp: string;
+}
+
 const DeviceDetail: React.FC = () => {
   const { userId, deviceId } = useParams<{ userId: string; deviceId: string }>();
   const navigate = useNavigate();
   const [data, setData] = useState<DeviceDetailData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState<'data' | 'settings' | 'schedule' | 'totals'>('data');
+  const [activeTab, setActiveTab] = useState<'realtime' | 'data' | 'settings' | 'schedule' | 'totals'>('realtime');
 
+  // Real-time state
+  const [isConnected, setIsConnected] = useState(false);
+  const [realtimeData, setRealtimeData] = useState<RealtimeData | null>(null);
+  const [realtimeHistory, setRealtimeHistory] = useState<RealtimeData[]>([]);
+  const socketRef = useRef<Socket | null>(null);
+
+  // Fetch initial data
   useEffect(() => {
     const fetchData = async () => {
       if (!userId || !deviceId) return;
@@ -66,6 +91,52 @@ const DeviceDetail: React.FC = () => {
     };
 
     fetchData();
+  }, [userId, deviceId]);
+
+  // WebSocket connection
+  useEffect(() => {
+    if (!userId || !deviceId) return;
+
+    const token = localStorage.getItem('admin_token');
+    if (!token) return;
+
+    // Connect to WebSocket
+    const socket = io(`${API_BASE_URL}/cms`, {
+      auth: { token },
+      transports: ['websocket', 'polling'],
+    });
+
+    socketRef.current = socket;
+
+    socket.on('connect', () => {
+      setIsConnected(true);
+      // Subscribe to this device
+      socket.emit('subscribe', { userId, deviceId });
+    });
+
+    socket.on('disconnect', () => {
+      setIsConnected(false);
+    });
+
+    socket.on('deviceData', (data: RealtimeData) => {
+      setRealtimeData(data);
+      setRealtimeHistory((prev) => {
+        const newHistory = [data, ...prev].slice(0, 50); // Keep last 50 messages
+        return newHistory;
+      });
+    });
+
+    socket.on('connect_error', (err) => {
+      console.error('WebSocket connection error:', err);
+      setIsConnected(false);
+    });
+
+    return () => {
+      if (socket) {
+        socket.emit('unsubscribe', { userId, deviceId });
+        socket.disconnect();
+      }
+    };
   }, [userId, deviceId]);
 
   if (isLoading) {
@@ -97,6 +168,10 @@ const DeviceDetail: React.FC = () => {
           <h1>{data?.device?.deviceName || deviceId}</h1>
           <p className="device-info">
             <span className="monospace">{userId}</span> / <span className="monospace">{deviceId}</span>
+            <span className={`connection-status ${isConnected ? 'connected' : 'disconnected'}`}>
+              {isConnected ? <Wifi size={16} /> : <WifiOff size={16} />}
+              {isConnected ? 'Live' : 'Offline'}
+            </span>
           </p>
         </div>
       </header>
@@ -122,14 +197,14 @@ const DeviceDetail: React.FC = () => {
             <Database size={18} />
             <div>
               <label>Total A Capacity</label>
-              <span>{data.data?.totalACapacity?.toFixed(2) || '0.00'}</span>
+              <span>{realtimeData?.data?.totalACapacity?.toFixed(2) || data.data?.totalACapacity?.toFixed(2) || '0.00'}</span>
             </div>
           </div>
           <div className="info-item">
             <Database size={18} />
             <div>
               <label>Total A2 Capacity</label>
-              <span>{data.data?.totalA2Capacity?.toFixed(2) || '0.00'}</span>
+              <span>{realtimeData?.data?.totalA2Capacity?.toFixed(2) || data.data?.totalA2Capacity?.toFixed(2) || '0.00'}</span>
             </div>
           </div>
         </div>
@@ -138,11 +213,19 @@ const DeviceDetail: React.FC = () => {
       {/* Tabs */}
       <div className="tabs">
         <button
+          className={`tab ${activeTab === 'realtime' ? 'active' : ''}`}
+          onClick={() => setActiveTab('realtime')}
+        >
+          <Radio size={18} />
+          Real-time
+          {isConnected && <span className="live-dot" />}
+        </button>
+        <button
           className={`tab ${activeTab === 'data' ? 'active' : ''}`}
           onClick={() => setActiveTab('data')}
         >
           <Database size={18} />
-          Data
+          Stored Data
         </button>
         <button
           className={`tab ${activeTab === 'settings' ? 'active' : ''}`}
@@ -169,9 +252,59 @@ const DeviceDetail: React.FC = () => {
 
       {/* Tab Content */}
       <div className="tab-content">
+        {activeTab === 'realtime' && (
+          <div className="content-section">
+            <div className="realtime-header">
+              <h3>Real-time Data</h3>
+              <span className={`status-indicator ${isConnected ? 'connected' : 'disconnected'}`}>
+                {isConnected ? 'Connected' : 'Disconnected'}
+              </span>
+            </div>
+
+            {!isConnected && (
+              <div className="connection-warning">
+                <WifiOff size={24} />
+                <p>Not connected to real-time stream. Waiting for connection...</p>
+              </div>
+            )}
+
+            {realtimeData && (
+              <div className="realtime-current">
+                <h4>Latest Data</h4>
+                <p className="last-updated">
+                  Received: {new Date(realtimeData.timestamp).toLocaleString()}
+                </p>
+                {renderJsonValue(realtimeData.data.parsedValue || realtimeData.data.value, 'real-time data')}
+              </div>
+            )}
+
+            {realtimeHistory.length > 0 && (
+              <div className="realtime-history">
+                <h4>History (Last {realtimeHistory.length} messages)</h4>
+                <div className="history-list">
+                  {realtimeHistory.map((item, index) => (
+                    <div key={index} className="history-item">
+                      <span className="history-time">
+                        {new Date(item.timestamp).toLocaleTimeString()}
+                      </span>
+                      <span className="history-capacity">
+                        A: {item.data.totalACapacity?.toFixed(2)} | A2: {item.data.totalA2Capacity?.toFixed(2)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {!realtimeData && isConnected && (
+              <p className="no-data">Waiting for data from device...</p>
+            )}
+          </div>
+        )}
+
         {activeTab === 'data' && (
           <div className="content-section">
-            <h3>Device Data</h3>
+            <h3>Stored Device Data</h3>
             {data?.data?.updatedAt && (
               <p className="last-updated">
                 Last updated: {new Date(data.data.updatedAt).toLocaleString()}

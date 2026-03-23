@@ -28,6 +28,7 @@ import {
   InverterScheduleSchema,
 } from '../models/inverter-schedule.schema';
 import { AdminJwtStrategy } from '../auth/strategies/admin-jwt.strategy';
+import { CmsGateway } from '../gateways/cms.gateway';
 
 @Module({
   imports: [
@@ -66,7 +67,7 @@ import { AdminJwtStrategy } from '../auth/strategies/admin-jwt.strategy';
     ]),
   ],
   controllers: [CmsController],
-  providers: [CmsService, AdminJwtStrategy],
+  providers: [CmsService, AdminJwtStrategy, CmsGateway],
   exports: [CmsService],
 })
 export class CmsModule {}
