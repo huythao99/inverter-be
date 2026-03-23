@@ -65,6 +65,14 @@ interface RealtimeData {
   timestamp: string;
 }
 
+// Helper function to safely format numbers
+const formatNumber = (value: unknown, decimals = 2): string => {
+  if (value === null || value === undefined) return '0.00';
+  const num = typeof value === 'number' ? value : parseFloat(String(value));
+  if (isNaN(num)) return '0.00';
+  return num.toFixed(decimals);
+};
+
 const DeviceDetail: React.FC = () => {
   const { userId, deviceId } = useParams<{ userId: string; deviceId: string }>();
   const navigate = useNavigate();
@@ -159,8 +167,8 @@ const DeviceDetail: React.FC = () => {
         try {
           payload = JSON.parse(cleanedStr);
           value = payload.value || cleanedStr;
-          totalACapacity = payload.totalACapacity || 0;
-          totalA2Capacity = payload.totalA2Capacity || 0;
+          totalACapacity = parseFloat(payload.totalACapacity) || 0;
+          totalA2Capacity = parseFloat(payload.totalA2Capacity) || 0;
 
           // Try to parse the value field if it's a JSON string
           if (payload.value && typeof payload.value === 'string') {
@@ -265,14 +273,14 @@ const DeviceDetail: React.FC = () => {
             <Database size={18} />
             <div>
               <label>Total A Capacity</label>
-              <span>{realtimeData?.data?.totalACapacity?.toFixed(2) || data.data?.totalACapacity?.toFixed(2) || '0.00'}</span>
+              <span>{formatNumber(realtimeData?.data?.totalACapacity ?? data.data?.totalACapacity)}</span>
             </div>
           </div>
           <div className="info-item">
             <Database size={18} />
             <div>
               <label>Total A2 Capacity</label>
-              <span>{realtimeData?.data?.totalA2Capacity?.toFixed(2) || data.data?.totalA2Capacity?.toFixed(2) || '0.00'}</span>
+              <span>{formatNumber(realtimeData?.data?.totalA2Capacity ?? data.data?.totalA2Capacity)}</span>
             </div>
           </div>
         </div>
@@ -356,7 +364,7 @@ const DeviceDetail: React.FC = () => {
                         {new Date(item.timestamp).toLocaleTimeString()}
                       </span>
                       <span className="history-capacity">
-                        A: {item.data.totalACapacity?.toFixed(2)} | A2: {item.data.totalA2Capacity?.toFixed(2)}
+                        A: {formatNumber(item.data.totalACapacity)} | A2: {formatNumber(item.data.totalA2Capacity)}
                       </span>
                     </div>
                   ))}
@@ -422,8 +430,8 @@ const DeviceDetail: React.FC = () => {
                   {data.dailyTotals.map((day, index) => (
                     <tr key={index}>
                       <td>{new Date(day.date).toLocaleDateString()}</td>
-                      <td>{day.totalA.toFixed(2)}</td>
-                      <td>{day.totalA2.toFixed(2)}</td>
+                      <td>{formatNumber(day.totalA)}</td>
+                      <td>{formatNumber(day.totalA2)}</td>
                     </tr>
                   ))}
                 </tbody>
