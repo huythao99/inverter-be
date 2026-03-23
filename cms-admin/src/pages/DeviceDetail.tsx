@@ -145,26 +145,45 @@ const DeviceDetail: React.FC = () => {
     client.on('message', (_topic, message) => {
       try {
         const messageStr = message.toString();
-        const payload = JSON.parse(messageStr);
 
-        // Parse the value field if it's a JSON string
+        // Clean control characters from the message
+        const cleanedStr = messageStr.replace(/[\x00-\x1F\x7F]/g, '');
+
+        let payload: any = null;
         let parsedValue: any = null;
-        if (payload.value) {
-          try {
-            parsedValue = JSON.parse(payload.value);
-          } catch {
-            // Value is not JSON, keep as string
+        let value = cleanedStr;
+        let totalACapacity = 0;
+        let totalA2Capacity = 0;
+
+        // Try to parse the message as JSON
+        try {
+          payload = JSON.parse(cleanedStr);
+          value = payload.value || cleanedStr;
+          totalACapacity = payload.totalACapacity || 0;
+          totalA2Capacity = payload.totalA2Capacity || 0;
+
+          // Try to parse the value field if it's a JSON string
+          if (payload.value && typeof payload.value === 'string') {
+            try {
+              const cleanedValue = payload.value.replace(/[\x00-\x1F\x7F]/g, '');
+              parsedValue = JSON.parse(cleanedValue);
+            } catch {
+              // Value is not JSON, keep as string
+            }
           }
+        } catch {
+          // Message is not JSON, use raw string
+          console.log('Raw MQTT message (not JSON):', cleanedStr.substring(0, 100));
         }
 
         const realtimeEntry: RealtimeData = {
           userId: userId!,
           deviceId: deviceId!,
           data: {
-            value: payload.value || messageStr,
+            value,
             parsedValue,
-            totalACapacity: payload.totalACapacity || 0,
-            totalA2Capacity: payload.totalA2Capacity || 0,
+            totalACapacity,
+            totalA2Capacity,
           },
           timestamp: new Date().toISOString(),
         };
@@ -175,7 +194,7 @@ const DeviceDetail: React.FC = () => {
           return newHistory;
         });
       } catch (err) {
-        console.error('Error parsing MQTT message:', err);
+        console.error('Error processing MQTT message:', err);
       }
     });
 
