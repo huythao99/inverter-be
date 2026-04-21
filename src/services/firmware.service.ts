@@ -23,10 +23,10 @@ export class FirmwareService {
     // Extract numeric part from deviceId (e.g., GTIControl495 -> 495)
     const numericPart = parseInt(deviceId.replace(/\D/g, ''), 10);
 
-    // If device number < 436, return 1.0.2, otherwise return 1.0.0
+    // If device number < 436, return 1.0.3, otherwise return 1.0.0
     if (!isNaN(numericPart) && numericPart < 436) {
       return {
-        firmwareVersion: '1.0.2',
+        firmwareVersion: '1.0.3',
       };
     }
     return {
@@ -37,7 +37,7 @@ export class FirmwareService {
   async getNewestFirmwareVersion(): Promise<{ version: string }> {
     // Return the current newest firmware version
     // You can update this version number when new firmware is available
-    const newestVersion = '1.0.2';
+    const newestVersion = '1.0.3';
     
     return {
       version: newestVersion,
