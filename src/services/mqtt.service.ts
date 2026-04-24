@@ -349,6 +349,9 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     topic: string,
     payload: Record<string, unknown>,
   ): Promise<void> {
+    if (!this.client || !this.client.connected) {
+      return;
+    }
     return new Promise((resolve, reject) => {
       this.client.publish(
         topic,

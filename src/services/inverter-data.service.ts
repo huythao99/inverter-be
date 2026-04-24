@@ -49,7 +49,7 @@ export class InverterDataService implements OnModuleDestroy {
       this.cleanupMemory();
     }, 60000);
 
-    // Start Redis batch processing timer (every 2 seconds)
+    // Start Redis batch processing timer (every 5 seconds)
     this.batchTimer = setInterval(() => {
       void this.processRedisBatch();
     }, this.BATCH_INTERVAL);
@@ -87,11 +87,6 @@ export class InverterDataService implements OnModuleDestroy {
     // Get all items and clear map
     const items = Array.from(this.dailyTotalsMap.values());
     this.dailyTotalsMap.clear();
-
-    const debugItem = items.find((item) => item.deviceId === 'GTIControl797');
-    if (debugItem) {
-      console.log('[GTIControl797] Redis batch totalA:', debugItem.totalA, 'totalA2:', debugItem.totalA2);
-    }
 
     // Process ALL increments in single Redis pipeline
     this.redisDailyTotalsService

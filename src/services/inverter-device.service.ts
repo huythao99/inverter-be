@@ -192,6 +192,11 @@ export class InverterDeviceService {
       return;
     }
 
+    // Clear cache if too large to prevent memory leak
+    if (this.deviceNameCache.size > 5000) {
+      this.deviceNameCache.clear();
+    }
+
     // Update cache
     this.deviceNameCache.set(deviceKey, newDeviceName);
 
