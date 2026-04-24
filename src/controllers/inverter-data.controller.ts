@@ -16,13 +16,13 @@ export class InverterDataController {
   constructor(private readonly inverterDataService: InverterDataService) {}
 
   @Get('data')
-  @CacheTTL(30)
+  @CacheTTL(30000) // 30 seconds
   findAll(@Query() query: QueryInverterDataDto) {
     return this.inverterDataService.findAll(query.page, query.limit);
   }
 
   @Get('data/:userId/:deviceId/latest')
-  @CacheTTL(10)
+  @CacheTTL(10000) // 10 seconds
   findLatestByUserIdAndDeviceId(
     @Param('userId') userId: string,
     @Param('deviceId') deviceId: string,
@@ -34,7 +34,7 @@ export class InverterDataController {
   }
 
   @Get('data/:userId/:deviceId')
-  @CacheTTL(30)
+  @CacheTTL(30000) // 30 seconds
   findByUserIdAndDeviceId(
     @Param('userId') userId: string,
     @Param('deviceId') deviceId: string,
@@ -49,7 +49,7 @@ export class InverterDataController {
   }
 
   @Get('data/:id')
-  @CacheTTL(60)
+  @CacheTTL(60000) // 60 seconds
   findOne(@Param('id') id: string) {
     return this.inverterDataService.findOne(id);
   }
