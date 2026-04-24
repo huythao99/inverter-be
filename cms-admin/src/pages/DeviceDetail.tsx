@@ -121,27 +121,18 @@ const DeviceDetail: React.FC = () => {
     mqttClientRef.current = client;
 
     client.on('connect', () => {
-      console.log('MQTT connected');
       setIsConnected(true);
 
       // Subscribe to device data topic
       const topic = `inverter/${userId}/${deviceId}/data`;
-      client.subscribe(topic, { qos: 0 }, (err) => {
-        if (err) {
-          console.error('MQTT subscribe error:', err);
-        } else {
-          console.log(`Subscribed to ${topic}`);
-        }
-      });
+      client.subscribe(topic, { qos: 0 });
     });
 
     client.on('disconnect', () => {
-      console.log('MQTT disconnected');
       setIsConnected(false);
     });
 
     client.on('offline', () => {
-      console.log('MQTT offline');
       setIsConnected(false);
     });
 
@@ -181,7 +172,6 @@ const DeviceDetail: React.FC = () => {
           }
         } catch {
           // Message is not JSON, use raw string
-          console.log('Raw MQTT message (not JSON):', cleanedStr.substring(0, 100));
         }
 
         const realtimeEntry: RealtimeData = {
