@@ -362,9 +362,6 @@ export class InverterDataService implements OnModuleDestroy {
     wifiSsid: string;
     data: any;
   }) {
-    const isDebug = payload.wifiSsid === 'GTIControl797';
-    if (isDebug) console.log('[GTIControl797] Event received userId:', payload.currentUid);
-
     const key = `${payload.currentUid}-${payload.wifiSsid}`;
     // Use value field for deduplication instead of full JSON.stringify
     const valueString = payload.data?.value as string;
@@ -390,11 +387,9 @@ export class InverterDataService implements OnModuleDestroy {
     this.lastProcessed.set(key, { timestamp: now, data: valueString });
 
     const { totalA, totalA2 } = this.parseTotalsFromValue(valueString);
-    if (isDebug) console.log('[GTIControl797] Parsed totalA:', totalA, 'totalA2:', totalA2);
 
     // Skip processing if totalA >= 15000 or totalA2 >= 8000
     if (totalA >= 15000 || totalA2 >= 8000) {
-      if (isDebug) console.log('[GTIControl797] Values exceed limit, skipping');
       return;
     }
 
@@ -403,7 +398,6 @@ export class InverterDataService implements OnModuleDestroy {
     const safeTotalA2 = Number.isNaN(totalA2) ? 0 : totalA2;
     const currentTotalA = safeTotalA / 1000000;
     const currentTotalA2 = safeTotalA2 / 1000000;
-    if (isDebug) console.log('[GTIControl797] Converted totalA:', currentTotalA, 'totalA2:', currentTotalA2);
 
     // Map MQTT data to InverterData schema
     const totalACapacity = Number(payload.data?.totalACapacity);
@@ -428,7 +422,6 @@ export class InverterDataService implements OnModuleDestroy {
     if (existing) {
       existing.totalA += currentTotalA;
       existing.totalA2 += currentTotalA2;
-      if (isDebug) console.log('[GTIControl797] Updated totalA:', existing.totalA, 'totalA2:', existing.totalA2);
     } else {
       this.dailyTotalsMap.set(deviceKey, {
         userId: payload.currentUid,
@@ -436,7 +429,6 @@ export class InverterDataService implements OnModuleDestroy {
         totalA: currentTotalA,
         totalA2: currentTotalA2,
       });
-      if (isDebug) console.log('[GTIControl797] New totalA:', currentTotalA, 'totalA2:', currentTotalA2);
     }
   }
 }

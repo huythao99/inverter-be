@@ -10,6 +10,9 @@ import { MqttService } from './mqtt.service';
 
 @Injectable()
 export class InverterDeviceService {
+  // Cache device names to skip redundant MongoDB writes when unchanged
+  private deviceNameCache = new Map<string, string>();
+
   constructor(
     @InjectModel(InverterDevice.name)
     private inverterDeviceModel: Model<InverterDeviceDocument>,
@@ -179,12 +182,24 @@ export class InverterDeviceService {
     wifiSsid: string;
     data: any;
   }) {
+    const deviceKey = `${payload.currentUid}:${payload.wifiSsid}`;
+    const newDeviceName =
+      payload.data.deviceName || payload.wifiSsid || 'Unknown Device';
+    const cachedName = this.deviceNameCache.get(deviceKey);
+
+    // Skip MongoDB write + MQTT publish if deviceName hasn't changed
+    if (cachedName === newDeviceName) {
+      return;
+    }
+
+    // Update cache
+    this.deviceNameCache.set(deviceKey, newDeviceName);
+
     // Non-blocking device update - fire and forget
     const deviceData = {
       userId: payload.currentUid,
       deviceId: payload.wifiSsid,
-      deviceName:
-        payload.data.deviceName || payload.wifiSsid || 'Unknown Device',
+      deviceName: newDeviceName,
       updatedAt: new Date(),
     };
 

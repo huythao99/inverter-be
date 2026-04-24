@@ -174,8 +174,9 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
       // Set expiry for dirty set once
       pipeline.expire(this.DIRTY_SET_KEY, 7 * 24 * 3600);
 
-      const results = await pipeline.exec();
-    } catch (err) {
+      await pipeline.exec();
+    } catch {
+      // Redis pipeline error - silent
     }
   }
 
