@@ -136,10 +136,10 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     const wifiSsid = isInverter ? topicParts[2] : topicParts[3];
     const deviceKey = `${currentUid}-${wifiSsid}`;
 
-    // Rate limit: 2 seconds per device (messages come every 3s)
+    // Rate limit: 3 seconds per device (matches device send interval)
     const now = Date.now();
     const lastProcessed = this.messageHandlers.get(deviceKey);
-    if (lastProcessed && now - lastProcessed < 2000) {
+    if (lastProcessed && now - lastProcessed < 3000) {
       return;
     }
     this.messageHandlers.set(deviceKey, now);
