@@ -6,7 +6,9 @@ import {
   Patch,
   Param,
   Delete,
+  UseInterceptors,
 } from '@nestjs/common';
+import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import { InverterSettingService } from '../services/inverter-setting.service';
 import { CreateInverterSettingDto } from '../dto/create-inverter-setting.dto';
 import { UpdateInverterSettingDto } from '../dto/update-inverter-setting.dto';
@@ -29,6 +31,8 @@ export class InverterSettingController {
   }
 
   @Get('data/:userId/:deviceId')
+  @UseInterceptors(CacheInterceptor)
+  @CacheTTL(30000) // 30 seconds, invalidated on write
   async findByUserIdAndDeviceId(
     @Param('userId') userId: string,
     @Param('deviceId') deviceId: string,

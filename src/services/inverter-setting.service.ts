@@ -1,5 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 import { Model } from 'mongoose';
 import {
   InverterSetting,
@@ -13,7 +15,12 @@ export class InverterSettingService {
     @InjectModel(InverterSetting.name)
     private inverterSettingModel: Model<InverterSettingDocument>,
     private mqttService: MqttService,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) {}
+
+  private getCacheKey(userId: string, deviceId: string): string {
+    return `/api/inverter-setting/data/${userId}/${deviceId}`;
+  }
 
   async create(
     createInverterSettingDto: Partial<InverterSetting>,
@@ -63,11 +70,16 @@ export class InverterSettingService {
     updateInverterSettingDto: Partial<InverterSetting>,
   ): Promise<InverterSetting | null> {
     updateInverterSettingDto.updatedAt = new Date();
-    return this.inverterSettingModel
+    const result = await this.inverterSettingModel
       .findOneAndUpdate({ userId, deviceId }, updateInverterSettingDto, {
         new: true,
       })
       .exec();
+
+    // Invalidate cache so next GET is fresh
+    await this.cacheManager.del(this.getCacheKey(userId, deviceId));
+
+    return result;
   }
 
   async updateValueByUserIdAndDeviceId(
@@ -82,6 +94,9 @@ export class InverterSettingService {
         { new: true, upsert: true },
       )
       .exec();
+
+    // Invalidate cache so next GET is fresh
+    await this.cacheManager.del(this.getCacheKey(userId, deviceId));
 
     return updatedSetting;
   }
