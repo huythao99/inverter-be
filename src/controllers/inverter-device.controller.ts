@@ -10,6 +10,7 @@ import {
   HttpCode,
   Query,
   NotFoundException,
+  Header,
 } from '@nestjs/common';
 import { InverterDeviceService } from '../services/inverter-device.service';
 import { CreateInverterDeviceDto } from '../dto/create-inverter-device.dto';
@@ -27,11 +28,13 @@ export class InverterDeviceController {
   }
 
   @Get('data')
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
   findAll(@Query() query: QueryInverterDataDto) {
     return this.inverterDeviceService.findAll(query.page, query.limit);
   }
 
   @Get('data/device/:userId')
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
   findByUserId(@Param('userId') userId: string) {
     return this.inverterDeviceService.findByUserId(userId);
   }
