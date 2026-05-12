@@ -67,6 +67,9 @@ export const deleteDevice = (id: string) => api.delete(`/devices/${id}`);
 export const getDeviceDetails = (userId: string, deviceId: string) =>
   api.get(`/devices/${userId}/${deviceId}/details`);
 
+export const triggerFirmwareUpdate = (id: string, targetVersion: string) =>
+  api.post(`/devices/${id}/firmware-update`, { targetVersion });
+
 // Users
 export const getUsers = (params?: {
   page?: number;

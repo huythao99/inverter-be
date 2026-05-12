@@ -122,7 +122,9 @@ export class HomeAssistantService implements OnModuleInit, OnModuleDestroy {
         });
       }
 
-      this.logger.log(`Discovered ${devices.length} devices for Home Assistant`);
+      this.logger.log(
+        `Discovered ${devices.length} devices for Home Assistant`,
+      );
     } catch (error) {
       this.logger.error('Failed to discover devices', error);
     }
@@ -150,7 +152,10 @@ export class HomeAssistantService implements OnModuleInit, OnModuleDestroy {
 
     const entities = this.haConfig.getEntityDefinitions();
     const stateTopic = this.haConfig.getStateTopic(userId, deviceId);
-    const availabilityTopic = this.haConfig.getAvailabilityTopic(userId, deviceId);
+    const availabilityTopic = this.haConfig.getAvailabilityTopic(
+      userId,
+      deviceId,
+    );
 
     for (const entity of entities) {
       const uniqueId = `inverter_${userId}_${deviceId}_${entity.id}`;
@@ -740,14 +745,10 @@ export class HomeAssistantService implements OnModuleInit, OnModuleDestroy {
         );
       }
 
-      await this.publishDeviceDiscovery(
-        payload.currentUid,
-        payload.wifiSsid,
-        {
-          deviceName: payload.data.deviceName || payload.wifiSsid,
-          firmwareVersion: '1.0.0',
-        },
-      );
+      await this.publishDeviceDiscovery(payload.currentUid, payload.wifiSsid, {
+        deviceName: payload.data.deviceName || payload.wifiSsid,
+        firmwareVersion: '1.0.0',
+      });
     }
   }
 

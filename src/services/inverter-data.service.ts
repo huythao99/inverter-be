@@ -24,17 +24,23 @@ export class InverterDataService implements OnModuleDestroy {
   private readonly DB_FLUSH_INTERVAL = 60000; // MongoDB flush every 60 seconds
 
   // Use Maps for O(1) lookup instead of arrays
-  private inverterDataMap = new Map<string, {
-    userId: string;
-    deviceId: string;
-    data: Partial<InverterData>;
-  }>();
-  private dailyTotalsMap = new Map<string, {
-    userId: string;
-    deviceId: string;
-    totalA: number;
-    totalA2: number;
-  }>();
+  private inverterDataMap = new Map<
+    string,
+    {
+      userId: string;
+      deviceId: string;
+      data: Partial<InverterData>;
+    }
+  >();
+  private dailyTotalsMap = new Map<
+    string,
+    {
+      userId: string;
+      deviceId: string;
+      totalA: number;
+      totalA2: number;
+    }
+  >();
 
   private dbFlushTimer: NodeJS.Timeout | null;
 

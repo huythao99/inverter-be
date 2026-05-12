@@ -29,6 +29,7 @@ import {
 } from '../models/inverter-schedule.schema';
 import { AdminJwtStrategy } from '../auth/strategies/admin-jwt.strategy';
 import { CmsGateway } from '../gateways/cms.gateway';
+import { MqttService } from '../services/mqtt.service';
 
 @Module({
   imports: [
@@ -37,7 +38,10 @@ import { CmsGateway } from '../gateways/cms.gateway';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {
-        const expiresIn = configService.get<string>('CMS_JWT_EXPIRES_IN', '24h');
+        const expiresIn = configService.get<string>(
+          'CMS_JWT_EXPIRES_IN',
+          '24h',
+        );
         // Convert to seconds for JWT
         const expiresInSeconds = expiresIn.endsWith('h')
           ? parseInt(expiresIn) * 3600
@@ -67,7 +71,7 @@ import { CmsGateway } from '../gateways/cms.gateway';
     ]),
   ],
   controllers: [CmsController],
-  providers: [CmsService, AdminJwtStrategy, CmsGateway],
+  providers: [CmsService, AdminJwtStrategy, CmsGateway, MqttService],
   exports: [CmsService],
 })
 export class CmsModule {}

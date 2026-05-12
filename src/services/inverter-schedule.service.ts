@@ -34,7 +34,10 @@ export class InverterScheduleService {
   async create(
     createInverterScheduleDto: Partial<InverterSchedule>,
   ): Promise<InverterSchedule> {
-    if (createInverterScheduleDto.userId && createInverterScheduleDto.deviceId) {
+    if (
+      createInverterScheduleDto.userId &&
+      createInverterScheduleDto.deviceId
+    ) {
       this.invalidateCache(
         createInverterScheduleDto.userId,
         createInverterScheduleDto.deviceId,

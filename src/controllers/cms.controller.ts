@@ -102,6 +102,16 @@ export class CmsController {
     return this.cmsService.getDeviceDetails(userId, deviceId);
   }
 
+  @Post('devices/:id/firmware-update')
+  @UseGuards(AdminGuard)
+  @HttpCode(HttpStatus.OK)
+  async triggerFirmwareUpdate(
+    @Param('id') id: string,
+    @Body('targetVersion') targetVersion: string,
+  ) {
+    return this.cmsService.triggerFirmwareUpdate(id, targetVersion);
+  }
+
   // ==================== User Management ====================
 
   @Get('users')

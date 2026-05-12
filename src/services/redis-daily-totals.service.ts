@@ -87,7 +87,6 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
       this.healthCheckTimer = setInterval(() => {
         void this.checkRedisHealth();
       }, 60000);
-
     } catch {
       // Failed to initialize Redis Daily Totals Service - silent
     }
@@ -116,7 +115,7 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
       // Flush any remaining dirty records before shutdown with timeout
       await Promise.race([
         this.flushDirtyRecordsToDatabase(),
-        new Promise(resolve => setTimeout(resolve, 5000)) // 5 second timeout
+        new Promise((resolve) => setTimeout(resolve, 5000)), // 5 second timeout
       ]);
     } catch {
       // Error during final flush - silent
@@ -149,7 +148,12 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
 
   // Batch increment for multiple devices at once - single Redis pipeline
   async incrementDailyTotalsBatch(
-    items: Array<{ userId: string; deviceId: string; totalA: number; totalA2: number }>
+    items: Array<{
+      userId: string;
+      deviceId: string;
+      totalA: number;
+      totalA2: number;
+    }>,
   ): Promise<void> {
     if (this.isShuttingDown || items.length === 0) return;
 
@@ -205,8 +209,8 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
             totalA2Increment,
           ),
           new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Database timeout')), 3000)
-          )
+            setTimeout(() => reject(new Error('Database timeout')), 3000),
+          ),
         ]);
 
         await dbOperation;
@@ -215,11 +219,11 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
         const recordPromise = Promise.race([
           this.dailyTotalsService.findByUserAndDevice(userId, deviceId, date),
           new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Database timeout')), 2000)
-          )
+            setTimeout(() => reject(new Error('Database timeout')), 2000),
+          ),
         ]);
 
-        const record = await recordPromise as any;
+        const record = (await recordPromise) as any;
         return { totalA: record?.totalA || 0, totalA2: record?.totalA2 || 0 };
       }
 
@@ -255,7 +259,11 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
         totalAIncrement,
         totalA2Increment,
       );
-      const record = await this.dailyTotalsService.findByUserAndDevice(userId, deviceId, date);
+      const record = await this.dailyTotalsService.findByUserAndDevice(
+        userId,
+        deviceId,
+        date,
+      );
       return { totalA: record?.totalA || 0, totalA2: record?.totalA2 || 0 };
     }
   }
@@ -275,7 +283,9 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
           deviceId,
           targetDate,
         );
-        return dbRecord ? { totalA: dbRecord.totalA, totalA2: dbRecord.totalA2 } : null;
+        return dbRecord
+          ? { totalA: dbRecord.totalA, totalA2: dbRecord.totalA2 }
+          : null;
       }
 
       const redisKey = this.getRedisKey(userId, deviceId, targetDate);
@@ -317,7 +327,9 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
         deviceId,
         targetDate,
       );
-      return dbRecord ? { totalA: dbRecord.totalA, totalA2: dbRecord.totalA2 } : null;
+      return dbRecord
+        ? { totalA: dbRecord.totalA, totalA2: dbRecord.totalA2 }
+        : null;
     }
   }
 
@@ -419,7 +431,6 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
     const today = this.getGMT7Date();
 
     if (this.currentDay && this.currentDay !== today) {
-
       // Save previous day's data to database before reset
       await this.savePreviousDayData(this.currentDay);
 
@@ -428,7 +439,6 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
 
       // Update current day
       this.currentDay = today;
-
     } else if (!this.currentDay) {
       this.currentDay = today;
     }
@@ -436,7 +446,6 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
 
   private async savePreviousDayData(previousDay: string): Promise<void> {
     try {
-
       // Get all keys for the previous day using SCAN instead of KEYS
       const pattern = `${this.KEY_PREFIX}:*:*:${previousDay}`;
       const keys = await this.scanKeys(pattern);
@@ -474,9 +483,7 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
           await this.redis.del(...batch);
         }
       }
-    } catch (error) {
-
-    }
+    } catch (error) {}
   }
 
   private async resetDailyTotals(newDay: string): Promise<void> {
@@ -495,7 +502,6 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
           await this.redis.del(...batch);
         }
       }
-
     } catch {
       // Error resetting daily totals - silent
     }
@@ -517,13 +523,19 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
   async getTodaysTotals(
     userId: string,
     deviceId?: string,
-  ): Promise<Array<{
-    deviceId: string;
-    totalA: number;
-    totalA2: number;
-  }>> {
+  ): Promise<
+    Array<{
+      deviceId: string;
+      totalA: number;
+      totalA2: number;
+    }>
+  > {
     const today = this.getGMT7Date();
-    const results: Array<{ deviceId: string; totalA: number; totalA2: number }> = [];
+    const results: Array<{
+      deviceId: string;
+      totalA: number;
+      totalA2: number;
+    }> = [];
 
     if (deviceId) {
       // Get specific device
@@ -564,7 +576,7 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
       const pong = await Promise.race([
         this.redis.ping(),
         new Promise<null>((_, reject) =>
-          setTimeout(() => reject(new Error('Redis ping timeout')), 2000)
+          setTimeout(() => reject(new Error('Redis ping timeout')), 2000),
         ),
       ]);
 

@@ -219,7 +219,9 @@ export class InverterDeviceService {
       .then((device) => {
         if (device) {
           // Emit MQTT event for device update (non-blocking)
-          this.mqttService.emitDeviceUpdated(payload.currentUid, device).catch(() => {});
+          this.mqttService
+            .emitDeviceUpdated(payload.currentUid, device)
+            .catch(() => {});
         }
       })
       .catch(() => {});

@@ -1,4 +1,10 @@
-import { Controller, Get, Query, HttpStatus, HttpException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Query,
+  HttpStatus,
+  HttpException,
+} from '@nestjs/common';
 import { FirmwareService } from '../services/firmware.service';
 
 @Controller('api/firmware')
@@ -20,7 +26,10 @@ export class FirmwareController {
     @Query('deviceId') deviceId: string,
   ) {
     if (!userId || !deviceId) {
-      throw new HttpException('userId and deviceId are required', HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        'userId and deviceId are required',
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     return this.firmwareService.getDeviceFirmwareVersion(userId, deviceId);

@@ -40,7 +40,9 @@ export class CmsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async handleConnection(client: Socket) {
     try {
       // Verify JWT token from handshake
-      const token = client.handshake.auth?.token || client.handshake.headers?.authorization?.replace('Bearer ', '');
+      const token =
+        client.handshake.auth?.token ||
+        client.handshake.headers?.authorization?.replace('Bearer ', '');
 
       if (!token) {
         this.logger.warn(`Client ${client.id} connection rejected: No token`);
@@ -48,12 +50,17 @@ export class CmsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
-      const secret = this.configService.get<string>('CMS_JWT_SECRET', 'cms_default_secret_change_in_production');
+      const secret = this.configService.get<string>(
+        'CMS_JWT_SECRET',
+        'cms_default_secret_change_in_production',
+      );
 
       try {
         this.jwtService.verify(token, { secret });
       } catch {
-        this.logger.warn(`Client ${client.id} connection rejected: Invalid token`);
+        this.logger.warn(
+          `Client ${client.id} connection rejected: Invalid token`,
+        );
         client.disconnect();
         return;
       }
@@ -101,7 +108,9 @@ export class CmsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const subscriptions = this.clientSubscriptions.get(client.id);
     if (subscriptions) {
       subscriptions.delete(subscriptionKey);
-      this.logger.log(`Client ${client.id} unsubscribed from ${subscriptionKey}`);
+      this.logger.log(
+        `Client ${client.id} unsubscribed from ${subscriptionKey}`,
+      );
 
       return { success: true, unsubscribed: subscriptionKey };
     }
@@ -119,7 +128,10 @@ export class CmsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const subscriptionKey = `${payload.currentUid}:${payload.wifiSsid}`;
 
     // Find all clients subscribed to this device
-    for (const [clientId, subscriptions] of this.clientSubscriptions.entries()) {
+    for (const [
+      clientId,
+      subscriptions,
+    ] of this.clientSubscriptions.entries()) {
       if (subscriptions.has(subscriptionKey)) {
         const client = this.server.sockets.sockets.get(clientId);
         if (client) {
@@ -154,7 +166,10 @@ export class CmsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }) {
     const subscriptionKey = `${payload.currentUid}:${payload.wifiSsid}`;
 
-    for (const [clientId, subscriptions] of this.clientSubscriptions.entries()) {
+    for (const [
+      clientId,
+      subscriptions,
+    ] of this.clientSubscriptions.entries()) {
       if (subscriptions.has(subscriptionKey)) {
         const client = this.server.sockets.sockets.get(clientId);
         if (client) {

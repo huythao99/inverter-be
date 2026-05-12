@@ -112,7 +112,8 @@ export class MqttAuthController {
 
     return {
       success: true,
-      message: 'Password regenerated successfully. Please update Home Assistant with the new credentials.',
+      message:
+        'Password regenerated successfully. Please update Home Assistant with the new credentials.',
       data: config,
     };
   }
@@ -254,8 +255,7 @@ export class MqttAuthController {
    */
   @Get('status/:userId')
   async getStatus(@Param('userId') userId: string) {
-    const credential =
-      await this.mqttAuthService.getCredentialByUserId(userId);
+    const credential = await this.mqttAuthService.getCredentialByUserId(userId);
 
     if (!credential) {
       return {

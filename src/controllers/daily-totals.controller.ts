@@ -115,7 +115,10 @@ export class DailyTotalsController {
     if (month) {
       monthNum = parseInt(month, 10);
       if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-        throw new HttpException('Invalid month format (1-12)', HttpStatus.BAD_REQUEST);
+        throw new HttpException(
+          'Invalid month format (1-12)',
+          HttpStatus.BAD_REQUEST,
+        );
       }
     }
 
@@ -157,7 +160,10 @@ export class DailyTotalsController {
     if (month) {
       monthNum = parseInt(month, 10);
       if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-        throw new HttpException('Invalid month format (1-12)', HttpStatus.BAD_REQUEST);
+        throw new HttpException(
+          'Invalid month format (1-12)',
+          HttpStatus.BAD_REQUEST,
+        );
       }
     }
 
@@ -331,6 +337,9 @@ export class DailyTotalsController {
     @Param('userId') userId: string,
     @Param('deviceId') deviceId: string,
   ) {
-    return this.dailyTotalsService.calculateTotalsByUserAndDevice(userId, deviceId);
+    return this.dailyTotalsService.calculateTotalsByUserAndDevice(
+      userId,
+      deviceId,
+    );
   }
 }

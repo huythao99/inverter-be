@@ -20,7 +20,10 @@ import {
   MqttCredential,
   MqttCredentialDocument,
 } from '../models/mqtt-credential.schema';
-import { DailyTotals, DailyTotalsDocument } from '../models/daily-totals.schema';
+import {
+  DailyTotals,
+  DailyTotalsDocument,
+} from '../models/daily-totals.schema';
 import {
   InverterData,
   InverterDataDocument,
@@ -42,6 +45,7 @@ import {
   UpdateSettingsDto,
 } from '../dto/cms-query.dto';
 import { AdminLoginDto } from '../dto/admin-login.dto';
+import { MqttService } from './mqtt.service';
 
 export interface DashboardStats {
   totalDevices: number;
@@ -100,6 +104,7 @@ export class CmsService implements OnModuleInit {
     private inverterScheduleModel: Model<InverterScheduleDocument>,
     private configService: ConfigService,
     private jwtService: JwtService,
+    private mqttService: MqttService,
   ) {
     this.defaultAdminUsername = this.configService.get<string>(
       'CMS_ADMIN_USERNAME',
@@ -141,7 +146,9 @@ export class CmsService implements OnModuleInit {
   ): Promise<{ accessToken: string; admin: Partial<Admin> }> {
     const { username, password } = loginDto;
 
-    const admin = await this.adminModel.findOne({ username, isActive: true }).exec();
+    const admin = await this.adminModel
+      .findOne({ username, isActive: true })
+      .exec();
 
     if (!admin) {
       throw new UnauthorizedException('Invalid credentials');
@@ -531,6 +538,35 @@ export class CmsService implements OnModuleInit {
     };
   }
 
+  // ==================== Firmware Update ====================
+
+  async triggerFirmwareUpdate(
+    id: string,
+    targetVersion: string,
+  ): Promise<{ message: string; topic: string }> {
+    const device = await this.inverterDeviceModel.findById(id).exec();
+    if (!device) {
+      throw new NotFoundException(`Device with ID ${id} not found`);
+    }
+
+    const topic = `inverter/${device.userId}/${device.deviceId}/firmware/update`;
+    const payload = {
+      action: 'start_update',
+      userId: device.userId,
+      deviceId: device.deviceId,
+      timestamp: new Date().toISOString(),
+      currentVersion: device.firmwareVersion || '1.0.0',
+      targetVersion,
+    };
+
+    await this.mqttService.publish(topic, payload);
+
+    return {
+      message: `Firmware update triggered for device ${device.deviceId}`,
+      topic,
+    };
+  }
+
   // ==================== User Management ====================
 
   async getUsers(query: UserQueryDto): Promise<{
@@ -670,7 +706,10 @@ export class CmsService implements OnModuleInit {
         ),
       },
       cms: {
-        jwtExpiresIn: this.configService.get<string>('CMS_JWT_EXPIRES_IN', '24h'),
+        jwtExpiresIn: this.configService.get<string>(
+          'CMS_JWT_EXPIRES_IN',
+          '24h',
+        ),
       },
     };
   }

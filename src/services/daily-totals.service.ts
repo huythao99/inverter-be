@@ -106,7 +106,9 @@ export class DailyTotalsService {
   }
 
   async findOne(id: string): Promise<DailyTotals | null> {
-    return this.dailyTotalsModel.findOne({ _id: id, deletedAt: null }).exec() as Promise<DailyTotals | null>;
+    return this.dailyTotalsModel
+      .findOne({ _id: id, deletedAt: null })
+      .exec() as Promise<DailyTotals | null>;
   }
 
   async findByUserAndDevice(
@@ -229,7 +231,7 @@ export class DailyTotalsService {
       .findOneAndUpdate(
         { _id: id, deletedAt: null },
         { deletedAt: new Date() },
-        { new: true }
+        { new: true },
       )
       .exec() as Promise<DailyTotals | null>;
   }
@@ -250,7 +252,7 @@ export class DailyTotalsService {
           deletedAt: null,
         },
         { deletedAt: new Date() },
-        { new: true }
+        { new: true },
       )
       .exec() as Promise<DailyTotals | null>;
   }
@@ -288,8 +290,12 @@ export class DailyTotalsService {
       .exec();
 
     // Use decimal.js for precise aggregation to avoid floating point errors
-    const totalA = records.reduce((sum, record) => sum.plus(record.totalA), new Decimal(0)).toNumber();
-    const totalA2 = records.reduce((sum, record) => sum.plus(record.totalA2), new Decimal(0)).toNumber();
+    const totalA = records
+      .reduce((sum, record) => sum.plus(record.totalA), new Decimal(0))
+      .toNumber();
+    const totalA2 = records
+      .reduce((sum, record) => sum.plus(record.totalA2), new Decimal(0))
+      .toNumber();
 
     return {
       totalA,
@@ -352,11 +358,13 @@ export class DailyTotalsService {
     const endOfMonth = new Date(targetYear, targetMonth, 0, 23, 59, 59, 999);
 
     // Convert to GMT+7
-    const utcStart = startOfMonth.getTime() + startOfMonth.getTimezoneOffset() * 60000;
+    const utcStart =
+      startOfMonth.getTime() + startOfMonth.getTimezoneOffset() * 60000;
     const gmt7Start = new Date(utcStart + 7 * 3600000);
     gmt7Start.setHours(0, 0, 0, 0);
 
-    const utcEnd = endOfMonth.getTime() + endOfMonth.getTimezoneOffset() * 60000;
+    const utcEnd =
+      endOfMonth.getTime() + endOfMonth.getTimezoneOffset() * 60000;
     const gmt7End = new Date(utcEnd + 7 * 3600000);
     gmt7End.setHours(23, 59, 59, 999);
 
@@ -374,11 +382,14 @@ export class DailyTotalsService {
       .exec();
 
     // Group by date
-    const dailyMap = new Map<string, { totalA: number; totalA2: number; devices: Set<string> }>();
+    const dailyMap = new Map<
+      string,
+      { totalA: number; totalA2: number; devices: Set<string> }
+    >();
 
     records.forEach((record) => {
       const dateKey = record.date.toISOString().split('T')[0];
-      
+
       if (!dailyMap.has(dateKey)) {
         dailyMap.set(dateKey, { totalA: 0, totalA2: 0, devices: new Set() });
       }
@@ -405,14 +416,18 @@ export class DailyTotalsService {
     const averageDailyA = totalDays > 0 ? totalA / totalDays : 0;
     const averageDailyA2 = totalDays > 0 ? totalA2 / totalDays : 0;
 
-    const peakDayA = dailyRecords.reduce((peak, day) => 
-      day.totalA > peak.value ? { date: day.date, value: day.totalA } : peak,
-      { date: '', value: 0 }
+    const peakDayA = dailyRecords.reduce(
+      (peak, day) =>
+        day.totalA > peak.value ? { date: day.date, value: day.totalA } : peak,
+      { date: '', value: 0 },
     );
 
-    const peakDayA2 = dailyRecords.reduce((peak, day) => 
-      day.totalA2 > peak.value ? { date: day.date, value: day.totalA2 } : peak,
-      { date: '', value: 0 }
+    const peakDayA2 = dailyRecords.reduce(
+      (peak, day) =>
+        day.totalA2 > peak.value
+          ? { date: day.date, value: day.totalA2 }
+          : peak,
+      { date: '', value: 0 },
     );
 
     return {
@@ -443,8 +458,12 @@ export class DailyTotalsService {
       .exec();
 
     // Use decimal.js for precise aggregation to avoid floating point errors
-    const totalA = records.reduce((sum, record) => sum.plus(record.totalA), new Decimal(0)).toNumber();
-    const totalA2 = records.reduce((sum, record) => sum.plus(record.totalA2), new Decimal(0)).toNumber();
+    const totalA = records
+      .reduce((sum, record) => sum.plus(record.totalA), new Decimal(0))
+      .toNumber();
+    const totalA2 = records
+      .reduce((sum, record) => sum.plus(record.totalA2), new Decimal(0))
+      .toNumber();
 
     return {
       totalA,
@@ -452,7 +471,10 @@ export class DailyTotalsService {
     };
   }
 
-  async clearCurrentMonthTotals(userId: string, deviceId?: string): Promise<void> {
+  async clearCurrentMonthTotals(
+    userId: string,
+    deviceId?: string,
+  ): Promise<void> {
     const currentDate = new Date();
     const targetYear = currentDate.getFullYear();
     const targetMonth = currentDate.getMonth() + 1;
@@ -460,11 +482,13 @@ export class DailyTotalsService {
     const startOfMonth = new Date(targetYear, targetMonth - 1, 1);
     const endOfMonth = new Date(targetYear, targetMonth, 0, 23, 59, 59, 999);
 
-    const utcStart = startOfMonth.getTime() + startOfMonth.getTimezoneOffset() * 60000;
+    const utcStart =
+      startOfMonth.getTime() + startOfMonth.getTimezoneOffset() * 60000;
     const gmt7Start = new Date(utcStart + 7 * 3600000);
     gmt7Start.setHours(0, 0, 0, 0);
 
-    const utcEnd = endOfMonth.getTime() + endOfMonth.getTimezoneOffset() * 60000;
+    const utcEnd =
+      endOfMonth.getTime() + endOfMonth.getTimezoneOffset() * 60000;
     const gmt7End = new Date(utcEnd + 7 * 3600000);
     gmt7End.setHours(23, 59, 59, 999);
 
@@ -478,7 +502,9 @@ export class DailyTotalsService {
       filter.deviceId = deviceId;
     }
 
-    await this.dailyTotalsModel.updateMany(filter, { deletedAt: new Date() }).exec();
+    await this.dailyTotalsModel
+      .updateMany(filter, { deletedAt: new Date() })
+      .exec();
   }
 
   async getMonthlyChartData(
@@ -496,11 +522,13 @@ export class DailyTotalsService {
     const endOfMonth = new Date(targetYear, targetMonth, 0, 23, 59, 59, 999);
 
     // Convert to GMT+7
-    const utcStart = startOfMonth.getTime() + startOfMonth.getTimezoneOffset() * 60000;
+    const utcStart =
+      startOfMonth.getTime() + startOfMonth.getTimezoneOffset() * 60000;
     const gmt7Start = new Date(utcStart + 7 * 3600000);
     gmt7Start.setHours(0, 0, 0, 0);
 
-    const utcEnd = endOfMonth.getTime() + endOfMonth.getTimezoneOffset() * 60000;
+    const utcEnd =
+      endOfMonth.getTime() + endOfMonth.getTimezoneOffset() * 60000;
     const gmt7End = new Date(utcEnd + 7 * 3600000);
     gmt7End.setHours(23, 59, 59, 999);
 
@@ -524,7 +552,10 @@ export class DailyTotalsService {
       const dateKey = record.date.toISOString().split('T')[0];
 
       if (!dailyMap.has(dateKey)) {
-        dailyMap.set(dateKey, { totalA: new Decimal(0), totalA2: new Decimal(0) });
+        dailyMap.set(dateKey, {
+          totalA: new Decimal(0),
+          totalA2: new Decimal(0),
+        });
       }
 
       const daily = dailyMap.get(dateKey)!;

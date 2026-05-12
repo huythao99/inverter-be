@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getDevices, updateDevice, deleteDevice } from '../services/api';
+import { getDevices, updateDevice, deleteDevice, triggerFirmwareUpdate } from '../services/api';
 import {
   Search,
   Edit2,
@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Eye,
+  Download,
 } from 'lucide-react';
 
 interface Device {
@@ -37,6 +38,8 @@ const Devices: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState({ deviceName: '', firmwareVersion: '' });
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [firmwareUpdateConfirm, setFirmwareUpdateConfirm] = useState<string | null>(null);
+  const [isUpdatingFirmware, setIsUpdatingFirmware] = useState(false);
 
   const fetchDevices = async () => {
     setIsLoading(true);
@@ -90,6 +93,20 @@ const Devices: React.FC = () => {
       fetchDevices();
     } catch (err) {
       console.error('Failed to delete device', err);
+    }
+  };
+
+  const handleFirmwareUpdate = async (id: string) => {
+    setIsUpdatingFirmware(true);
+    try {
+      await triggerFirmwareUpdate(id, '1.0.4');
+      setFirmwareUpdateConfirm(null);
+      alert('Firmware update triggered successfully');
+    } catch (err) {
+      console.error('Failed to trigger firmware update', err);
+      alert('Failed to trigger firmware update');
+    } finally {
+      setIsUpdatingFirmware(false);
     }
   };
 
@@ -202,6 +219,24 @@ const Devices: React.FC = () => {
                             <X size={16} />
                           </button>
                         </>
+                      ) : firmwareUpdateConfirm === device._id ? (
+                        <>
+                          <button
+                            className="btn-icon success"
+                            onClick={() => handleFirmwareUpdate(device._id)}
+                            disabled={isUpdatingFirmware}
+                            title="Confirm Update"
+                          >
+                            <Check size={16} />
+                          </button>
+                          <button
+                            className="btn-icon"
+                            onClick={() => setFirmwareUpdateConfirm(null)}
+                            title="Cancel"
+                          >
+                            <X size={16} />
+                          </button>
+                        </>
                       ) : (
                         <>
                           <button
@@ -210,6 +245,13 @@ const Devices: React.FC = () => {
                             title="View Details"
                           >
                             <Eye size={16} />
+                          </button>
+                          <button
+                            className="btn-icon"
+                            onClick={() => setFirmwareUpdateConfirm(device._id)}
+                            title="Update Firmware"
+                          >
+                            <Download size={16} />
                           </button>
                           <button
                             className="btn-icon"

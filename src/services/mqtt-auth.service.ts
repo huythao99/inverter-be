@@ -101,10 +101,7 @@ export class MqttAuthService {
    */
   private encryptPassword(password: string): string {
     const iv = crypto.randomBytes(16);
-    const key = crypto
-      .createHash('sha256')
-      .update(this.encryptionKey)
-      .digest();
+    const key = crypto.createHash('sha256').update(this.encryptionKey).digest();
     const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
     let encrypted = cipher.update(password, 'utf8', 'hex');
     encrypted += cipher.final('hex');
@@ -135,7 +132,9 @@ export class MqttAuthService {
   /**
    * Generate or get existing credentials for a user
    */
-  async getOrCreateCredentials(userId: string): Promise<MqttCredentialDocument> {
+  async getOrCreateCredentials(
+    userId: string,
+  ): Promise<MqttCredentialDocument> {
     const existingCredential = await this.mqttCredentialModel
       .findOne({ userId, isActive: true })
       .exec();
@@ -178,7 +177,7 @@ export class MqttAuthService {
     );
 
     this.logger.log(`Generated MQTT credentials for user: ${userId}`);
-    return credential!;
+    return credential;
   }
 
   /**
@@ -281,10 +280,7 @@ export class MqttAuthService {
     }
 
     // Allow bridge topics (read only)
-    if (
-      topic.startsWith(`${this.statePrefix}/bridge/`) &&
-      access !== 'write'
-    ) {
+    if (topic.startsWith(`${this.statePrefix}/bridge/`) && access !== 'write') {
       return true;
     }
 
@@ -373,9 +369,7 @@ export class MqttAuthService {
    * Get credential by userId
    */
   async getCredentialByUserId(userId: string): Promise<MqttCredential | null> {
-    return this.mqttCredentialModel
-      .findOne({ userId, isActive: true })
-      .exec();
+    return this.mqttCredentialModel.findOne({ userId, isActive: true }).exec();
   }
 
   /**
