@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import mqtt from 'mqtt';
 import type { MqttClient } from 'mqtt';
-import { getDeviceDetails } from '../services/api';
+import { getDeviceDetails, triggerFirmwareUpdate } from '../services/api';
 import {
   ArrowLeft,
   Cpu,
@@ -13,6 +13,8 @@ import {
   Radio,
   Wifi,
   WifiOff,
+  Download,
+  Loader2,
 } from 'lucide-react';
 
 // MQTT WebSocket URL (broker must have WebSocket listener enabled on port 9001)
@@ -80,6 +82,9 @@ const DeviceDetail: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<'realtime' | 'data' | 'settings' | 'schedule' | 'totals'>('realtime');
+
+  // Firmware update state
+  const [isUpdatingFirmware, setIsUpdatingFirmware] = useState(false);
 
   // Real-time state
   const [isConnected, setIsConnected] = useState(false);
@@ -205,6 +210,27 @@ const DeviceDetail: React.FC = () => {
     };
   }, [userId, deviceId]);
 
+  const handleFirmwareUpdate = async () => {
+    if (!data?.device?._id) return;
+
+    const confirmed = window.confirm(
+      `Are you sure you want to trigger firmware update for ${data.device.deviceName || deviceId}?\n\nThis will send an MQTT message to the device to start the update process.`
+    );
+
+    if (!confirmed) return;
+
+    setIsUpdatingFirmware(true);
+    try {
+      await triggerFirmwareUpdate(data.device._id, '1.0.5');
+      alert('Firmware update triggered successfully! The device will begin updating.');
+    } catch (err: any) {
+      console.error('Failed to trigger firmware update', err);
+      alert(err.response?.data?.message || 'Failed to trigger firmware update');
+    } finally {
+      setIsUpdatingFirmware(false);
+    }
+  };
+
   if (isLoading) {
     return <div className="loading">Loading device details...</div>;
   }
@@ -258,6 +284,19 @@ const DeviceDetail: React.FC = () => {
               <label>Firmware</label>
               <span>{data.device.firmwareVersion}</span>
             </div>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={handleFirmwareUpdate}
+              disabled={isUpdatingFirmware}
+              title="Trigger firmware update via MQTT"
+            >
+              {isUpdatingFirmware ? (
+                <Loader2 size={16} className="spin" />
+              ) : (
+                <Download size={16} />
+              )}
+              {isUpdatingFirmware ? 'Updating...' : 'Update'}
+            </button>
           </div>
           <div className="info-item">
             <Database size={18} />
