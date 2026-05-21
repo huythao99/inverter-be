@@ -183,4 +183,36 @@ export class CmsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
     }
   }
+
+  // Listen to OTA firmware update status events
+  @OnEvent('ota.status.received')
+  handleOtaStatus(payload: {
+    userId: string;
+    deviceId: string;
+    status: string;
+    progress?: number;
+    message?: string;
+    timestamp: string;
+  }) {
+    const subscriptionKey = `${payload.userId}:${payload.deviceId}`;
+
+    for (const [
+      clientId,
+      subscriptions,
+    ] of this.clientSubscriptions.entries()) {
+      if (subscriptions.has(subscriptionKey)) {
+        const client = this.server.sockets.sockets.get(clientId);
+        if (client) {
+          client.emit('otaStatus', {
+            userId: payload.userId,
+            deviceId: payload.deviceId,
+            status: payload.status,
+            progress: payload.progress,
+            message: payload.message,
+            timestamp: payload.timestamp,
+          });
+        }
+      }
+    }
+  }
 }

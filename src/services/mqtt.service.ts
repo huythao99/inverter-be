@@ -110,6 +110,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   private subscribeToInverterTopics() {
     const topics = [
       'inverter/+/+/data',
+      'inverter/+/+/ota/status', // OTA firmware update status
       'devices/inverter/+/+',
       `${this.haStatePrefix}/+/+/set/+`, // Home Assistant command topics
     ];
@@ -134,6 +135,15 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
 
     const currentUid = isInverter ? topicParts[1] : topicParts[2];
     const wifiSsid = isInverter ? topicParts[2] : topicParts[3];
+
+    // Handle OTA status messages (no rate limiting for OTA updates)
+    // Topic format: inverter/{userId}/{deviceId}/ota/status
+    if (isInverter && topicParts[3] === 'ota' && topicParts[4] === 'status') {
+      const messageStr = message.toString();
+      void this.handleOtaStatusMessage(currentUid, wifiSsid, messageStr);
+      return;
+    }
+
     const deviceKey = `${currentUid}-${wifiSsid}`;
 
     // Rate limit: 3 seconds per device (matches device send interval)
@@ -251,6 +261,32 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       entity,
       value,
     });
+  }
+
+  // Handle OTA status messages from devices
+  // Topic format: inverter/{userId}/{deviceId}/ota/status
+  // Expected payload: { status: 'installing' | 'success' | 'failed', progress?: number, message?: string }
+  private handleOtaStatusMessage(
+    userId: string,
+    deviceId: string,
+    message: string,
+  ) {
+    try {
+      const data = JSON.parse(message);
+      const status = data.status as string | undefined;
+      const progress = data.progress as number | undefined;
+
+      this.eventEmitter.emit('ota.status.received', {
+        userId,
+        deviceId,
+        status,
+        progress,
+        message: data.message,
+        timestamp: new Date().toISOString(),
+      });
+    } catch {
+      // Invalid JSON payload, ignore
+    }
   }
 
   async onModuleDestroy() {
