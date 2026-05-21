@@ -67,6 +67,13 @@ interface RealtimeData {
   timestamp: string;
 }
 
+interface OtaStatus {
+  status: 'installing' | 'success' | 'failed' | string;
+  progress?: number;
+  message?: string;
+  timestamp: string;
+}
+
 // Helper function to safely format numbers
 const formatNumber = (value: unknown, decimals = 2): string => {
   if (value === null || value === undefined) return '0.00';
@@ -85,6 +92,7 @@ const DeviceDetail: React.FC = () => {
 
   // Firmware update state
   const [isUpdatingFirmware, setIsUpdatingFirmware] = useState(false);
+  const [otaStatus, setOtaStatus] = useState<OtaStatus | null>(null);
 
   // Real-time state
   const [isConnected, setIsConnected] = useState(false);
@@ -129,8 +137,10 @@ const DeviceDetail: React.FC = () => {
       setIsConnected(true);
 
       // Subscribe to device data topic
-      const topic = `inverter/${userId}/${deviceId}/data`;
-      client.subscribe(topic, { qos: 0 });
+      const dataTopic = `inverter/${userId}/${deviceId}/data`;
+      const otaTopic = `inverter/${userId}/${deviceId}/ota/status`;
+      client.subscribe(dataTopic, { qos: 0 });
+      client.subscribe(otaTopic, { qos: 1 });
     });
 
     client.on('disconnect', () => {
@@ -146,12 +156,40 @@ const DeviceDetail: React.FC = () => {
       setIsConnected(false);
     });
 
-    client.on('message', (_topic, message) => {
+    client.on('message', (topic, message) => {
       try {
         const messageStr = message.toString();
 
         // Clean control characters from the message
         const cleanedStr = messageStr.replace(/[\x00-\x1F\x7F]/g, '');
+
+        // Handle OTA status messages
+        if (topic.endsWith('/ota/status')) {
+          try {
+            const otaPayload = JSON.parse(cleanedStr);
+            const newOtaStatus: OtaStatus = {
+              status: otaPayload.status,
+              progress: otaPayload.progress,
+              message: otaPayload.message,
+              timestamp: new Date().toISOString(),
+            };
+            setOtaStatus(newOtaStatus);
+
+            // If update completed or failed, stop showing updating state
+            if (otaPayload.status === 'success' || otaPayload.status === 'failed') {
+              setIsUpdatingFirmware(false);
+              // Refresh device details to get new firmware version
+              if (otaPayload.status === 'success') {
+                setTimeout(() => {
+                  window.location.reload();
+                }, 2000);
+              }
+            }
+          } catch {
+            // Invalid OTA status JSON
+          }
+          return;
+        }
 
         let payload: any = null;
         let parsedValue: any = null;
@@ -203,8 +241,10 @@ const DeviceDetail: React.FC = () => {
 
     return () => {
       if (client) {
-        const topic = `inverter/${userId}/${deviceId}/data`;
-        client.unsubscribe(topic);
+        const dataTopic = `inverter/${userId}/${deviceId}/data`;
+        const otaTopic = `inverter/${userId}/${deviceId}/ota/status`;
+        client.unsubscribe(dataTopic);
+        client.unsubscribe(otaTopic);
         client.end();
       }
     };
@@ -298,6 +338,27 @@ const DeviceDetail: React.FC = () => {
               {isUpdatingFirmware ? 'Updating...' : 'Update'}
             </button>
           </div>
+          {/* OTA Progress Display */}
+          {otaStatus && isUpdatingFirmware && (
+            <div className="info-item ota-progress-container" style={{ gridColumn: '1 / -1' }}>
+              <div className="ota-progress">
+                <div className="ota-progress-header">
+                  <span className="ota-status">
+                    {otaStatus.status === 'installing' && 'Installing firmware...'}
+                    {otaStatus.status === 'success' && 'Update successful!'}
+                    {otaStatus.status === 'failed' && `Update failed: ${otaStatus.message || 'Unknown error'}`}
+                  </span>
+                  <span className="ota-percentage">{otaStatus.progress ?? 0}%</span>
+                </div>
+                <div className="ota-progress-bar">
+                  <div
+                    className={`ota-progress-fill ${otaStatus.status === 'failed' ? 'error' : otaStatus.status === 'success' ? 'success' : ''}`}
+                    style={{ width: `${otaStatus.progress ?? 0}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
           <div className="info-item">
             <Database size={18} />
             <div>

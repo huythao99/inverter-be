@@ -543,13 +543,20 @@ export class CmsService implements OnModuleInit {
   async triggerFirmwareUpdate(
     id: string,
     targetVersion: string,
-  ): Promise<{ message: string; topic: string }> {
+  ): Promise<{
+    message: string;
+    topic: string;
+    userId: string;
+    deviceId: string;
+    statusTopic: string;
+  }> {
     const device = await this.inverterDeviceModel.findById(id).exec();
     if (!device) {
       throw new NotFoundException(`Device with ID ${id} not found`);
     }
 
     const topic = `inverter/${device.userId}/${device.deviceId}/firmware/update`;
+    const statusTopic = `inverter/${device.userId}/${device.deviceId}/ota/status`;
     const payload = {
       action: 'start_update',
       userId: device.userId,
@@ -564,6 +571,9 @@ export class CmsService implements OnModuleInit {
     return {
       message: `Firmware update triggered for device ${device.deviceId}`,
       topic,
+      userId: device.userId,
+      deviceId: device.deviceId,
+      statusTopic,
     };
   }
 
