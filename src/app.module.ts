@@ -13,6 +13,7 @@ import { DailyTotalsModule } from './modules/daily-totals.module';
 // import { HomeAssistantModule } from './modules/home-assistant.module';
 import { MqttAuthModule } from './modules/mqtt-auth.module';
 import { CmsModule } from './modules/cms.module';
+import { UserApiModule } from './modules/user-api.module';
 import { FirmwareController } from './controllers/firmware.controller';
 import { FirmwareService } from './services/firmware.service';
 
@@ -53,6 +54,7 @@ import { FirmwareService } from './services/firmware.service';
     // HomeAssistantModule, // Disabled
     MqttAuthModule,
     CmsModule,
+    UserApiModule,
   ],
   controllers: [AppController, FirmwareController],
   providers: [AppService, FirmwareService],

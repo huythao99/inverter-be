@@ -6,9 +6,14 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Enable CORS for CMS admin frontend
+  // Enable CORS for CMS admin frontend and User app
+  const corsOrigins = [
+    process.env.CMS_CORS_ORIGIN || 'http://localhost:5173',
+    process.env.USER_APP_CORS_ORIGIN || 'http://localhost:5174',
+  ].filter(Boolean);
+
   app.enableCors({
-    origin: process.env.CMS_CORS_ORIGIN || 'http://localhost:5173',
+    origin: corsOrigins,
     credentials: true,
   });
 
