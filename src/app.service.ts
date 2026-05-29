@@ -94,6 +94,31 @@ export class AppService {
             font-size: 20px;
         }
 
+        .login-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 1.5rem;
+            padding: 1rem 2.5rem;
+            background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 50px;
+            font-size: 1.1rem;
+            font-weight: 500;
+            box-shadow: 0 4px 20px rgba(255, 152, 0, 0.4);
+            transition: all 0.3s ease;
+        }
+
+        .login-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 30px rgba(255, 152, 0, 0.5);
+        }
+
+        .login-btn .material-icons {
+            font-size: 22px;
+        }
+
         /* Stats Section */
         .stats-section {
             display: flex;
@@ -340,6 +365,10 @@ export class AppService {
                 <span class="material-icons">check_circle</span>
                 Hệ thống đang hoạt động
             </div>
+            <a href="/app" class="login-btn">
+                <span class="material-icons">login</span>
+                Đăng nhập
+            </a>
         </header>
 
         <div class="stats-section">
