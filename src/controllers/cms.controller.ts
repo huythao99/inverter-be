@@ -12,6 +12,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import { AdminGuard } from '../auth/guards/admin.guard';
 import { CmsService } from '../services/cms.service';
 import { AdminLoginDto } from '../dto/admin-login.dto';
@@ -31,6 +32,8 @@ export class CmsController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5 attempts per minute
   async login(@Body() loginDto: AdminLoginDto) {
     return this.cmsService.login(loginDto);
   }

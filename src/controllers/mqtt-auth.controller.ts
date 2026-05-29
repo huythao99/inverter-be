@@ -9,7 +9,9 @@ import {
   HttpStatus,
   HttpException,
   Logger,
+  UseGuards,
 } from '@nestjs/common';
+import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { MqttAuthService } from '../services/mqtt-auth.service';
@@ -144,6 +146,8 @@ export class MqttAuthController {
    */
   @Post('validate')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 60000 } }) // 10 attempts per minute
   async validateCredentials(@Body() body: ValidateRequestDto) {
     const { username, password } = body;
 
