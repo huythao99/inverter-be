@@ -15,7 +15,6 @@ export class AppService {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Giabao Inverter - Hệ thống quản lý biến tần</title>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -54,9 +53,9 @@ export class AppService {
             box-shadow: 0 8px 32px rgba(255, 152, 0, 0.4);
         }
 
-        .logo .material-icons {
-            font-size: 48px;
-            color: white;
+        .logo svg {
+            width: 48px;
+            height: 48px;
         }
 
         h1 {
@@ -90,33 +89,35 @@ export class AppService {
             box-shadow: 0 4px 16px rgba(76, 175, 80, 0.4);
         }
 
-        .status-badge .material-icons {
-            font-size: 20px;
+        .status-badge svg {
+            flex-shrink: 0;
+        }
+
+        .login-section {
+            margin: 2rem 0;
         }
 
         .login-btn {
             display: inline-flex;
             align-items: center;
-            gap: 0.5rem;
-            margin-top: 1.5rem;
+            gap: 0.75rem;
             padding: 1rem 2.5rem;
-            background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(20px);
             color: white;
             text-decoration: none;
-            border-radius: 50px;
+            border-radius: 16px;
             font-size: 1.1rem;
             font-weight: 500;
-            box-shadow: 0 4px 20px rgba(255, 152, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
             transition: all 0.3s ease;
         }
 
         .login-btn:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 8px 30px rgba(255, 152, 0, 0.5);
-        }
-
-        .login-btn .material-icons {
-            font-size: 22px;
+            transform: translateY(-4px);
+            background: rgba(255, 255, 255, 0.25);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
         }
 
         /* Stats Section */
@@ -164,7 +165,8 @@ export class AppService {
         }
 
         .stat-icon {
-            font-size: 32px;
+            width: 32px;
+            height: 32px;
             margin-bottom: 0.5rem;
             opacity: 0.9;
         }
@@ -221,9 +223,9 @@ export class AppService {
             margin-bottom: 1.25rem;
         }
 
-        .feature-icon-wrapper .material-icons {
-            font-size: 28px;
-            color: #ffb74d;
+        .feature-icon-wrapper svg {
+            width: 28px;
+            height: 28px;
         }
 
         .feature-title {
@@ -257,9 +259,8 @@ export class AppService {
             margin-bottom: 2rem;
         }
 
-        .info-header .material-icons {
-            font-size: 32px;
-            color: #ffb74d;
+        .info-header svg {
+            flex-shrink: 0;
         }
 
         .info-header h2 {
@@ -288,6 +289,10 @@ export class AppService {
             display: flex;
             align-items: center;
             gap: 0.5rem;
+        }
+
+        .info-card h3 svg {
+            flex-shrink: 0;
         }
 
         .info-card p {
@@ -357,33 +362,57 @@ export class AppService {
     <div class="container">
         <header>
             <div class="logo">
-                <span class="material-icons">bolt</span>
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                </svg>
             </div>
             <h1>Giabao <span>Inverter</span></h1>
             <p class="subtitle">Hệ thống quản lý và giám sát biến tần thông minh</p>
             <div class="status-badge">
-                <span class="material-icons">check_circle</span>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                </svg>
                 Hệ thống đang hoạt động
             </div>
+        </header>
+
+        <div class="login-section">
             <a href="/app" class="login-btn">
-                <span class="material-icons">login</span>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+                    <polyline points="10 17 15 12 10 7"></polyline>
+                    <line x1="15" y1="12" x2="3" y2="12"></line>
+                </svg>
                 Đăng nhập
             </a>
-        </header>
+        </div>
 
         <div class="stats-section">
             <div class="stat-card highlight">
-                <span class="material-icons stat-icon">devices</span>
+                <svg class="stat-icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
+                    <rect x="9" y="9" width="6" height="6"></rect>
+                    <line x1="9" y1="1" x2="9" y2="4"></line>
+                    <line x1="15" y1="1" x2="15" y2="4"></line>
+                    <line x1="9" y1="20" x2="9" y2="23"></line>
+                    <line x1="15" y1="20" x2="15" y2="23"></line>
+                </svg>
                 <span class="stat-number">2000+</span>
                 <span class="stat-label">Thiết bị đã bán</span>
             </div>
             <div class="stat-card">
-                <span class="material-icons stat-icon">verified</span>
+                <svg class="stat-icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                </svg>
                 <span class="stat-number">99.9%</span>
                 <span class="stat-label">Uptime hệ thống</span>
             </div>
             <div class="stat-card">
-                <span class="material-icons stat-icon">support_agent</span>
+                <svg class="stat-icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z"></path>
+                </svg>
                 <span class="stat-number">24/7</span>
                 <span class="stat-label">Hỗ trợ kỹ thuật</span>
             </div>
@@ -392,7 +421,12 @@ export class AppService {
         <div class="features">
             <div class="feature-card">
                 <div class="feature-icon-wrapper">
-                    <span class="material-icons">monitoring</span>
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ffb74d" stroke-width="2">
+                        <path d="M3 3v18h18"></path>
+                        <path d="M18 17V9"></path>
+                        <path d="M13 17V5"></path>
+                        <path d="M8 17v-3"></path>
+                    </svg>
                 </div>
                 <h3 class="feature-title">Giám sát dữ liệu</h3>
                 <p class="feature-desc">Theo dõi thời gian thực các thông số của inverter, bao gồm điện áp, dòng điện, công suất và hiệu suất.</p>
@@ -400,7 +434,10 @@ export class AppService {
 
             <div class="feature-card">
                 <div class="feature-icon-wrapper">
-                    <span class="material-icons">settings</span>
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ffb74d" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    </svg>
                 </div>
                 <h3 class="feature-title">Cấu hình thiết bị</h3>
                 <p class="feature-desc">Quản lý và điều chỉnh các thông số cấu hình của inverter từ xa một cách dễ dàng và an toàn.</p>
@@ -408,7 +445,10 @@ export class AppService {
 
             <div class="feature-card">
                 <div class="feature-icon-wrapper">
-                    <span class="material-icons">schedule</span>
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ffb74d" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polyline points="12 6 12 12 16 14"></polyline>
+                    </svg>
                 </div>
                 <h3 class="feature-title">Lập lịch hoạt động</h3>
                 <p class="feature-desc">Thiết lập lịch trình hoạt động tự động cho hệ thống inverter theo nhu cầu sử dụng.</p>
@@ -416,7 +456,11 @@ export class AppService {
 
             <div class="feature-card">
                 <div class="feature-icon-wrapper">
-                    <span class="material-icons">analytics</span>
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ffb74d" stroke-width="2">
+                        <line x1="18" y1="20" x2="18" y2="10"></line>
+                        <line x1="12" y1="20" x2="12" y2="4"></line>
+                        <line x1="6" y1="20" x2="6" y2="14"></line>
+                    </svg>
                 </div>
                 <h3 class="feature-title">Báo cáo thống kê</h3>
                 <p class="feature-desc">Tạo báo cáo chi tiết về hiệu suất hoạt động và thống kê sử dụng năng lượng hàng ngày.</p>
@@ -425,18 +469,44 @@ export class AppService {
 
         <div class="info-section">
             <div class="info-header">
-                <span class="material-icons">business</span>
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ffb74d" stroke-width="2">
+                    <path d="M3 21h18"></path>
+                    <path d="M9 8h1"></path>
+                    <path d="M9 12h1"></path>
+                    <path d="M9 16h1"></path>
+                    <path d="M14 8h1"></path>
+                    <path d="M14 12h1"></path>
+                    <path d="M14 16h1"></path>
+                    <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"></path>
+                </svg>
                 <h2>Thông tin chủ sở hữu</h2>
             </div>
             <div class="info-grid">
                 <div class="info-card">
-                    <h3><span class="material-icons">apartment</span> Thông tin công ty</h3>
+                    <h3>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 21h18"></path>
+                            <path d="M5 21V7l8-4v18"></path>
+                            <path d="M19 21V11l-6-4"></path>
+                            <path d="M9 9v.01"></path>
+                            <path d="M9 12v.01"></path>
+                            <path d="M9 15v.01"></path>
+                            <path d="M9 18v.01"></path>
+                        </svg>
+                        Thông tin công ty
+                    </h3>
                     <p><strong>Tên:</strong> Công ty TNHH Giabao Technology</p>
                     <p><strong>Địa chỉ:</strong> Việt Nam</p>
                     <p><strong>Chuyên ngành:</strong> Hệ thống năng lượng tái tạo</p>
                 </div>
                 <div class="info-card">
-                    <h3><span class="material-icons">person</span> Chủ sở hữu</h3>
+                    <h3>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="12" cy="7" r="4"></circle>
+                        </svg>
+                        Chủ sở hữu
+                    </h3>
                     <p><strong>Tên:</strong> Ngô Văn Bảo</p>
                     <p><strong>Số điện thoại:</strong> 0346905569</p>
                     <p><strong>Website:</strong> giabao-inverter.com</p>
