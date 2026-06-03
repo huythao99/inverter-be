@@ -99,7 +99,7 @@ const Devices: React.FC = () => {
   const handleFirmwareUpdate = async (id: string) => {
     setIsUpdatingFirmware(true);
     try {
-      await triggerFirmwareUpdate(id, '1.0.5');
+      await triggerFirmwareUpdate(id, '1.0.6');
       setFirmwareUpdateConfirm(null);
       alert('Firmware update triggered successfully');
     } catch (err) {
