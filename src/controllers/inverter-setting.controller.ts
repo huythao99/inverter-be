@@ -14,6 +14,7 @@ import { GridTieService } from '../services/grid-tie.service';
 import { CreateInverterSettingDto } from '../dto/create-inverter-setting.dto';
 import { UpdateInverterSettingDto } from '../dto/update-inverter-setting.dto';
 import { UpdateInverterSettingValueDto } from '../dto/update-inverter-setting-value.dto';
+import { SetGridTieDto } from '../dto/set-grid-tie.dto';
 import { GRID_TIE_OFF_VALUE } from '../constants/grid-tie.constants';
 
 @Controller('api/inverter-setting')
@@ -111,6 +112,35 @@ export class InverterSettingController {
       deviceId,
       updateValueDto.value,
     );
+  }
+
+  // Grid-tie ("hoà lưới") status - no auth, userId in the URL.
+  // GET returns { status: 1|0 } where 1 = OFF (tắt hoà lưới), 0 = ON.
+  @Get('grid-tie/:userId/:deviceId')
+  async getGridTieStatus(
+    @Param('userId') userId: string,
+    @Param('deviceId') deviceId: string,
+  ) {
+    const off = await this.gridTieService.isOff(userId, deviceId);
+    return { userId, deviceId, status: off ? 1 : 0, gridTieOff: off };
+  }
+
+  // Tắt/bật hoà lưới. Body { "status": 1 } => OFF, { "status": 0 } => ON.
+  @Patch('grid-tie/:userId/:deviceId')
+  async setGridTieStatus(
+    @Param('userId') userId: string,
+    @Param('deviceId') deviceId: string,
+    @Body() dto: SetGridTieDto,
+  ) {
+    const off = dto.status === 1;
+    const setting = await this.gridTieService.setGridTie(userId, deviceId, off);
+    return {
+      userId,
+      deviceId,
+      status: off ? 1 : 0,
+      gridTieOff: off,
+      setting,
+    };
   }
 
   @Delete('data/:id')
