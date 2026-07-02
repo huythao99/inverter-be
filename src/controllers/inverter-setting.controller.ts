@@ -10,14 +10,17 @@ import {
 } from '@nestjs/common';
 import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 import { InverterSettingService } from '../services/inverter-setting.service';
+import { GridTieService } from '../services/grid-tie.service';
 import { CreateInverterSettingDto } from '../dto/create-inverter-setting.dto';
 import { UpdateInverterSettingDto } from '../dto/update-inverter-setting.dto';
 import { UpdateInverterSettingValueDto } from '../dto/update-inverter-setting-value.dto';
+import { GRID_TIE_OFF_VALUE } from '../constants/grid-tie.constants';
 
 @Controller('api/inverter-setting')
 export class InverterSettingController {
   constructor(
     private readonly inverterSettingService: InverterSettingService,
+    private readonly gridTieService: GridTieService,
   ) {}
 
   @Post('data')
@@ -42,6 +45,17 @@ export class InverterSettingController {
         userId,
         deviceId,
       );
+
+      // When grid-tie is OFF, report the OFF command instead of the stored
+      // value (which is preserved untouched in the DB).
+      if (await this.gridTieService.isOff(userId, deviceId)) {
+        return {
+          ...(result ?? { userId, deviceId }),
+          value: GRID_TIE_OFF_VALUE,
+          gridTieOff: true,
+        };
+      }
+
       return result || { message: 'Device not found', userId, deviceId };
     } catch (error) {
       if (error instanceof Error) {

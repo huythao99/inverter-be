@@ -8,6 +8,7 @@ import {
   InverterSettingDocument,
 } from '../models/inverter-setting.schema';
 import { MqttService } from './mqtt.service';
+import { GRID_TIE_OFF_VALUE } from '../constants/grid-tie.constants';
 
 @Injectable()
 export class InverterSettingService {
@@ -104,5 +105,44 @@ export class InverterSettingService {
   async deleteAll(): Promise<{ deletedCount: number }> {
     const result = await this.inverterSettingModel.deleteMany({}).exec();
     return { deletedCount: result.deletedCount };
+  }
+
+  // Grid-tie status is the source of truth in MongoDB; GridTieService caches it
+  // in Redis. Defaults to false (grid-tie ON) when no setting exists yet.
+  async getGridTieOffFromDb(
+    userId: string,
+    deviceId: string,
+  ): Promise<boolean> {
+    const doc = await this.inverterSettingModel
+      .findOne({ userId, deviceId }, { gridTieOff: 1 })
+      .lean()
+      .maxTimeMS(2000)
+      .exec();
+    return doc?.gridTieOff ?? false;
+  }
+
+  async setGridTieOffInDb(
+    userId: string,
+    deviceId: string,
+    off: boolean,
+  ): Promise<InverterSetting | null> {
+    const update: Record<string, unknown> = {
+      $set: { gridTieOff: off, updatedAt: new Date() },
+    };
+    const options: Record<string, unknown> = { new: true };
+    if (off) {
+      // Allow turning grid-tie off on a device with no setting yet; the stored
+      // value defaults to the OFF command until the app writes the real one.
+      options.upsert = true;
+      update.$setOnInsert = { value: GRID_TIE_OFF_VALUE };
+    }
+    const result = await this.inverterSettingModel
+      .findOneAndUpdate({ userId, deviceId }, update, options)
+      .exec();
+
+    // Invalidate the HTTP GET cache so the next poll reflects the new status.
+    await this.cacheManager.del(this.getCacheKey(userId, deviceId));
+
+    return result;
   }
 }

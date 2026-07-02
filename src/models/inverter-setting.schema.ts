@@ -16,6 +16,11 @@ export class InverterSetting {
   @Prop({ required: true })
   value: string;
 
+  // Grid-tie ("hoà lưới") status. false = grid connected (default),
+  // true = tắt hoà lưới. The real `value` above is preserved either way.
+  @Prop({ default: false })
+  gridTieOff: boolean;
+
   @Prop({ default: Date.now })
   updatedAt: Date;
 }

@@ -7,6 +7,8 @@ import {
   InverterSettingSchema,
 } from '../models/inverter-setting.schema';
 import { MqttService } from '../services/mqtt.service';
+import { RedisConfig } from '../config/redis.config';
+import { GridTieService } from '../services/grid-tie.service';
 
 @Module({
   imports: [
@@ -15,7 +17,7 @@ import { MqttService } from '../services/mqtt.service';
     ]),
   ],
   controllers: [InverterSettingController],
-  providers: [InverterSettingService, MqttService],
-  exports: [InverterSettingService],
+  providers: [InverterSettingService, MqttService, RedisConfig, GridTieService],
+  exports: [InverterSettingService, GridTieService],
 })
 export class InverterSettingModule {}

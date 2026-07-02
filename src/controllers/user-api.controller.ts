@@ -7,19 +7,18 @@ import {
   Query,
   UseGuards,
   NotFoundException,
-  ForbiddenException,
   Header,
 } from '@nestjs/common';
 import { FirebaseAuthGuard } from '../auth/guards/firebase-auth.guard';
-import {
-  CurrentFirebaseUser,
-} from '../auth/decorators/firebase-user.decorator';
+import { CurrentFirebaseUser } from '../auth/decorators/firebase-user.decorator';
 import { FirebaseUser } from '../auth/strategies/firebase.strategy';
 import { InverterDeviceService } from '../services/inverter-device.service';
 import { InverterDataService } from '../services/inverter-data.service';
 import { InverterSettingService } from '../services/inverter-setting.service';
 import { InverterScheduleService } from '../services/inverter-schedule.service';
+import { GridTieService } from '../services/grid-tie.service';
 import { DailyTotalsService } from '../services/daily-totals.service';
+import { SetGridTieDto } from '../dto/set-grid-tie.dto';
 
 @Controller('api/user')
 @UseGuards(FirebaseAuthGuard)
@@ -29,6 +28,7 @@ export class UserApiController {
     private readonly inverterDataService: InverterDataService,
     private readonly inverterSettingService: InverterSettingService,
     private readonly inverterScheduleService: InverterScheduleService,
+    private readonly gridTieService: GridTieService,
     private readonly dailyTotalsService: DailyTotalsService,
   ) {}
 
@@ -123,6 +123,63 @@ export class UserApiController {
     return settings;
   }
 
+  // Get grid-tie ("hoà lưới") status
+  @Get('devices/:deviceId/grid-tie')
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
+  async getGridTieStatus(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('deviceId') deviceId: string,
+  ) {
+    // Verify device belongs to user
+    const device = await this.inverterDeviceService.findByUserIdAndDeviceId(
+      user.uid,
+      deviceId,
+    );
+
+    if (!device) {
+      throw new NotFoundException(`Device ${deviceId} not found`);
+    }
+
+    const off = await this.gridTieService.isOff(user.uid, deviceId);
+    // 1 = tắt hoà lưới (OFF), 0 = grid-tie ON
+    return { deviceId, status: off ? 1 : 0, gridTieOff: off };
+  }
+
+  // Tắt/bật hoà lưới (set grid-tie on/off).
+  // { "status": 1 } => grid-tie OFF; the firmware then reads the OFF command
+  // from GET setting/schedule while the real stored value is preserved.
+  @Patch('devices/:deviceId/grid-tie')
+  async setGridTieStatus(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('deviceId') deviceId: string,
+    @Body() dto: SetGridTieDto,
+  ) {
+    // Verify device belongs to user
+    const device = await this.inverterDeviceService.findByUserIdAndDeviceId(
+      user.uid,
+      deviceId,
+    );
+
+    if (!device) {
+      throw new NotFoundException(`Device ${deviceId} not found`);
+    }
+
+    const off = dto.status === 1;
+    const setting = await this.gridTieService.setGridTie(
+      user.uid,
+      deviceId,
+      off,
+    );
+
+    return {
+      deviceId,
+      // 1 = tắt hoà lưới (OFF), 0 = grid-tie ON
+      status: off ? 1 : 0,
+      gridTieOff: off,
+      setting,
+    };
+  }
+
   // Get device schedule
   @Get('devices/:deviceId/schedule')
   @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
@@ -140,11 +197,10 @@ export class UserApiController {
       throw new NotFoundException(`Device ${deviceId} not found`);
     }
 
-    const schedule =
-      await this.inverterScheduleService.findByUserIdAndDeviceId(
-        user.uid,
-        deviceId,
-      );
+    const schedule = await this.inverterScheduleService.findByUserIdAndDeviceId(
+      user.uid,
+      deviceId,
+    );
 
     return schedule || { userId: user.uid, deviceId, schedule: '' };
   }

@@ -7,12 +7,14 @@ import {
   InverterScheduleSchema,
 } from '../models/inverter-schedule.schema';
 import { MqttService } from '../services/mqtt.service';
+import { InverterSettingModule } from './inverter-setting.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: InverterSchedule.name, schema: InverterScheduleSchema },
     ]),
+    InverterSettingModule,
   ],
   controllers: [InverterScheduleController],
   providers: [InverterScheduleService, MqttService],

@@ -8,14 +8,17 @@ import {
   Delete,
 } from '@nestjs/common';
 import { InverterScheduleService } from '../services/inverter-schedule.service';
+import { GridTieService } from '../services/grid-tie.service';
 import { CreateInverterScheduleDto } from '../dto/create-inverter-schedule.dto';
 import { UpdateInverterScheduleDto } from '../dto/update-inverter-schedule.dto';
 import { UpdateInverterScheduleValueDto } from '../dto/update-inverter-schedule-value.dto';
+import { GRID_TIE_OFF_VALUE } from '../constants/grid-tie.constants';
 
 @Controller('api/inverter-schedule')
 export class InverterScheduleController {
   constructor(
     private readonly inverterScheduleService: InverterScheduleService,
+    private readonly gridTieService: GridTieService,
   ) {}
 
   @Post('data')
@@ -38,6 +41,26 @@ export class InverterScheduleController {
         userId,
         deviceId,
       );
+
+      // When grid-tie is OFF, keep each segment's start/end times but force its
+      // value to the OFF command. The stored schedule is preserved untouched in
+      // the DB; only the response is rewritten.
+      // e.g. "start=11:00&end=16:59&value=53001040#..." =>
+      //      "start=11:00&end=16:59&value=99001001#..."
+      if (await this.gridTieService.isOff(userId, deviceId)) {
+        const schedule = result?.schedule
+          ? result.schedule.replace(
+              /value=[^&#]*/g,
+              `value=${GRID_TIE_OFF_VALUE}`,
+            )
+          : GRID_TIE_OFF_VALUE;
+        return {
+          ...(result ?? { userId, deviceId }),
+          schedule,
+          gridTieOff: true,
+        };
+      }
+
       return (
         result || { message: 'Device schedule not found', userId, deviceId }
       );

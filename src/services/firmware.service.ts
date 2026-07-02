@@ -7,6 +7,7 @@ export class FirmwareService {
 
   constructor(private readonly inverterDeviceService: InverterDeviceService) {}
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   getFirmwareUrl(deviceId: string): { url: string } {
     // You can add logic here to return different firmware URLs based on deviceId
     // For now, returning the same firmware URL for all devices
@@ -40,7 +41,7 @@ export class FirmwareService {
     };
   }
 
-  async getNewestFirmwareVersion(): Promise<{ version: string }> {
+  getNewestFirmwareVersion(): { version: string } {
     // Return the current newest firmware version
     // You can update this version number when new firmware is available
     const newestVersion = '1.0.5';
