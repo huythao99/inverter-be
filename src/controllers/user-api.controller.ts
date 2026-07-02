@@ -19,6 +19,7 @@ import { InverterScheduleService } from '../services/inverter-schedule.service';
 import { GridTieService } from '../services/grid-tie.service';
 import { DailyTotalsService } from '../services/daily-totals.service';
 import { SetGridTieDto } from '../dto/set-grid-tie.dto';
+import { GRID_TIE_OFF_VALUE } from '../constants/grid-tie.constants';
 
 @Controller('api/user')
 @UseGuards(FirebaseAuthGuard)
@@ -92,6 +93,16 @@ export class UserApiController {
       user.uid,
       deviceId,
     );
+
+    // When grid-tie is OFF, report the OFF command instead of the stored value
+    // (the real value is preserved untouched in the DB).
+    if (await this.gridTieService.isOff(user.uid, deviceId)) {
+      return {
+        ...(settings ?? { userId: user.uid, deviceId }),
+        value: GRID_TIE_OFF_VALUE,
+        gridTieOff: true,
+      };
+    }
 
     return settings || { userId: user.uid, deviceId, value: '' };
   }
@@ -201,6 +212,22 @@ export class UserApiController {
       user.uid,
       deviceId,
     );
+
+    // When grid-tie is OFF, force each segment's value to the OFF command while
+    // keeping start/end times. The stored schedule is preserved in the DB.
+    if (await this.gridTieService.isOff(user.uid, deviceId)) {
+      const overridden = schedule?.schedule
+        ? schedule.schedule.replace(
+            /value=[^&#]*/g,
+            `value=${GRID_TIE_OFF_VALUE}`,
+          )
+        : GRID_TIE_OFF_VALUE;
+      return {
+        ...(schedule ?? { userId: user.uid, deviceId }),
+        schedule: overridden,
+        gridTieOff: true,
+      };
+    }
 
     return schedule || { userId: user.uid, deviceId, schedule: '' };
   }
