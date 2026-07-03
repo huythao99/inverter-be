@@ -5,23 +5,27 @@ import {
   Body,
   Patch,
   Param,
+  Query,
   Delete,
   UseInterceptors,
 } from '@nestjs/common';
-import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
+import { CacheTTL } from '@nestjs/cache-manager';
 import { InverterSettingService } from '../services/inverter-setting.service';
 import { GridTieService } from '../services/grid-tie.service';
+import { ShareService } from '../services/share.service';
 import { CreateInverterSettingDto } from '../dto/create-inverter-setting.dto';
 import { UpdateInverterSettingDto } from '../dto/update-inverter-setting.dto';
 import { UpdateInverterSettingValueDto } from '../dto/update-inverter-setting-value.dto';
 import { SetGridTieDto } from '../dto/set-grid-tie.dto';
 import { GRID_TIE_OFF_VALUE } from '../constants/grid-tie.constants';
+import { SettingCacheInterceptor } from '../interceptors/setting-cache.interceptor';
 
 @Controller('api/inverter-setting')
 export class InverterSettingController {
   constructor(
     private readonly inverterSettingService: InverterSettingService,
     private readonly gridTieService: GridTieService,
+    private readonly shareService: ShareService,
   ) {}
 
   @Post('data')
@@ -35,11 +39,12 @@ export class InverterSettingController {
   }
 
   @Get('data/:userId/:deviceId')
-  @UseInterceptors(CacheInterceptor)
+  @UseInterceptors(SettingCacheInterceptor) // skips cache when ?source=hardware
   @CacheTTL(30000) // 30 seconds, invalidated on write
   async findByUserIdAndDeviceId(
     @Param('userId') userId: string,
     @Param('deviceId') deviceId: string,
+    @Query('source') source?: string,
   ) {
     try {
       const result = await this.inverterSettingService.findByUserIdAndDeviceId(
@@ -48,13 +53,27 @@ export class InverterSettingController {
       );
 
       // When grid-tie is OFF, report the OFF command instead of the stored
-      // value (which is preserved untouched in the DB).
+      // value (which is preserved untouched in the DB). Grid-tie wins over share.
       if (await this.gridTieService.isOff(userId, deviceId)) {
         return {
           ...(result ?? { userId, deviceId }),
           value: GRID_TIE_OFF_VALUE,
           gridTieOff: true,
         };
+      }
+
+      // For ESP32 calls, apply the power/energy share cap to the first field of
+      // the setting value (min(computed, threshold), zero-padded). App calls get
+      // the raw stored value.
+      if (source === 'hardware' && result?.value) {
+        const shared = await this.shareService.getHardwareSettingValue(
+          userId,
+          deviceId,
+          result.value,
+        );
+        if (shared !== null) {
+          return { ...result, value: shared, shared: true };
+        }
       }
 
       return result || { message: 'Device not found', userId, deviceId };

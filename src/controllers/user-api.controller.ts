@@ -1,7 +1,9 @@
 import {
   Controller,
   Get,
+  Post,
   Patch,
+  Delete,
   Param,
   Body,
   Query,
@@ -17,8 +19,11 @@ import { InverterDataService } from '../services/inverter-data.service';
 import { InverterSettingService } from '../services/inverter-setting.service';
 import { InverterScheduleService } from '../services/inverter-schedule.service';
 import { GridTieService } from '../services/grid-tie.service';
+import { ShareService } from '../services/share.service';
 import { DailyTotalsService } from '../services/daily-totals.service';
 import { SetGridTieDto } from '../dto/set-grid-tie.dto';
+import { CreateShareGroupDto } from '../dto/create-share-group.dto';
+import { UpdateShareGroupDto } from '../dto/update-share-group.dto';
 import { GRID_TIE_OFF_VALUE } from '../constants/grid-tie.constants';
 
 @Controller('api/user')
@@ -30,8 +35,25 @@ export class UserApiController {
     private readonly inverterSettingService: InverterSettingService,
     private readonly inverterScheduleService: InverterScheduleService,
     private readonly gridTieService: GridTieService,
+    private readonly shareService: ShareService,
     private readonly dailyTotalsService: DailyTotalsService,
   ) {}
+
+  // Verify every member device belongs to the authenticated user.
+  private async assertMembersOwned(
+    userId: string,
+    members: { deviceId: string }[],
+  ): Promise<void> {
+    for (const member of members) {
+      const device = await this.inverterDeviceService.findByUserIdAndDeviceId(
+        userId,
+        member.deviceId,
+      );
+      if (!device) {
+        throw new NotFoundException(`Device ${member.deviceId} not found`);
+      }
+    }
+  }
 
   // Get user profile from Firebase token
   @Get('profile')
@@ -189,6 +211,86 @@ export class UserApiController {
       gridTieOff: off,
       setting,
     };
+  }
+
+  // ---- Share groups (share _p + _energy across chosen devices) ----
+
+  // Create a share group with selected devices + ratios
+  @Post('share-groups')
+  async createShareGroup(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Body() dto: CreateShareGroupDto,
+  ) {
+    await this.assertMembersOwned(user.uid, dto.members);
+    return this.shareService.createGroup(user.uid, dto);
+  }
+
+  // List the user's share groups
+  @Get('share-groups')
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
+  async listShareGroups(@CurrentFirebaseUser() user: FirebaseUser) {
+    return this.shareService.listGroups(user.uid);
+  }
+
+  // Get one share group
+  @Get('share-groups/:groupId')
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
+  async getShareGroup(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('groupId') groupId: string,
+  ) {
+    const group = await this.shareService.getGroup(user.uid, groupId);
+    if (!group) {
+      throw new NotFoundException(`Share group ${groupId} not found`);
+    }
+    return group;
+  }
+
+  // Update a share group (members / ratios / enabled)
+  @Patch('share-groups/:groupId')
+  async updateShareGroup(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('groupId') groupId: string,
+    @Body() dto: UpdateShareGroupDto,
+  ) {
+    if (dto.members) {
+      await this.assertMembersOwned(user.uid, dto.members);
+    }
+    const group = await this.shareService.updateGroup(user.uid, groupId, dto);
+    if (!group) {
+      throw new NotFoundException(`Share group ${groupId} not found`);
+    }
+    return group;
+  }
+
+  // Delete a share group
+  @Delete('share-groups/:groupId')
+  async deleteShareGroup(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('groupId') groupId: string,
+  ) {
+    const deleted = await this.shareService.deleteGroup(user.uid, groupId);
+    if (!deleted) {
+      throw new NotFoundException(`Share group ${groupId} not found`);
+    }
+    return { deleted: true, groupId };
+  }
+
+  // Share status + current computed value for a device
+  @Get('devices/:deviceId/share')
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
+  async getDeviceShareStatus(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('deviceId') deviceId: string,
+  ) {
+    const device = await this.inverterDeviceService.findByUserIdAndDeviceId(
+      user.uid,
+      deviceId,
+    );
+    if (!device) {
+      throw new NotFoundException(`Device ${deviceId} not found`);
+    }
+    return this.shareService.getShareStatus(user.uid, deviceId);
   }
 
   // Get device schedule
