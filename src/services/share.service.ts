@@ -160,8 +160,10 @@ export class ShareService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Given the raw 8-digit setting value, return the value the ESP32 should get:
-   * first 4-digit field = min(computed, threshold), zero-padded; tail preserved.
+   * Given the raw 8-digit setting value, return the value the ESP32 should get.
+   * First 4 digits are the cap (kept as-is); the computed share is written into
+   * the LAST 4 digits, capped by the first field and zero-padded.
+   *   "43003000", computed 387 -> "4300" + "0387" = "43000387"
    * Returns null when share doesn't apply or the value can't be parsed.
    */
   async getHardwareSettingValue(
@@ -169,17 +171,46 @@ export class ShareService implements OnModuleInit, OnModuleDestroy {
     deviceId: string,
     settingValue: string,
   ): Promise<string | null> {
-    if (!settingValue || settingValue.length < 4) return null;
+    if (!settingValue || settingValue.length < 8) return null;
 
-    const threshold = parseInt(settingValue.slice(0, 4), 10);
+    const head = settingValue.slice(0, 4);
+    const threshold = parseInt(head, 10);
     if (!Number.isFinite(threshold)) return null;
 
     const computed = await this.computeValue(userId, deviceId);
     if (computed === null) return null;
 
-    const tail = settingValue.slice(4);
     const capped = Math.min(computed, threshold);
-    return String(capped).padStart(4, '0') + tail;
+    return head + String(capped).padStart(4, '0');
+  }
+
+  /**
+   * Apply the share cap to a schedule string for the ESP32: for each
+   * `value=HHHHLLLL` segment, keep the first 4 digits (cap) and write
+   * min(computed, cap) into the last 4. Times are untouched.
+   *   "...value=53001040..." , computed 387 -> "...value=53000387..."
+   * Returns null when share doesn't apply.
+   */
+  async getHardwareScheduleValue(
+    userId: string,
+    deviceId: string,
+    schedule: string,
+  ): Promise<string | null> {
+    if (!schedule) return null;
+
+    const computed = await this.computeValue(userId, deviceId);
+    if (computed === null) return null;
+
+    return schedule.replace(
+      /value=(\d{4})(\d{4})/g,
+      (_match, head: string): string => {
+        const threshold = parseInt(head, 10);
+        const capped = Number.isFinite(threshold)
+          ? Math.min(computed, threshold)
+          : computed;
+        return `value=${head}${String(capped).padStart(4, '0')}`;
+      },
+    );
   }
 
   // ---- CRUD (mobile) ----
