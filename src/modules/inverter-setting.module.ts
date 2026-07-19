@@ -7,7 +7,6 @@ import {
   InverterSetting,
   InverterSettingSchema,
 } from '../models/inverter-setting.schema';
-import { MqttService } from '../services/mqtt.service';
 import { RedisConfig } from '../config/redis.config';
 import { GridTieService } from '../services/grid-tie.service';
 import { ShareService } from '../services/share.service';
@@ -25,7 +24,6 @@ import { InverterDataModule } from './inverter-data.module';
   controllers: [InverterSettingController, ShareController],
   providers: [
     InverterSettingService,
-    MqttService,
     RedisConfig,
     GridTieService,
     ShareService,

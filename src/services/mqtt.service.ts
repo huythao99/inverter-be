@@ -27,27 +27,22 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // Only initialize MQTT on the primary cluster instance to prevent duplicate
-    // message processing. Use NODE_APP_INSTANCE (PM2 assigns a stable 0..N-1 per
-    // app, unlike pm_id which changes on every scale/recreate). Default to '0',
-    // which always exists. In non-cluster mode NODE_APP_INSTANCE is undefined, so
-    // this process handles MQTT.
+    // All instances connect so they can publish (e.g. sync commands to ESP32).
+    // Only the primary instance subscribes to device topics to prevent duplicate
+    // message processing and double totalA/totalA2 accumulation.
     const instanceId = process.env.NODE_APP_INSTANCE;
     const primaryInstanceId = process.env.MQTT_PRIMARY_INSTANCE || '0';
+    const isPrimary =
+      instanceId === undefined || instanceId === primaryInstanceId;
 
-    if (instanceId !== undefined && instanceId !== primaryInstanceId) {
-      return;
-    }
-
-    // Initialize MQTT connection asynchronously to prevent blocking
     setImmediate(() => {
-      this.initializeMqttConnection();
+      this.initializeMqttConnection(isPrimary);
     });
 
     this.isInitialized = true;
   }
 
-  private initializeMqttConnection() {
+  private initializeMqttConnection(isPrimary: boolean = true) {
     const mqttUrl = this.configService.get<string>(
       'MQTT_URL',
       'mqtt://test.mosquitto.org:1883',
@@ -85,7 +80,9 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
 
     this.client.on('connect', () => {
       this.reconnectAttempts = 0;
-      this.subscribeToInverterTopics(); // Only subscribes topics now
+      if (isPrimary) {
+        this.subscribeToInverterTopics();
+      }
     });
 
     this.client.on('error', () => {

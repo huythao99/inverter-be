@@ -6,7 +6,6 @@ import {
   InverterData,
   InverterDataSchema,
 } from '../models/inverter-data.schema';
-import { MqttService } from '../services/mqtt.service';
 import { DailyTotalsModule } from './daily-totals.module';
 
 @Module({
@@ -17,7 +16,7 @@ import { DailyTotalsModule } from './daily-totals.module';
     DailyTotalsModule,
   ],
   controllers: [InverterDataController],
-  providers: [InverterDataService, MqttService],
+  providers: [InverterDataService],
   exports: [InverterDataService],
 })
 export class InverterDataModule {}

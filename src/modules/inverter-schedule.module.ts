@@ -6,7 +6,6 @@ import {
   InverterSchedule,
   InverterScheduleSchema,
 } from '../models/inverter-schedule.schema';
-import { MqttService } from '../services/mqtt.service';
 import { InverterSettingModule } from './inverter-setting.module';
 
 @Module({
@@ -17,7 +16,7 @@ import { InverterSettingModule } from './inverter-setting.module';
     InverterSettingModule,
   ],
   controllers: [InverterScheduleController],
-  providers: [InverterScheduleService, MqttService],
+  providers: [InverterScheduleService],
   exports: [InverterScheduleService],
 })
 export class InverterScheduleModule {}

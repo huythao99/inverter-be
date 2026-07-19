@@ -29,7 +29,7 @@ import {
 } from '../models/inverter-schedule.schema';
 import { AdminJwtStrategy } from '../auth/strategies/admin-jwt.strategy';
 import { CmsGateway } from '../gateways/cms.gateway';
-import { MqttService } from '../services/mqtt.service';
+
 
 @Module({
   imports: [
@@ -71,7 +71,7 @@ import { MqttService } from '../services/mqtt.service';
     ]),
   ],
   controllers: [CmsController],
-  providers: [CmsService, AdminJwtStrategy, CmsGateway, MqttService],
+  providers: [CmsService, AdminJwtStrategy, CmsGateway],
   exports: [CmsService],
 })
 export class CmsModule {}

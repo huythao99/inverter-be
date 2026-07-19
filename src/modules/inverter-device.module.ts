@@ -6,8 +6,6 @@ import {
   InverterDevice,
   InverterDeviceSchema,
 } from '../models/inverter-device.schema';
-import { MqttService } from '../services/mqtt.service';
-
 @Module({
   imports: [
     MongooseModule.forFeature([
@@ -15,7 +13,7 @@ import { MqttService } from '../services/mqtt.service';
     ]),
   ],
   controllers: [InverterDeviceController],
-  providers: [InverterDeviceService, MqttService],
+  providers: [InverterDeviceService],
   exports: [InverterDeviceService],
 })
 export class InverterDeviceModule {}

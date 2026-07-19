@@ -15,6 +15,7 @@ import { MqttAuthModule } from './modules/mqtt-auth.module';
 import { CmsModule } from './modules/cms.module';
 import { UserApiModule } from './modules/user-api.module';
 import { TrackLogErrorModule } from './modules/track-log-error.module';
+import { MqttModule } from './modules/mqtt.module';
 import { FirmwareController } from './controllers/firmware.controller';
 import { FirmwareService } from './services/firmware.service';
 
@@ -50,6 +51,7 @@ import { FirmwareService } from './services/firmware.service';
       ],
     }),
     EventEmitterModule.forRoot(),
+    MqttModule,
     InverterSettingModule,
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
