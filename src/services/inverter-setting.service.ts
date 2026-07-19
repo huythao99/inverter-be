@@ -56,9 +56,18 @@ export class InverterSettingService {
     updateInverterSettingDto: Partial<InverterSetting>,
   ): Promise<InverterSetting | null> {
     updateInverterSettingDto.updatedAt = new Date();
-    return this.inverterSettingModel
+    const result = await this.inverterSettingModel
       .findByIdAndUpdate(_id, updateInverterSettingDto, { new: true })
       .exec();
+
+    if (result) {
+      await this.cacheManager.del(
+        this.getCacheKey(result.userId, result.deviceId),
+      );
+      void this.mqttService.emitSyncSettings(result.userId, result.deviceId);
+    }
+
+    return result;
   }
 
   async remove(_id: string): Promise<InverterSetting | null> {
@@ -80,6 +89,10 @@ export class InverterSettingService {
     // Invalidate cache so next GET is fresh
     await this.cacheManager.del(this.getCacheKey(userId, deviceId));
 
+    if (result) {
+      void this.mqttService.emitSyncSettings(userId, deviceId);
+    }
+
     return result;
   }
 
@@ -98,6 +111,10 @@ export class InverterSettingService {
 
     // Invalidate cache so next GET is fresh
     await this.cacheManager.del(this.getCacheKey(userId, deviceId));
+
+    if (updatedSetting) {
+      void this.mqttService.emitSyncSettings(userId, deviceId);
+    }
 
     return updatedSetting;
   }
@@ -142,6 +159,10 @@ export class InverterSettingService {
 
     // Invalidate the HTTP GET cache so the next poll reflects the new status.
     await this.cacheManager.del(this.getCacheKey(userId, deviceId));
+
+    if (result) {
+      void this.mqttService.emitSyncSettings(userId, deviceId);
+    }
 
     return result;
   }

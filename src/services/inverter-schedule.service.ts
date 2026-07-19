@@ -46,7 +46,19 @@ export class InverterScheduleService {
     const createdInverterSchedule = new this.inverterScheduleModel(
       createInverterScheduleDto,
     );
-    return createdInverterSchedule.save();
+    const saved = await createdInverterSchedule.save();
+
+    if (
+      createInverterScheduleDto.userId &&
+      createInverterScheduleDto.deviceId
+    ) {
+      void this.mqttService.emitSyncSchedule(
+        createInverterScheduleDto.userId,
+        createInverterScheduleDto.deviceId,
+      );
+    }
+
+    return saved;
   }
 
   async findAll(): Promise<InverterSchedule[]> {
@@ -83,9 +95,16 @@ export class InverterScheduleService {
     updateInverterScheduleDto: Partial<InverterSchedule>,
   ): Promise<InverterSchedule | null> {
     updateInverterScheduleDto.updatedAt = new Date();
-    return this.inverterScheduleModel
+    const result = await this.inverterScheduleModel
       .findByIdAndUpdate(_id, updateInverterScheduleDto, { new: true })
       .exec();
+
+    if (result) {
+      this.invalidateCache(result.userId, result.deviceId);
+      void this.mqttService.emitSyncSchedule(result.userId, result.deviceId);
+    }
+
+    return result;
   }
 
   async remove(_id: string): Promise<InverterSchedule | null> {
@@ -99,11 +118,17 @@ export class InverterScheduleService {
   ): Promise<InverterSchedule | null> {
     updateInverterScheduleDto.updatedAt = new Date();
     this.invalidateCache(userId, deviceId);
-    return this.inverterScheduleModel
+    const result = await this.inverterScheduleModel
       .findOneAndUpdate({ userId, deviceId }, updateInverterScheduleDto, {
         new: true,
       })
       .exec();
+
+    if (result) {
+      void this.mqttService.emitSyncSchedule(userId, deviceId);
+    }
+
+    return result;
   }
 
   async updateScheduleByUserIdAndDeviceId(
@@ -119,6 +144,10 @@ export class InverterScheduleService {
         { new: true, upsert: true },
       )
       .exec();
+
+    if (updatedSchedule) {
+      void this.mqttService.emitSyncSchedule(userId, deviceId);
+    }
 
     return updatedSchedule;
   }

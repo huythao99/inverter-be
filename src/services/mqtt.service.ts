@@ -383,6 +383,14 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     await this.publish(topic, payload);
   }
 
+  async emitSyncSettings(userId: string, deviceId: string): Promise<void> {
+    await this.publish(`inverter/${userId}/${deviceId}/cmd/settings`, {});
+  }
+
+  async emitSyncSchedule(userId: string, deviceId: string): Promise<void> {
+    await this.publish(`inverter/${userId}/${deviceId}/cmd/schedule`, {});
+  }
+
   // Generic publish method
   async publish(
     topic: string,

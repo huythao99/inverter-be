@@ -14,6 +14,7 @@ import { DailyTotalsModule } from './modules/daily-totals.module';
 import { MqttAuthModule } from './modules/mqtt-auth.module';
 import { CmsModule } from './modules/cms.module';
 import { UserApiModule } from './modules/user-api.module';
+import { TrackLogErrorModule } from './modules/track-log-error.module';
 import { FirmwareController } from './controllers/firmware.controller';
 import { FirmwareService } from './services/firmware.service';
 
@@ -75,6 +76,7 @@ import { FirmwareService } from './services/firmware.service';
     MqttAuthModule,
     CmsModule,
     UserApiModule,
+    TrackLogErrorModule,
   ],
   controllers: [AppController, FirmwareController],
   providers: [AppService, FirmwareService],

@@ -2,10 +2,11 @@ import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import Redis from 'ioredis';
-import { ShareGroup, ShareGroupDocument } from '../models/share-group.schema';
+import { ShareGroup, ShareGroupDocument, ShareMember } from '../models/share-group.schema';
 import { RedisConfig } from '../config/redis.config';
 import { InverterDataService } from './inverter-data.service';
 import { GridTieService } from './grid-tie.service';
+import { MqttService } from './mqtt.service';
 import { CreateShareGroupDto } from '../dto/create-share-group.dto';
 import { UpdateShareGroupDto } from '../dto/update-share-group.dto';
 
@@ -23,8 +24,15 @@ export class ShareService implements OnModuleInit, OnModuleDestroy {
     private shareGroupModel: Model<ShareGroupDocument>,
     private inverterDataService: InverterDataService,
     private gridTieService: GridTieService,
+    private mqttService: MqttService,
     private redisConfig: RedisConfig,
   ) {}
+
+  private notifyMembers(userId: string, members: ShareMember[]): void {
+    for (const member of members) {
+      void this.mqttService.emitSyncSettings(userId, member.deviceId);
+    }
+  }
 
   async onModuleInit(): Promise<void> {
     this.redis = this.redisConfig.createRedisClient();
@@ -226,7 +234,9 @@ export class ShareService implements OnModuleInit, OnModuleDestroy {
       members: dto.members,
       updatedAt: new Date(),
     });
-    return created.save();
+    const saved = await created.save();
+    this.notifyMembers(userId, saved.members);
+    return saved;
   }
 
   async listGroups(userId: string): Promise<ShareGroup[]> {
@@ -254,16 +264,23 @@ export class ShareService implements OnModuleInit, OnModuleDestroy {
       .exec();
     // Members/ratios/enabled may have changed - drop the cached computation.
     await this.invalidateGroupCache(groupId);
+    if (updated) {
+      this.notifyMembers(userId, updated.members);
+    }
     return updated;
   }
 
   async deleteGroup(userId: string, groupId: string): Promise<boolean> {
     if (!Types.ObjectId.isValid(groupId)) return false;
-    const result = await this.shareGroupModel
-      .deleteOne({ _id: groupId, userId })
+    const deleted = await this.shareGroupModel
+      .findOneAndDelete({ _id: groupId, userId })
+      .lean()
       .exec();
     await this.invalidateGroupCache(groupId);
-    return result.deletedCount > 0;
+    if (deleted) {
+      this.notifyMembers(userId, deleted.members);
+    }
+    return !!deleted;
   }
 
   // Config + current computed value for a single device.
