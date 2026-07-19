@@ -261,7 +261,7 @@ const DeviceDetail: React.FC = () => {
 
     setIsUpdatingFirmware(true);
     try {
-      await triggerFirmwareUpdate(data.device._id, '1.0.5');
+      await triggerFirmwareUpdate(data.device._id, '1.0.7');
       alert('Firmware update triggered successfully! The device will begin updating.');
     } catch (err: any) {
       console.error('Failed to trigger firmware update', err);
