@@ -47,7 +47,7 @@ export class InverterSettingController {
     @Query('source') source?: string,
   ) {
     if (deviceId === 'GTIControl1134') {
-      return { userId, deviceId, value: '49001000' };
+      return { userId, deviceId, value: '80001011' };
     }
 
     try {
