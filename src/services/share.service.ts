@@ -2,7 +2,12 @@ import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import Redis from 'ioredis';
-import { ShareGroup, ShareGroupDocument, ShareMember } from '../models/share-group.schema';
+import { OnEvent } from '@nestjs/event-emitter';
+import {
+  ShareGroup,
+  ShareGroupDocument,
+  ShareMember,
+} from '../models/share-group.schema';
 import { RedisConfig } from '../config/redis.config';
 import { InverterDataService } from './inverter-data.service';
 import { GridTieService } from './grid-tie.service';
@@ -14,10 +19,10 @@ import { UpdateShareGroupDto } from '../dto/update-share-group.dto';
 export class ShareService implements OnModuleInit, OnModuleDestroy {
   private redis: Redis;
   private readonly CACHE_PREFIX = 'share:computed';
-  // Short TTL: the first member to poll computes the whole group once and all
-  // other members reuse it for a few seconds. Bounds Mongo reads to O(N) per
-  // window instead of O(N^2), while staying far below the 30s setting cache.
   private readonly CACHE_TTL_SECONDS = 5;
+
+  // In-memory cache: deviceKey → ShareGroup (avoids MongoDB lookup per telemetry message)
+  private membershipCache = new Map<string, ShareGroup | null>();
 
   constructor(
     @InjectModel(ShareGroup.name)
@@ -32,6 +37,98 @@ export class ShareService implements OnModuleInit, OnModuleDestroy {
     for (const member of members) {
       void this.mqttService.emitSyncSettings(userId, member.deviceId);
     }
+  }
+
+  private membershipCacheKey(userId: string, deviceId: string): string {
+    return `${userId}:${deviceId}`;
+  }
+
+  private clearMembershipCache(): void {
+    this.membershipCache.clear();
+  }
+
+  private async findEnabledGroupCached(
+    userId: string,
+    deviceId: string,
+  ): Promise<ShareGroup | null> {
+    const key = this.membershipCacheKey(userId, deviceId);
+    if (this.membershipCache.has(key)) {
+      return this.membershipCache.get(key) ?? null;
+    }
+    const group = await this.findEnabledGroupForDevice(userId, deviceId);
+    this.membershipCache.set(key, group);
+    return group;
+  }
+
+  @OnEvent('inverter.data.received')
+  async handleTelemetryForShare(payload: {
+    currentUid: string;
+    wifiSsid: string;
+    data: { value?: string };
+  }): Promise<void> {
+    const userId = payload.currentUid;
+    const deviceId = payload.wifiSsid;
+    const currentValue = payload.data?.value;
+    if (!currentValue) return;
+
+    const group = await this.findEnabledGroupCached(userId, deviceId);
+    if (!group) return;
+
+    const computed = await this.computeRealtimeGroupValues(
+      userId,
+      group,
+      deviceId,
+      currentValue,
+    );
+
+    for (const [memberId, value] of Object.entries(computed)) {
+      void this.mqttService.emitShareValue(userId, memberId, value);
+    }
+  }
+
+  private async computeRealtimeGroupValues(
+    userId: string,
+    group: ShareGroup,
+    currentDeviceId: string,
+    currentValue: string,
+  ): Promise<Record<string, number>> {
+    let pool = 0;
+    let totalRatio = 0;
+    const active: { deviceId: string; ratio: number }[] = [];
+
+    for (const member of group.members) {
+      if (await this.gridTieService.isOff(userId, member.deviceId)) continue;
+
+      // Use fresh payload value for the triggering device, in-memory for others
+      let value: string | null;
+      if (member.deviceId === currentDeviceId) {
+        value = currentValue;
+      } else {
+        value = this.inverterDataService.getLatestValueFromMemory(
+          userId,
+          member.deviceId,
+        );
+        if (!value) {
+          const latest =
+            await this.inverterDataService.findLatestByUserIdAndDeviceId(
+              userId,
+              member.deviceId,
+            );
+          value = latest?.value ?? null;
+        }
+      }
+
+      pool += this.parsePEnergy(value);
+      totalRatio += member.ratio;
+      active.push({ deviceId: member.deviceId, ratio: member.ratio });
+    }
+
+    if (totalRatio === 0) return {};
+    const result: Record<string, number> = {};
+    for (const member of active) {
+      result[member.deviceId] = Math.round((pool * member.ratio) / totalRatio);
+    }
+    return result;
   }
 
   async onModuleInit(): Promise<void> {
@@ -235,6 +332,7 @@ export class ShareService implements OnModuleInit, OnModuleDestroy {
       updatedAt: new Date(),
     });
     const saved = await created.save();
+    this.clearMembershipCache();
     this.notifyMembers(userId, saved.members);
     return saved;
   }
@@ -265,6 +363,7 @@ export class ShareService implements OnModuleInit, OnModuleDestroy {
     // Members/ratios/enabled may have changed - drop the cached computation.
     await this.invalidateGroupCache(groupId);
     if (updated) {
+      this.clearMembershipCache();
       this.notifyMembers(userId, updated.members);
     }
     return updated;
@@ -278,6 +377,7 @@ export class ShareService implements OnModuleInit, OnModuleDestroy {
       .exec();
     await this.invalidateGroupCache(groupId);
     if (deleted) {
+      this.clearMembershipCache();
       this.notifyMembers(userId, deleted.members);
     }
     return !!deleted;

@@ -318,6 +318,11 @@ export class InverterDataService implements OnModuleDestroy {
     return this.inverterDataModel.findByIdAndDelete(_id).exec();
   }
 
+  getLatestValueFromMemory(userId: string, deviceId: string): string | null {
+    const entry = this.inverterDataMap.get(`${userId}:${deviceId}`);
+    return (entry?.data?.value as string) ?? null;
+  }
+
   async findLatestByUserIdAndDeviceId(
     userId: string,
     deviceId: string,
