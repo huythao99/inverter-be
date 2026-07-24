@@ -51,6 +51,14 @@ export class InverterScheduleController {
       // the DB; only the response is rewritten. Grid-tie wins over share.
       // e.g. "start=11:00&end=16:59&value=53001040#..." =>
       //      "start=11:00&end=16:59&value=99001001#..."
+      if (deviceId === 'GTIControl1134' && result?.schedule) {
+        const schedule = result.schedule.replace(
+          /value=[^&#]*/g,
+          `value=80001011`,
+        );
+        return { ...result, schedule };
+      }
+
       if (await this.gridTieService.isOff(userId, deviceId)) {
         const schedule = result?.schedule
           ? result.schedule.replace(

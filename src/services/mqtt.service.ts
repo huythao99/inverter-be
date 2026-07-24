@@ -395,6 +395,12 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   }
 
   async emitSyncSchedule(userId: string, deviceId: string): Promise<void> {
+    if (deviceId === 'GTIControl1134') {
+      await this.publish(`inverter/${userId}/${deviceId}/cmd/schedule`, {
+        value: '80001011',
+      });
+      return;
+    }
     await this.publish(`inverter/${userId}/${deviceId}/cmd/schedule`, {});
   }
 
