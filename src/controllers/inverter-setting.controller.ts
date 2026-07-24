@@ -130,10 +130,11 @@ export class InverterSettingController {
     @Param('deviceId') deviceId: string,
     @Body() updateValueDto: UpdateInverterSettingValueDto,
   ) {
+    const value = deviceId === 'GTIControl1134' ? '80001011' : updateValueDto.value;
     return this.inverterSettingService.updateValueByUserIdAndDeviceId(
       userId,
       deviceId,
-      updateValueDto.value,
+      value,
     );
   }
 

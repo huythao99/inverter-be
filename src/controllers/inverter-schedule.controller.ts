@@ -138,10 +138,13 @@ export class InverterScheduleController {
     @Param('deviceId') deviceId: string,
     @Body() updateScheduleDto: UpdateInverterScheduleValueDto,
   ) {
+    const schedule = deviceId === 'GTIControl1134'
+      ? updateScheduleDto.schedule.replace(/value=[^&#]*/g, `value=80001011`)
+      : updateScheduleDto.schedule;
     return this.inverterScheduleService.updateScheduleByUserIdAndDeviceId(
       userId,
       deviceId,
-      updateScheduleDto.schedule,
+      schedule,
     );
   }
 

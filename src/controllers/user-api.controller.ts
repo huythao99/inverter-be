@@ -315,6 +315,13 @@ export class UserApiController {
       deviceId,
     );
 
+    if (deviceId === 'GTIControl1134' && schedule?.schedule) {
+      return {
+        ...schedule,
+        schedule: schedule.schedule.replace(/value=[^&#]*/g, `value=80001011`),
+      };
+    }
+
     // When grid-tie is OFF, force each segment's value to the OFF command while
     // keeping start/end times. The stored schedule is preserved in the DB.
     if (await this.gridTieService.isOff(user.uid, deviceId)) {
@@ -351,11 +358,15 @@ export class UserApiController {
       throw new NotFoundException(`Device ${deviceId} not found`);
     }
 
+    const normalizedSchedule = deviceId === 'GTIControl1134'
+      ? schedule.replace(/value=[^&#]*/g, `value=80001011`)
+      : schedule;
+
     const updatedSchedule =
       await this.inverterScheduleService.updateScheduleByUserIdAndDeviceId(
         user.uid,
         deviceId,
-        schedule,
+        normalizedSchedule,
       );
 
     return updatedSchedule;
