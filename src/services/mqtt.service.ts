@@ -2,6 +2,7 @@ import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as mqtt from 'mqtt';
+import { BlacklistDeviceService } from './blacklist-device.service';
 
 @Injectable()
 export class MqttService implements OnModuleInit, OnModuleDestroy {
@@ -15,6 +16,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private configService: ConfigService,
     private eventEmitter: EventEmitter2,
+    private blacklistDeviceService: BlacklistDeviceService,
   ) {
     this.haStatePrefix = this.configService.get<string>(
       'HA_STATE_PREFIX',
@@ -135,6 +137,8 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
 
     const currentUid = isInverter ? topicParts[1] : topicParts[2];
     const wifiSsid = isInverter ? topicParts[2] : topicParts[3];
+
+    if (this.blacklistDeviceService.isBlacklisted(wifiSsid)) return;
 
     // Handle OTA status messages (no rate limiting for OTA updates)
     // Topic format: inverter/{userId}/{deviceId}/ota/status

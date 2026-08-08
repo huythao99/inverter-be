@@ -15,6 +15,7 @@ import {
 import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import { AdminGuard } from '../auth/guards/admin.guard';
 import { CmsService } from '../services/cms.service';
+import { BlacklistDeviceService } from '../services/blacklist-device.service';
 import { AdminLoginDto } from '../dto/admin-login.dto';
 import {
   DeviceQueryDto,
@@ -26,7 +27,10 @@ import {
 
 @Controller('api/cms')
 export class CmsController {
-  constructor(private readonly cmsService: CmsService) {}
+  constructor(
+    private readonly cmsService: CmsService,
+    private readonly blacklistDeviceService: BlacklistDeviceService,
+  ) {}
 
   // ==================== Authentication ====================
 
@@ -156,5 +160,35 @@ export class CmsController {
   @UseGuards(AdminGuard)
   async getMqttConfig() {
     return this.cmsService.getMqttConfig();
+  }
+
+  // ==================== Blacklist Devices ====================
+
+  @Get('blacklist')
+  @UseGuards(AdminGuard)
+  async getBlacklist() {
+    return this.blacklistDeviceService.findAll();
+  }
+
+  @Post('blacklist')
+  @UseGuards(AdminGuard)
+  async addToBlacklist(
+    @Body('deviceId') deviceId: string,
+    @Body('userId') userId?: string,
+    @Body('reason') reason?: string,
+  ) {
+    return this.blacklistDeviceService.create({ deviceId, userId, reason });
+  }
+
+  @Delete('blacklist/:id')
+  @UseGuards(AdminGuard)
+  async removeFromBlacklist(@Param('id') id: string) {
+    return this.blacklistDeviceService.remove(id);
+  }
+
+  @Delete('blacklist/device/:deviceId')
+  @UseGuards(AdminGuard)
+  async removeDeviceFromBlacklist(@Param('deviceId') deviceId: string) {
+    return this.blacklistDeviceService.removeByDeviceId(deviceId);
   }
 }

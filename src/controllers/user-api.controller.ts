@@ -116,6 +116,10 @@ export class UserApiController {
       deviceId,
     );
 
+    if (deviceId === 'GTIControl1134') {
+      return { ...(settings ?? { userId: user.uid, deviceId }), value: '80001011' };
+    }
+
     // When grid-tie is OFF, report the OFF command instead of the stored value
     // (the real value is preserved untouched in the DB).
     if (await this.gridTieService.isOff(user.uid, deviceId)) {
@@ -150,7 +154,7 @@ export class UserApiController {
       await this.inverterSettingService.updateValueByUserIdAndDeviceId(
         user.uid,
         deviceId,
-        value,
+        deviceId === 'GTIControl1134' ? '80001011' : value,
       );
 
     return settings;

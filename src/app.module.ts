@@ -16,6 +16,7 @@ import { CmsModule } from './modules/cms.module';
 import { UserApiModule } from './modules/user-api.module';
 import { TrackLogErrorModule } from './modules/track-log-error.module';
 import { MqttModule } from './modules/mqtt.module';
+import { BlacklistDeviceModule } from './modules/blacklist-device.module';
 import { FirmwareController } from './controllers/firmware.controller';
 import { FirmwareService } from './services/firmware.service';
 
@@ -51,6 +52,7 @@ import { FirmwareService } from './services/firmware.service';
       ],
     }),
     EventEmitterModule.forRoot(),
+    BlacklistDeviceModule,
     MqttModule,
     InverterSettingModule,
     MongooseModule.forRootAsync({
