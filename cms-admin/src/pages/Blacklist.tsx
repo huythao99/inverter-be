@@ -75,7 +75,7 @@ const Blacklist: React.FC = () => {
 
   return (
     <div className="page blacklist-page">
-      <header className="page-header">
+      <div className="page-header-actions">
         <div>
           <h1>Blacklist Devices</h1>
           <p>Devices in this list will have their MQTT messages ignored</p>
@@ -84,7 +84,7 @@ const Blacklist: React.FC = () => {
           <Plus size={16} />
           Add Device
         </button>
-      </header>
+      </div>
 
       {showForm && (
         <div className="form-card">

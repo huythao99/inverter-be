@@ -291,6 +291,9 @@ body {
 .btn-primary {
   background: var(--primary);
   color: white;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .btn-primary:hover {
@@ -1140,4 +1143,111 @@ body {
 
 .ota-progress-fill.error {
   background: var(--danger);
+}
+
+/* ===== Shared additions ===== */
+
+.btn-secondary {
+  background: var(--border);
+  color: var(--text);
+}
+
+.btn-secondary:hover {
+  background: #cbd5e1;
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: white;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-danger:hover {
+  background: #dc2626;
+}
+
+.btn-danger:disabled {
+  background: var(--secondary);
+  cursor: not-allowed;
+}
+
+.text-muted {
+  color: var(--text-light);
+}
+
+/* Page header with action button */
+.page-header-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
+}
+
+.page-header-actions h1 {
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.page-header-actions p {
+  color: var(--text-light);
+}
+
+/* Form card */
+.form-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow);
+}
+
+.form-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.form-card-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.blacklist-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.form-error {
+  color: var(--danger);
+  font-size: 13px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.form-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.form-group label .required {
+  color: var(--danger);
+  margin-left: 2px;
+}
+
+.form-group label .optional {
+  color: var(--text-light);
+  font-weight: 400;
+  font-size: 12px;
+  margin-left: 4px;
 }
