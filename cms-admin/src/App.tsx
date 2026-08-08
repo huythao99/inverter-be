@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import Devices from './pages/Devices';
 import DeviceDetail from './pages/DeviceDetail';
 import Users from './pages/Users';
+import Blacklist from './pages/Blacklist';
 import Settings from './pages/Settings';
 import './App.css';
 
@@ -59,6 +60,7 @@ function AppRoutes() {
         <Route path="/devices" element={<Devices />} />
         <Route path="/devices/:userId/:deviceId" element={<DeviceDetail />} />
         <Route path="/users" element={<Users />} />
+        <Route path="/blacklist" element={<Blacklist />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

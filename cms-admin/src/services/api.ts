@@ -85,6 +85,17 @@ export const updateUser = (userId: string, data: { isActive?: boolean; allowedDe
 
 export const deleteUser = (userId: string) => api.delete(`/users/${userId}`);
 
+// Blacklist
+export const getBlacklist = () => api.get('/blacklist');
+
+export const addToBlacklist = (data: { deviceId: string; userId?: string; reason?: string }) =>
+  api.post('/blacklist', data);
+
+export const removeFromBlacklist = (id: string) => api.delete(`/blacklist/${id}`);
+
+export const removeDeviceFromBlacklist = (deviceId: string) =>
+  api.delete(`/blacklist/device/${deviceId}`);
+
 // Settings
 export const getSettings = () => api.get('/settings');
 

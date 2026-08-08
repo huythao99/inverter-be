@@ -44,6 +44,7 @@ const Users: React.FC = () => {
   const [users, setUsers] = useState<UsersResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [submittedSearch, setSubmittedSearch] = useState('');
   const [page, setPage] = useState(1);
   const [selectedUser, setSelectedUser] = useState<UserDetail | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
@@ -51,7 +52,7 @@ const Users: React.FC = () => {
   const fetchUsers = async () => {
     setIsLoading(true);
     try {
-      const res = await getUsers({ page, search: search || undefined, limit: 20 });
+      const res = await getUsers({ page, search: submittedSearch || undefined, limit: 20 });
       setUsers(res.data);
     } catch (err) {
       console.error('Failed to fetch users', err);
@@ -62,12 +63,12 @@ const Users: React.FC = () => {
 
   useEffect(() => {
     fetchUsers();
-  }, [page]);
+  }, [page, submittedSearch]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setPage(1);
-    fetchUsers();
+    setSubmittedSearch(search);
   };
 
   const viewUser = async (userId: string) => {

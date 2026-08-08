@@ -5,6 +5,7 @@ import {
   LayoutDashboard,
   Cpu,
   Users,
+  ShieldOff,
   Settings,
   LogOut,
   Menu,
@@ -25,6 +26,7 @@ const Layout: React.FC = () => {
     { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/devices', icon: Cpu, label: 'Devices' },
     { to: '/users', icon: Users, label: 'Users' },
+    { to: '/blacklist', icon: ShieldOff, label: 'Blacklist' },
     { to: '/settings', icon: Settings, label: 'Settings' },
   ];
 
