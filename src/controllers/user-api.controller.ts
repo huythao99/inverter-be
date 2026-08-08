@@ -426,6 +426,28 @@ export class UserApiController {
     return data || { userId: user.uid, deviceId, value: '' };
   }
 
+  // Calculate total energy across all historical records for a device
+  @Get('devices/:deviceId/calculate-daily-totals')
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
+  async calculateDeviceDailyTotals(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('deviceId') deviceId: string,
+  ) {
+    const device = await this.inverterDeviceService.findByUserIdAndDeviceId(
+      user.uid,
+      deviceId,
+    );
+
+    if (!device) {
+      throw new NotFoundException(`Device ${deviceId} not found`);
+    }
+
+    return this.dailyTotalsService.calculateTotalsByUserAndDevice(
+      user.uid,
+      deviceId,
+    );
+  }
+
   // Get daily totals
   @Get('devices/:deviceId/daily-totals')
   @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
