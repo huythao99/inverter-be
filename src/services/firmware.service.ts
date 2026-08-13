@@ -33,7 +33,7 @@ export class FirmwareService {
     // If device number < 436, return 1.0.6, otherwise return 1.0.0
     if (!isNaN(numericPart) && numericPart < 436) {
       return {
-        firmwareVersion: '1.0.7',
+        firmwareVersion: '1.0.8',
       };
     }
     return {
@@ -44,7 +44,7 @@ export class FirmwareService {
   getNewestFirmwareVersion(): { version: string } {
     // Return the current newest firmware version
     // You can update this version number when new firmware is available
-    const newestVersion = '1.0.7';
+    const newestVersion = '1.0.8';
 
     return {
       version: newestVersion,
