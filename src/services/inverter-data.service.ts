@@ -9,6 +9,7 @@ import {
 } from '../models/inverter-data.schema';
 import { MqttService } from './mqtt.service';
 import { RedisDailyTotalsService } from './redis-daily-totals.service';
+import { DailyTotalsService } from './daily-totals.service';
 
 @Injectable()
 export class InverterDataService implements OnModuleDestroy {
@@ -49,6 +50,7 @@ export class InverterDataService implements OnModuleDestroy {
     private inverterDataModel: Model<InverterDataDocument>,
     private mqttService: MqttService,
     private redisDailyTotalsService: RedisDailyTotalsService,
+    private dailyTotalsService: DailyTotalsService,
   ) {
     // Start memory cleanup every 60 seconds (reduced CPU)
     this.cleanupTimer = setInterval(() => {
@@ -392,18 +394,8 @@ export class InverterDataService implements OnModuleDestroy {
 
     this.lastProcessed.set(key, { timestamp: now, data: valueString });
 
-    const { totalA, totalA2 } = this.parseTotalsFromValue(valueString);
-
-    // Skip processing if totalA >= 15000 or totalA2 >= 8000
-    if (totalA >= 15000 || totalA2 >= 8000) {
-      return;
-    }
-
-    // Convert to proper units (divide by 1,000,000)
-    const safeTotalA = Number.isNaN(totalA) ? 0 : totalA;
-    const safeTotalA2 = Number.isNaN(totalA2) ? 0 : totalA2;
-    const currentTotalA = safeTotalA / 1000000;
-    const currentTotalA2 = safeTotalA2 / 1000000;
+    const parts = valueString.split('#');
+    const deviceKey = `${payload.currentUid}:${payload.wifiSsid}`;
 
     // Map MQTT data to InverterData schema
     const totalACapacity = Number(payload.data?.totalACapacity);
@@ -414,16 +406,38 @@ export class InverterDataService implements OnModuleDestroy {
       totalA2Capacity: Number.isNaN(totalA2Capacity) ? 0 : totalA2Capacity,
     };
 
-    // Store in Map (auto-deduplicates, O(1) lookup)
-    const deviceKey = `${payload.currentUid}:${payload.wifiSsid}`;
-
     this.inverterDataMap.set(deviceKey, {
       userId: payload.currentUid,
       deviceId: payload.wifiSsid,
       data: inverterDataUpdate,
     });
 
-    // Accumulate daily totals in Map
+    // 12-number format: positions 11 & 12 (index 10, 11) are pre-calculated
+    // daily totals — upsert by date directly, no accumulation
+    if (parts.length >= 12) {
+      const totalA = parseFloat(parts[10]);
+      const totalA2 = parseFloat(parts[11]);
+      if (isFinite(totalA) || isFinite(totalA2)) {
+        const today = this.getTodayGMT7();
+        void this.dailyTotalsService.upsertByUserAndDevice(
+          payload.currentUid,
+          payload.wifiSsid,
+          today,
+          isFinite(totalA) ? totalA : 0,
+          isFinite(totalA2) ? totalA2 : 0,
+        );
+      }
+      return;
+    }
+
+    // 10-number format: accumulate last 2 values into Redis
+    const { totalA, totalA2 } = this.parseTotalsFromValue(valueString);
+
+    if (totalA >= 15000 || totalA2 >= 8000) return;
+
+    const currentTotalA = (Number.isNaN(totalA) ? 0 : totalA) / 1000000;
+    const currentTotalA2 = (Number.isNaN(totalA2) ? 0 : totalA2) / 1000000;
+
     const existing = this.dailyTotalsMap.get(deviceKey);
     if (existing) {
       existing.totalA += currentTotalA;
@@ -436,5 +450,10 @@ export class InverterDataService implements OnModuleDestroy {
         totalA2: currentTotalA2,
       });
     }
+  }
+
+  private getTodayGMT7(): string {
+    const gmt7Offset = 7 * 60 * 60 * 1000;
+    return new Date(Date.now() + gmt7Offset).toISOString().split('T')[0];
   }
 }
