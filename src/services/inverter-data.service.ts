@@ -423,8 +423,8 @@ export class InverterDataService implements OnModuleDestroy {
           payload.currentUid,
           payload.wifiSsid,
           today,
-          isFinite(totalA) ? totalA : 0,
-          isFinite(totalA2) ? totalA2 : 0,
+          isFinite(totalA) ? totalA / 1000 : 0,
+          isFinite(totalA2) ? totalA2 / 1000 : 0,
         );
       }
       return;
