@@ -176,6 +176,20 @@ export class InverterDeviceService {
       .exec();
   }
 
+  async updateDescription(
+    userId: string,
+    deviceId: string,
+    description: string,
+  ): Promise<InverterDevice | null> {
+    return this.inverterDeviceModel
+      .findOneAndUpdate(
+        { userId, deviceId },
+        { description, updatedAt: new Date() },
+        { new: true },
+      )
+      .exec();
+  }
+
   @OnEvent('device.message.received')
   handleDeviceMessageReceived(payload: {
     currentUid: string;

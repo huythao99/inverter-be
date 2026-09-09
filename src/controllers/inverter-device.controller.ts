@@ -130,6 +130,39 @@ export class InverterDeviceController {
     return this.inverterDeviceService.deleteAll();
   }
 
+  @Patch('data/:userId/:deviceId/description')
+  async updateDescription(
+    @Param('userId') userId: string,
+    @Param('deviceId') deviceId: string,
+    @Body('description') description: string,
+  ) {
+    if (description === undefined || description === null) {
+      throw new NotFoundException('description is required');
+    }
+
+    const device = await this.inverterDeviceService.updateDescription(
+      userId,
+      deviceId,
+      description,
+    );
+
+    if (!device) {
+      throw new NotFoundException(
+        `Device with ID ${deviceId} not found for user ${userId}`,
+      );
+    }
+
+    return {
+      message: 'Description updated successfully',
+      device: {
+        userId: device.userId,
+        deviceId: device.deviceId,
+        deviceName: device.deviceName,
+        description: device.description,
+      },
+    };
+  }
+
   @Patch('data/:userId/:deviceId/firmware')
   async updateFirmwareVersion(
     @Param('userId') userId: string,

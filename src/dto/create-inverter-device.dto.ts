@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
 
 export class CreateInverterDeviceDto {
   @IsString()
@@ -12,4 +12,8 @@ export class CreateInverterDeviceDto {
   @IsString()
   @IsNotEmpty()
   deviceName: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
 }

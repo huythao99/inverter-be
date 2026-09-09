@@ -550,20 +550,25 @@ export class UserApiController {
     @Param('deviceId') deviceId: string,
     @Body('description') description: string,
   ) {
-    const device = await this.inverterDeviceService.findByUserIdAndDeviceId(
+    const device = await this.inverterDeviceService.updateDescription(
       user.uid,
       deviceId,
+      description ?? '',
     );
 
     if (!device) {
       throw new NotFoundException(`Device ${deviceId} not found`);
     }
 
-    return this.inverterDeviceService.updateByUserIdAndDeviceId(
-      user.uid,
-      deviceId,
-      { description: description ?? '' },
-    );
+    return {
+      message: 'Description updated successfully',
+      device: {
+        userId: device.userId,
+        deviceId: device.deviceId,
+        deviceName: device.deviceName,
+        description: device.description,
+      },
+    };
   }
 
   // Update device name
