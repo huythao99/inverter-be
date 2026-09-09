@@ -543,12 +543,35 @@ export class UserApiController {
     return result;
   }
 
+  // Update device description
+  @Patch('devices/:deviceId/description')
+  async updateDeviceDescription(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('deviceId') deviceId: string,
+    @Body('description') description: string,
+  ) {
+    const device = await this.inverterDeviceService.findByUserIdAndDeviceId(
+      user.uid,
+      deviceId,
+    );
+
+    if (!device) {
+      throw new NotFoundException(`Device ${deviceId} not found`);
+    }
+
+    return this.inverterDeviceService.updateByUserIdAndDeviceId(
+      user.uid,
+      deviceId,
+      { description: description ?? '' },
+    );
+  }
+
   // Update device name
   @Patch('devices/:deviceId')
   async updateDevice(
     @CurrentFirebaseUser() user: FirebaseUser,
     @Param('deviceId') deviceId: string,
-    @Body() updateData: { deviceName?: string },
+    @Body() updateData: { deviceName?: string; description?: string },
   ) {
     // First verify device belongs to user
     const device = await this.inverterDeviceService.findByUserIdAndDeviceId(

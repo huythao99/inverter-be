@@ -19,6 +19,9 @@ export class InverterDevice {
   @Prop({ type: String, default: '1.0.0' })
   firmwareVersion: string;
 
+  @Prop({ type: String, default: '' })
+  description: string;
+
   @Prop({ default: Date.now })
   updatedAt: Date;
 }
