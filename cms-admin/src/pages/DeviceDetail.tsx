@@ -83,12 +83,17 @@ const formatNumber = (value: unknown, decimals = 2): string => {
 };
 
 const DeviceDetail: React.FC = () => {
-  const { userId, deviceId } = useParams<{ userId: string; deviceId: string }>();
+  const { userId, deviceId } = useParams<{
+    userId: string;
+    deviceId: string;
+  }>();
   const navigate = useNavigate();
   const [data, setData] = useState<DeviceDetailData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState<'realtime' | 'data' | 'settings' | 'schedule' | 'totals'>('realtime');
+  const [activeTab, setActiveTab] = useState<
+    'realtime' | 'data' | 'settings' | 'schedule' | 'totals'
+  >('realtime');
 
   // Firmware update state
   const [isUpdatingFirmware, setIsUpdatingFirmware] = useState(false);
@@ -109,7 +114,9 @@ const DeviceDetail: React.FC = () => {
         const res = await getDeviceDetails(userId, deviceId);
         setData(res.data);
       } catch (err: any) {
-        setError(err.response?.data?.message || 'Failed to load device details');
+        setError(
+          err.response?.data?.message || 'Failed to load device details',
+        );
       } finally {
         setIsLoading(false);
       }
@@ -176,7 +183,10 @@ const DeviceDetail: React.FC = () => {
             setOtaStatus(newOtaStatus);
 
             // If update completed or failed, stop showing updating state
-            if (otaPayload.status === 'success' || otaPayload.status === 'failed') {
+            if (
+              otaPayload.status === 'success' ||
+              otaPayload.status === 'failed'
+            ) {
               setIsUpdatingFirmware(false);
               // Refresh device details to get new firmware version
               if (otaPayload.status === 'success') {
@@ -207,7 +217,10 @@ const DeviceDetail: React.FC = () => {
           // Try to parse the value field if it's a JSON string
           if (payload.value && typeof payload.value === 'string') {
             try {
-              const cleanedValue = payload.value.replace(/[\x00-\x1F\x7F]/g, '');
+              const cleanedValue = payload.value.replace(
+                /[\x00-\x1F\x7F]/g,
+                '',
+              );
               parsedValue = JSON.parse(cleanedValue);
             } catch {
               // Value is not JSON, keep as string
@@ -254,15 +267,17 @@ const DeviceDetail: React.FC = () => {
     if (!data?.device?._id) return;
 
     const confirmed = window.confirm(
-      `Are you sure you want to trigger firmware update for ${data.device.deviceName || deviceId}?\n\nThis will send an MQTT message to the device to start the update process.`
+      `Are you sure you want to trigger firmware update for ${data.device.deviceName || deviceId}?\n\nThis will send an MQTT message to the device to start the update process.`,
     );
 
     if (!confirmed) return;
 
     setIsUpdatingFirmware(true);
     try {
-      await triggerFirmwareUpdate(data.device._id, '1.0.9');
-      alert('Firmware update triggered successfully! The device will begin updating.');
+      await triggerFirmwareUpdate(data.device._id, '1.0.10');
+      alert(
+        'Firmware update triggered successfully! The device will begin updating.',
+      );
     } catch (err: any) {
       console.error('Failed to trigger firmware update', err);
       alert(err.response?.data?.message || 'Failed to trigger firmware update');
@@ -282,11 +297,7 @@ const DeviceDetail: React.FC = () => {
   const renderJsonValue = (value: any, title: string) => {
     if (!value) return <p className="no-data">No {title} available</p>;
 
-    return (
-      <pre className="json-viewer">
-        {JSON.stringify(value, null, 2)}
-      </pre>
-    );
+    return <pre className="json-viewer">{JSON.stringify(value, null, 2)}</pre>;
   };
 
   return (
@@ -299,8 +310,11 @@ const DeviceDetail: React.FC = () => {
         <div className="header-content">
           <h1>{data?.device?.deviceName || deviceId}</h1>
           <p className="device-info">
-            <span className="monospace">{userId}</span> / <span className="monospace">{deviceId}</span>
-            <span className={`connection-status ${isConnected ? 'connected' : 'disconnected'}`}>
+            <span className="monospace">{userId}</span> /{' '}
+            <span className="monospace">{deviceId}</span>
+            <span
+              className={`connection-status ${isConnected ? 'connected' : 'disconnected'}`}
+            >
               {isConnected ? <Wifi size={16} /> : <WifiOff size={16} />}
               {isConnected ? 'MQTT Live' : 'MQTT Offline'}
             </span>
@@ -340,15 +354,22 @@ const DeviceDetail: React.FC = () => {
           </div>
           {/* OTA Progress Display */}
           {otaStatus && isUpdatingFirmware && (
-            <div className="info-item ota-progress-container" style={{ gridColumn: '1 / -1' }}>
+            <div
+              className="info-item ota-progress-container"
+              style={{ gridColumn: '1 / -1' }}
+            >
               <div className="ota-progress">
                 <div className="ota-progress-header">
                   <span className="ota-status">
-                    {otaStatus.status === 'installing' && 'Installing firmware...'}
+                    {otaStatus.status === 'installing' &&
+                      'Installing firmware...'}
                     {otaStatus.status === 'success' && 'Update successful!'}
-                    {otaStatus.status === 'failed' && `Update failed: ${otaStatus.message || 'Unknown error'}`}
+                    {otaStatus.status === 'failed' &&
+                      `Update failed: ${otaStatus.message || 'Unknown error'}`}
                   </span>
-                  <span className="ota-percentage">{otaStatus.progress ?? 0}%</span>
+                  <span className="ota-percentage">
+                    {otaStatus.progress ?? 0}%
+                  </span>
                 </div>
                 <div className="ota-progress-bar">
                   <div
@@ -363,14 +384,24 @@ const DeviceDetail: React.FC = () => {
             <Database size={18} />
             <div>
               <label>Total A Capacity</label>
-              <span>{formatNumber(realtimeData?.data?.totalACapacity ?? data.data?.totalACapacity)}</span>
+              <span>
+                {formatNumber(
+                  realtimeData?.data?.totalACapacity ??
+                    data.data?.totalACapacity,
+                )}
+              </span>
             </div>
           </div>
           <div className="info-item">
             <Database size={18} />
             <div>
               <label>Total A2 Capacity</label>
-              <span>{formatNumber(realtimeData?.data?.totalA2Capacity ?? data.data?.totalA2Capacity)}</span>
+              <span>
+                {formatNumber(
+                  realtimeData?.data?.totalA2Capacity ??
+                    data.data?.totalA2Capacity,
+                )}
+              </span>
             </div>
           </div>
         </div>
@@ -422,7 +453,9 @@ const DeviceDetail: React.FC = () => {
           <div className="content-section">
             <div className="realtime-header">
               <h3>Real-time MQTT Data</h3>
-              <span className={`status-indicator ${isConnected ? 'connected' : 'disconnected'}`}>
+              <span
+                className={`status-indicator ${isConnected ? 'connected' : 'disconnected'}`}
+              >
                 {isConnected ? 'Connected' : 'Disconnected'}
               </span>
             </div>
@@ -430,7 +463,10 @@ const DeviceDetail: React.FC = () => {
             {!isConnected && (
               <div className="connection-warning">
                 <WifiOff size={24} />
-                <p>Not connected to MQTT broker. Check broker WebSocket configuration (port 9001).</p>
+                <p>
+                  Not connected to MQTT broker. Check broker WebSocket
+                  configuration (port 9001).
+                </p>
               </div>
             )}
 
@@ -440,7 +476,10 @@ const DeviceDetail: React.FC = () => {
                 <p className="last-updated">
                   Received: {new Date(realtimeData.timestamp).toLocaleString()}
                 </p>
-                {renderJsonValue(realtimeData.data.parsedValue || realtimeData.data.value, 'real-time data')}
+                {renderJsonValue(
+                  realtimeData.data.parsedValue || realtimeData.data.value,
+                  'real-time data',
+                )}
               </div>
             )}
 
@@ -454,7 +493,8 @@ const DeviceDetail: React.FC = () => {
                         {new Date(item.timestamp).toLocaleTimeString()}
                       </span>
                       <span className="history-capacity">
-                        A: {formatNumber(item.data.totalACapacity)} | A2: {formatNumber(item.data.totalA2Capacity)}
+                        A: {formatNumber(item.data.totalACapacity)} | A2:{' '}
+                        {formatNumber(item.data.totalA2Capacity)}
                       </span>
                     </div>
                   ))}
@@ -476,7 +516,10 @@ const DeviceDetail: React.FC = () => {
                 Last updated: {new Date(data.data.updatedAt).toLocaleString()}
               </p>
             )}
-            {renderJsonValue(data?.data?.parsedValue || data?.data?.value, 'data')}
+            {renderJsonValue(
+              data?.data?.parsedValue || data?.data?.value,
+              'data',
+            )}
           </div>
         )}
 
@@ -485,10 +528,14 @@ const DeviceDetail: React.FC = () => {
             <h3>Device Settings</h3>
             {data?.settings?.updatedAt && (
               <p className="last-updated">
-                Last updated: {new Date(data.settings.updatedAt).toLocaleString()}
+                Last updated:{' '}
+                {new Date(data.settings.updatedAt).toLocaleString()}
               </p>
             )}
-            {renderJsonValue(data?.settings?.parsedValue || data?.settings?.value, 'settings')}
+            {renderJsonValue(
+              data?.settings?.parsedValue || data?.settings?.value,
+              'settings',
+            )}
           </div>
         )}
 
@@ -497,10 +544,14 @@ const DeviceDetail: React.FC = () => {
             <h3>Device Schedule</h3>
             {data?.schedule?.updatedAt && (
               <p className="last-updated">
-                Last updated: {new Date(data.schedule.updatedAt).toLocaleString()}
+                Last updated:{' '}
+                {new Date(data.schedule.updatedAt).toLocaleString()}
               </p>
             )}
-            {renderJsonValue(data?.schedule?.parsedSchedule || data?.schedule?.schedule, 'schedule')}
+            {renderJsonValue(
+              data?.schedule?.parsedSchedule || data?.schedule?.schedule,
+              'schedule',
+            )}
           </div>
         )}
 
