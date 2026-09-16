@@ -15,5 +15,9 @@ export class CreateInverterDeviceDto {
 
   @IsOptional()
   @IsString()
+  firmwareVersion?: string;
+
+  @IsOptional()
+  @IsString()
   description?: string;
 }
