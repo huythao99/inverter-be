@@ -19,6 +19,11 @@ import { MqttModule } from './modules/mqtt.module';
 import { BlacklistDeviceModule } from './modules/blacklist-device.module';
 import { FirmwareController } from './controllers/firmware.controller';
 import { FirmwareService } from './services/firmware.service';
+import { ChargerDeviceModule } from './modules/charger-device.module';
+import { ChargerSettingModule } from './modules/charger-setting.module';
+import { ChargerScheduleModule } from './modules/charger-schedule.module';
+import { ChargerDataModule } from './modules/charger-data.module';
+import { ChargerFirmwareModule } from './modules/charger-firmware.module';
 
 @Module({
   imports: [
@@ -81,6 +86,11 @@ import { FirmwareService } from './services/firmware.service';
     CmsModule,
     UserApiModule,
     TrackLogErrorModule,
+    ChargerDeviceModule,
+    ChargerSettingModule,
+    ChargerScheduleModule,
+    ChargerDataModule,
+    ChargerFirmwareModule,
   ],
   controllers: [AppController, FirmwareController],
   providers: [AppService, FirmwareService],

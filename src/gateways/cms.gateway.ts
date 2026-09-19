@@ -184,6 +184,84 @@ export class CmsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  // ---- Charger realtime (separate firmware type) ----
+
+  // Charger telemetry/cfg/info (parsed JSON from charger/{uid}/{deviceId}/data)
+  @OnEvent('charger.data.received')
+  handleChargerData(payload: {
+    userId: string;
+    deviceId: string;
+    data: Record<string, unknown>;
+  }) {
+    this.emitToSubscribers(payload.userId, payload.deviceId, 'chargerData', {
+      userId: payload.userId,
+      deviceId: payload.deviceId,
+      data: payload.data,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  // Charger heartbeat -> online/offline indicator
+  @OnEvent('charger.status.received')
+  handleChargerStatus(payload: {
+    userId: string;
+    deviceId: string;
+    status: string;
+  }) {
+    this.emitToSubscribers(payload.userId, payload.deviceId, 'chargerStatus', {
+      userId: payload.userId,
+      deviceId: payload.deviceId,
+      status: payload.status,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  // Charger OTA progress
+  @OnEvent('charger.ota.status.received')
+  handleChargerOtaStatus(payload: {
+    userId: string;
+    deviceId: string;
+    status?: string;
+    progress?: number;
+    message?: string;
+    timestamp: string;
+  }) {
+    this.emitToSubscribers(
+      payload.userId,
+      payload.deviceId,
+      'chargerOtaStatus',
+      {
+        userId: payload.userId,
+        deviceId: payload.deviceId,
+        status: payload.status,
+        progress: payload.progress,
+        message: payload.message,
+        timestamp: payload.timestamp,
+      },
+    );
+  }
+
+  // Emit an event to every client subscribed to userId:deviceId.
+  private emitToSubscribers(
+    userId: string,
+    deviceId: string,
+    event: string,
+    body: Record<string, unknown>,
+  ) {
+    const subscriptionKey = `${userId}:${deviceId}`;
+    for (const [
+      clientId,
+      subscriptions,
+    ] of this.clientSubscriptions.entries()) {
+      if (subscriptions.has(subscriptionKey)) {
+        const client = this.server.sockets.sockets.get(clientId);
+        if (client) {
+          client.emit(event, body);
+        }
+      }
+    }
+  }
+
   // Listen to OTA firmware update status events
   @OnEvent('ota.status.received')
   handleOtaStatus(payload: {

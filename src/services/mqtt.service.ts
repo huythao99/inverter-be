@@ -114,6 +114,9 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       'inverter/+/+/data',
       'inverter/+/+/ota/status', // OTA firmware update status
       'devices/inverter/+/+',
+      'charger/+/+/data', // Charger telemetry/cfg/info
+      'charger/+/+/status', // Charger heartbeat
+      'charger/+/+/ota/status', // Charger OTA status
       `${this.haStatePrefix}/+/+/set/+`, // Home Assistant command topics
     ];
     topics.forEach((topic) => this.client.subscribe(topic));
@@ -130,6 +133,13 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (topicParts.length < 4) return;
+
+    // Charger is a separate firmware type on its own topic namespace:
+    // charger/{uid}/{deviceId}/(data|status|ota/status)
+    if (topic.startsWith('charger/')) {
+      this.handleChargerTopic(topicParts, message);
+      return;
+    }
 
     const isInverter = topic.startsWith('inverter/');
     const isDevice = topic.startsWith('devices/inverter/');
@@ -201,6 +211,64 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       wifiSsid,
       data: { value, totalACapacity, totalA2Capacity },
     });
+  }
+
+  // Route charger topics: charger/{uid}/{deviceId}/(data|status|ota/status)
+  private handleChargerTopic(topicParts: string[], message: Buffer) {
+    const uid = topicParts[1];
+    const deviceId = topicParts[2];
+    const kind = topicParts[3];
+
+    if (this.blacklistDeviceService.isBlacklisted(deviceId)) return;
+
+    // OTA status: no rate limiting (progress updates matter).
+    if (kind === 'ota' && topicParts[4] === 'status') {
+      try {
+        const data = JSON.parse(message.toString()) as Record<string, unknown>;
+        this.eventEmitter.emit('charger.ota.status.received', {
+          userId: uid,
+          deviceId,
+          status: data.status,
+          progress: data.progress,
+          message: data.message,
+          timestamp: new Date().toISOString(),
+        });
+      } catch {
+        // Invalid JSON, ignore
+      }
+      return;
+    }
+
+    if (kind !== 'data' && kind !== 'status') return;
+
+    // Rate limit per device+kind. Telemetry every 3s, heartbeat every 5s.
+    const rateKey = `charger:${uid}-${deviceId}-${kind}`;
+    const now = Date.now();
+    const windowMs = kind === 'data' ? 3000 : 5000;
+    const last = this.messageHandlers.get(rateKey);
+    if (last && now - last < windowMs) return;
+    this.messageHandlers.set(rateKey, now);
+
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(message.toString()) as Record<string, unknown>;
+    } catch {
+      return;
+    }
+
+    if (kind === 'data') {
+      this.eventEmitter.emit('charger.data.received', {
+        userId: uid,
+        deviceId,
+        data,
+      });
+    } else {
+      this.eventEmitter.emit('charger.status.received', {
+        userId: uid,
+        deviceId,
+        status: (data.status as string) || 'online',
+      });
+    }
   }
 
   // Fast string extraction using indexOf (no regex)
@@ -406,6 +474,46 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       return;
     }
     await this.publish(`inverter/${userId}/${deviceId}/cmd/schedule`, {});
+  }
+
+  // ---- Charger triggers (separate namespace, retained per INTEGRATION doc) ----
+
+  // Trigger: "setting changed, go pull it". Retained so a device that comes
+  // online later re-syncs immediately.
+  async emitSyncChargerSettings(
+    userId: string,
+    deviceId: string,
+  ): Promise<void> {
+    await this.publishWithRetain(
+      `charger/${userId}/${deviceId}/cmd/settings`,
+      {},
+      true,
+    );
+  }
+
+  // Trigger: "schedule changed, go pull it".
+  async emitSyncChargerSchedule(
+    userId: string,
+    deviceId: string,
+  ): Promise<void> {
+    await this.publishWithRetain(
+      `charger/${userId}/${deviceId}/cmd/schedule`,
+      {},
+      true,
+    );
+  }
+
+  // Clear the retained firmware/update trigger after OTA finishes so a rebooted
+  // device doesn't receive it again and OTA forever.
+  async clearChargerFirmwareUpdate(
+    userId: string,
+    deviceId: string,
+  ): Promise<void> {
+    await this.publishWithRetain(
+      `charger/${userId}/${deviceId}/firmware/update`,
+      '',
+      true,
+    );
   }
 
   // Generic publish method
