@@ -186,7 +186,8 @@ export class CmsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   // ---- Charger realtime (separate firmware type) ----
 
-  // Charger telemetry/cfg/info (parsed JSON from charger/{uid}/{deviceId}/data)
+  // Charger telemetry/cfg/info (STM32 frame parsed by backend from
+  // charger/{uid}/{deviceId}/data — clients get a decoded object)
   @OnEvent('charger.data.received')
   handleChargerData(payload: {
     userId: string;

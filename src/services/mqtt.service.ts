@@ -249,26 +249,54 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     if (last && now - last < windowMs) return;
     this.messageHandlers.set(rateKey, now);
 
-    let data: Record<string, unknown>;
-    try {
-      data = JSON.parse(message.toString()) as Record<string, unknown>;
-    } catch {
-      return;
-    }
+    const payloadStr = message.toString();
 
     if (kind === 'data') {
+      // `data` is a RAW STM32 frame string ("$TYPE,KEY=VALUE,...*CRC"),
+      // NOT JSON. Parse it here so both storage and WebSocket get a
+      // decoded object.
+      const parsed = this.parseChargerFrame(payloadStr);
+      if (!parsed) return;
       this.eventEmitter.emit('charger.data.received', {
         userId: uid,
         deviceId,
-        data,
+        data: parsed,
       });
-    } else {
-      this.eventEmitter.emit('charger.status.received', {
-        userId: uid,
-        deviceId,
-        status: (data.status as string) || 'online',
-      });
+      return;
     }
+
+    // `status` is JSON: { "status": "online" }
+    let statusData: Record<string, unknown> = {};
+    try {
+      statusData = JSON.parse(payloadStr) as Record<string, unknown>;
+    } catch {
+      // Not JSON; fall back to online.
+    }
+    this.eventEmitter.emit('charger.status.received', {
+      userId: uid,
+      deviceId,
+      status: (statusData.status as string) || 'online',
+    });
+  }
+
+  // Parse a raw STM32 frame "$TYPE,KEY=VALUE,...*CRC" into { type, ...kv, raw }.
+  // Returns null if it isn't a valid frame.
+  private parseChargerFrame(raw: string): Record<string, string> | null {
+    if (!raw) return null;
+    const trimmed = raw.trim();
+    if (trimmed[0] !== '$') return null;
+    const star = trimmed.lastIndexOf('*');
+    const body = star === -1 ? trimmed.slice(1) : trimmed.slice(1, star);
+    const parts = body.split(',');
+    const type = parts.shift();
+    if (!type) return null;
+    const out: Record<string, string> = { type, raw: trimmed };
+    for (const item of parts) {
+      const eq = item.indexOf('=');
+      if (eq === -1) continue;
+      out[item.slice(0, eq)] = item.slice(eq + 1);
+    }
+    return out;
   }
 
   // Fast string extraction using indexOf (no regex)
@@ -486,18 +514,6 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   ): Promise<void> {
     await this.publishWithRetain(
       `charger/${userId}/${deviceId}/cmd/settings`,
-      {},
-      true,
-    );
-  }
-
-  // Trigger: "schedule changed, go pull it".
-  async emitSyncChargerSchedule(
-    userId: string,
-    deviceId: string,
-  ): Promise<void> {
-    await this.publishWithRetain(
-      `charger/${userId}/${deviceId}/cmd/schedule`,
       {},
       true,
     );

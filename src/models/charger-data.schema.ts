@@ -21,9 +21,12 @@ export class ChargerData {
   @Prop({ required: true })
   deviceId: string;
 
-  // ---- Telemetry (type=tlm) ----
+  // ---- Telemetry ($TLM) ----
   @Prop() st?: string; // RUN / IDLE / OFF / CAL / FLT
   @Prop() flt?: string; // 0 = ok, 1 = hardware fault
+  @Prop() lock?: string; // LOCK
+  @Prop() rtry?: string; // RTRY (retry count)
+  @Prop() out?: string; // OUT (output target, e.g. BAT)
   @Prop() temp?: string; // heatsink temp °C (field "T")
   @Prop() mode?: string; // MPPT / CV / CC
   @Prop() ms?: string; // WAIT / SCAN / TRACK / LIM
@@ -36,10 +39,11 @@ export class ChargerData {
   @Prop() duty?: string; // PWM duty 0-1
   @Prop() vref?: string; // target PV voltage V
 
-  // ---- Config (type=cfg) — actual applied values on the machine ----
+  // ---- Config ($CFG) — actual applied values on the machine ----
   @Prop() cfgVbat?: string; // charge voltage setpoint (CV) V
   @Prop() cfgIbat?: string; // max charge current (CC) A
   @Prop() cfgPbat?: string; // power W
+  @Prop() cfgOut?: string; // output target (CFG OUT)
   @Prop() src?: string; // ESP (cloud control) | LOCAL (machine only)
 
   // ---- Info (type=info) ----

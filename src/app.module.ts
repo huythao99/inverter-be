@@ -21,9 +21,9 @@ import { FirmwareController } from './controllers/firmware.controller';
 import { FirmwareService } from './services/firmware.service';
 import { ChargerDeviceModule } from './modules/charger-device.module';
 import { ChargerSettingModule } from './modules/charger-setting.module';
-import { ChargerScheduleModule } from './modules/charger-schedule.module';
 import { ChargerDataModule } from './modules/charger-data.module';
 import { ChargerFirmwareModule } from './modules/charger-firmware.module';
+import { CmsChargerModule } from './modules/cms-charger.module';
 
 @Module({
   imports: [
@@ -88,9 +88,9 @@ import { ChargerFirmwareModule } from './modules/charger-firmware.module';
     TrackLogErrorModule,
     ChargerDeviceModule,
     ChargerSettingModule,
-    ChargerScheduleModule,
     ChargerDataModule,
     ChargerFirmwareModule,
+    CmsChargerModule,
   ],
   controllers: [AppController, FirmwareController],
   providers: [AppService, FirmwareService],

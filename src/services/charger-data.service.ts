@@ -13,7 +13,7 @@ const OFFLINE_THRESHOLD_MS = 15000;
 export interface ChargerDataEventPayload {
   userId: string;
   deviceId: string;
-  data: Record<string, any>; // parsed JSON from the `data` topic
+  data: Record<string, any>; // parsed STM32 frame from the `data` topic
 }
 
 export interface ChargerStatusEventPayload {
@@ -83,11 +83,13 @@ export class ChargerDataService {
     return { deletedCount: result.deletedCount };
   }
 
-  // Map the device's uppercase telemetry keys to the schema fields, keyed by
-  // the message `type`. Only fields present in the message are written.
+  // Map the parsed frame's uppercase keys to the schema fields, keyed by the
+  // frame `type` (TLM/CFG/INFO). Only fields present in the message are written.
   private mapPayload(data: Record<string, any>): Partial<ChargerData> {
-    const type = String(data.type ?? '').toLowerCase();
-    const update: Partial<ChargerData> = { lastType: type || undefined };
+    const type = String(data.type ?? '').toUpperCase();
+    const update: Partial<ChargerData> = {
+      lastType: type ? type.toLowerCase() : undefined,
+    };
 
     const s = (v: unknown): string | undefined => {
       if (v === undefined || v === null) return undefined;
@@ -96,9 +98,12 @@ export class ChargerDataService {
       return undefined;
     };
 
-    if (type === 'tlm') {
+    if (type === 'TLM') {
       update.st = s(data.ST);
       update.flt = s(data.FLT);
+      update.lock = s(data.LOCK);
+      update.rtry = s(data.RTRY);
+      update.out = s(data.OUT);
       update.temp = s(data.T);
       update.mode = s(data.MODE);
       update.ms = s(data.MS);
@@ -111,12 +116,13 @@ export class ChargerDataService {
       update.duty = s(data.DUTY);
       update.vref = s(data.VREF);
       update.dev = s(data.DEV) ?? update.dev;
-    } else if (type === 'cfg') {
+    } else if (type === 'CFG') {
       update.cfgVbat = s(data.VBAT);
       update.cfgIbat = s(data.IBAT);
       update.cfgPbat = s(data.PBAT);
+      update.cfgOut = s(data.OUT);
       update.src = s(data.SRC);
-    } else if (type === 'info') {
+    } else if (type === 'INFO') {
       update.dev = s(data.DEV);
       update.proto = s(data.PROTO);
       update.fw = s(data.FW);
