@@ -5,6 +5,8 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Devices from './pages/Devices';
 import DeviceDetail from './pages/DeviceDetail';
+import Chargers from './pages/Chargers';
+import ChargerDetail from './pages/ChargerDetail';
 import Users from './pages/Users';
 import Blacklist from './pages/Blacklist';
 import Settings from './pages/Settings';
@@ -59,6 +61,8 @@ function AppRoutes() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/devices" element={<Devices />} />
         <Route path="/devices/:userId/:deviceId" element={<DeviceDetail />} />
+        <Route path="/chargers" element={<Chargers />} />
+        <Route path="/chargers/:userId/:deviceId" element={<ChargerDetail />} />
         <Route path="/users" element={<Users />} />
         <Route path="/blacklist" element={<Blacklist />} />
         <Route path="/settings" element={<Settings />} />

@@ -101,4 +101,31 @@ export const getSettings = () => api.get('/settings');
 
 export const getMqttConfig = () => api.get('/mqtt-config');
 
+// ==================== Chargers (separate firmware type) ====================
+export const getChargerDashboard = () => api.get('/charger/dashboard');
+
+export const getChargers = (params?: {
+  page?: number;
+  limit?: number;
+  userId?: string;
+  deviceId?: string;
+  search?: string;
+}) => api.get('/charger/devices', { params });
+
+export const getCharger = (id: string) => api.get(`/charger/devices/${id}`);
+
+export const getChargerDetails = (userId: string, deviceId: string) =>
+  api.get(`/charger/devices/${userId}/${deviceId}/details`);
+
+export const updateCharger = (
+  id: string,
+  data: { deviceName?: string; firmwareVersion?: string }
+) => api.put(`/charger/devices/${id}`, data);
+
+export const deleteCharger = (id: string) =>
+  api.delete(`/charger/devices/${id}`);
+
+export const triggerChargerFirmwareUpdate = (id: string, targetVersion: string) =>
+  api.post(`/charger/devices/${id}/firmware-update`, { targetVersion });
+
 export default api;

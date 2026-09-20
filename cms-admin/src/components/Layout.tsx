@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   LayoutDashboard,
   Cpu,
+  BatteryCharging,
   Users,
   ShieldOff,
   Settings,
@@ -25,6 +26,7 @@ const Layout: React.FC = () => {
   const navItems = [
     { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/devices', icon: Cpu, label: 'Devices' },
+    { to: '/chargers', icon: BatteryCharging, label: 'Chargers' },
     { to: '/users', icon: Users, label: 'Users' },
     { to: '/blacklist', icon: ShieldOff, label: 'Blacklist' },
     { to: '/settings', icon: Settings, label: 'Settings' },
