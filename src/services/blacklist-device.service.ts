@@ -1,10 +1,29 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Model } from 'mongoose';
 import {
   BlacklistDevice,
   BlacklistDeviceDocument,
 } from '../models/blacklist-device.schema';
+import {
+  InverterDevice,
+  InverterDeviceDocument,
+} from '../models/inverter-device.schema';
+import {
+  ChargerDevice,
+  ChargerDeviceDocument,
+} from '../models/charger-device.schema';
+
+// Emitted whenever a device's blacklist status changes. MqttService listens and
+// publishes it to the device so the ESP32 can react. (EventEmitter avoids a
+// circular dependency: MqttService already injects BlacklistDeviceService.)
+export const BLACKLIST_CHANGED_EVENT = 'blacklist.changed';
+
+export interface BlacklistChangedPayload {
+  topic: string; // e.g. "inverter/{uid}/{deviceId}/blacklist"
+  lock: boolean; // true = locked (blacklisted), false = unlocked
+}
 
 @Injectable()
 export class BlacklistDeviceService implements OnModuleInit {
@@ -16,7 +35,40 @@ export class BlacklistDeviceService implements OnModuleInit {
   constructor(
     @InjectModel(BlacklistDevice.name)
     private blacklistDeviceModel: Model<BlacklistDeviceDocument>,
+    @InjectModel(InverterDevice.name)
+    private inverterDeviceModel: Model<InverterDeviceDocument>,
+    @InjectModel(ChargerDevice.name)
+    private chargerDeviceModel: Model<ChargerDeviceDocument>,
+    private eventEmitter: EventEmitter2,
   ) {}
+
+  // Publish the lock/unlock event onto each owner's per-device topic
+  // ({inverter|charger}/{uid}/{deviceId}/blacklist). When userId is known we
+  // target it directly; for a global entry we look up the device's owner(s).
+  private async emitChange(
+    deviceId: string,
+    blacklisted: boolean,
+    userId?: string,
+  ): Promise<void> {
+    const type = deviceId.startsWith('ChargerControl') ? 'charger' : 'inverter';
+
+    let uids: string[];
+    if (userId) {
+      uids = [userId];
+    } else {
+      const model =
+        type === 'charger' ? this.chargerDeviceModel : this.inverterDeviceModel;
+      const docs = await model.find({ deviceId }, { userId: 1 }).lean().exec();
+      uids = docs.map((d) => d.userId).filter((u): u is string => !!u);
+    }
+
+    for (const uid of uids) {
+      this.eventEmitter.emit(BLACKLIST_CHANGED_EVENT, {
+        topic: `${type}/${uid}/${deviceId}/blacklist`,
+        lock: blacklisted,
+      });
+    }
+  }
 
   private pairKey(userId: string, deviceId: string): string {
     return `${userId}:${deviceId}`;
@@ -53,6 +105,7 @@ export class BlacklistDeviceService implements OnModuleInit {
     const created = new this.blacklistDeviceModel(dto);
     const saved = await created.save();
     this.addToCache(dto.userId, dto.deviceId);
+    await this.emitChange(dto.deviceId, true, dto.userId);
     return saved;
   }
 
@@ -95,6 +148,8 @@ export class BlacklistDeviceService implements OnModuleInit {
         this.globalCache.delete(removed.deviceId);
       }
     }
+
+    await this.emitChange(removed.deviceId, false, removed.userId);
     return removed;
   }
 
@@ -108,6 +163,7 @@ export class BlacklistDeviceService implements OnModuleInit {
     for (const key of this.pairCache) {
       if (key.endsWith(suffix)) this.pairCache.delete(key);
     }
+    await this.emitChange(deviceId, false);
     return { deletedCount: result.deletedCount };
   }
 }

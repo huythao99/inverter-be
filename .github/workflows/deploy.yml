@@ -1,0 +1,46 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to DigitalOcean
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            set -e
+
+            cd /var/www/inverter-be
+
+            echo "Pull latest code..."
+            git pull origin main
+
+            echo "Install dependencies..."
+            npm ci
+
+            echo "Build..."
+            npm run build
+
+            echo "Build CMS Admin..."
+            cd cms-admin
+            echo "Build..."
+            npm ci
+            npm run build
+
+            echo "Restart PM2..."
+            pm2 restart nestjs
+
+            echo "Reload Nginx..."
+            sudo nginx -t
+            sudo systemctl restart nginx
+
+            echo "Deploy completed!"

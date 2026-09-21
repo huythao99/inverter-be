@@ -1,8 +1,12 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { EventEmitter2 } from '@nestjs/event-emitter';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import * as mqtt from 'mqtt';
-import { BlacklistDeviceService } from './blacklist-device.service';
+import {
+  BlacklistDeviceService,
+  BLACKLIST_CHANGED_EVENT,
+  BlacklistChangedPayload,
+} from './blacklist-device.service';
 
 @Injectable()
 export class MqttService implements OnModuleInit, OnModuleDestroy {
@@ -518,6 +522,15 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       '',
       true,
     );
+  }
+
+  // A device was added to / removed from the blacklist. Notify the ESP32 on its
+  // per-device topic ({inverter|charger}/{uid}/{deviceId}/blacklist), retained
+  // so a device that reconnects later still learns its current status.
+  @OnEvent(BLACKLIST_CHANGED_EVENT)
+  async handleBlacklistChanged(payload: BlacklistChangedPayload): Promise<void> {
+    // Minimal payload: lock=true (blacklisted) / lock=false (unblacklisted).
+    await this.publishWithRetain(payload.topic, { lock: payload.lock }, true);
   }
 
   // Generic publish method
