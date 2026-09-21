@@ -148,7 +148,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     const currentUid = isInverter ? topicParts[1] : topicParts[2];
     const wifiSsid = isInverter ? topicParts[2] : topicParts[3];
 
-    if (this.blacklistDeviceService.isBlacklisted(wifiSsid)) return;
+    if (this.blacklistDeviceService.isBlacklisted(wifiSsid, currentUid)) return;
 
     // Handle OTA status messages (no rate limiting for OTA updates)
     // Topic format: inverter/{userId}/{deviceId}/ota/status
@@ -219,7 +219,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     const deviceId = topicParts[2];
     const kind = topicParts[3];
 
-    if (this.blacklistDeviceService.isBlacklisted(deviceId)) return;
+    if (this.blacklistDeviceService.isBlacklisted(deviceId, uid)) return;
 
     // OTA status: no rate limiting (progress updates matter).
     if (kind === 'ota' && topicParts[4] === 'status') {
