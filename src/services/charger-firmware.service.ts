@@ -14,8 +14,7 @@ export interface ChargerOtaStatusPayload {
 
 @Injectable()
 export class ChargerFirmwareService {
-  private readonly FIRMWARE_BASE_URL =
-    'https://giabao-inverter.com/firmware/charger';
+  private readonly FIRMWARE_BASE_URL = 'https://giabao-inverter.com/firmware';
   private readonly NEWEST_VERSION = '1.0.0';
 
   constructor(
@@ -25,7 +24,7 @@ export class ChargerFirmwareService {
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   getFirmwareUrl(deviceId: string): { url: string } {
-    return { url: `${this.FIRMWARE_BASE_URL}/firmware.bin` };
+    return { url: `${this.FIRMWARE_BASE_URL}/firmware-charger.bin` };
   }
 
   getNewestFirmwareVersion(): { version: string } {
