@@ -24,15 +24,14 @@ Ký hiệu cột: ✅ = có dùng · — = không dùng.
 | REST `/api/charger-device` (đăng ký, báo firmware) | ✅ | — | — |
 | REST `/api/charger-setting` (GET `?source=hardware`) | ✅ | — | — |
 | REST `/api/charger-firmware` (GET url) | ✅ | — | — |
-| REST `/api/charger-setting` (ghi VBAT/IBAT) | — | ✅ | ✅ |
-| REST `/api/charger` (`/latest` realtime snapshot) | — | ✅ | ✅ |
-| REST `/api/charger-device/data/device/:userId` (danh sách của user) | — | ✅ | ✅ |
-| WebSocket `/cms` (`chargerData`/`chargerStatus`/`chargerOtaStatus`) | — | ✅ | ✅ |
+| REST `/api/charger-*` (list, `/latest`, đọc/ghi setting — **uid trên URL, không guard**) | — | ✅ | — |
+| REST `/api/user/chargers/*` (list, `/latest`, đọc/ghi setting — **Firebase JWT**) | — | — | ✅ |
+| MQTT nghe broker trực tiếp (`charger/{uid}/{deviceId}/data`, `ota/status`) | — | ✅ | ✅ |
 | REST `/api/cms/charger/*` (dashboard, list, details, sửa/xóa, OTA — **JWT admin**) | — | — | ✅ (admin) |
-| REST `/api/charger-firmware/update/...` (kích hoạt OTA, không guard) | — | ⚠️ | ⚠️ |
 
-> ⚠️ OTA có thể để riêng cho admin/web; mobile chỉ nên **xem tiến trình** OTA.
-> Mobile và Web (bản người dùng cuối) dùng **chung** bộ API app-facing bên dưới.
+> **Mobile**: bộ `/api/charger-*` (uid trên URL, không Firebase). **Web người dùng cuối**:
+> bộ `/api/user/chargers/*` (Firebase JWT, giống inverter `/api/user/*`). Cả hai nghe
+> MQTT broker trực tiếp cho realtime.
 
 ---
 
@@ -106,21 +105,22 @@ retain=true, qos=1. Sau OTA `success`/`failed`, server **tự clear** retained c
 
 ## 3. Phần dùng cho Mobile (app người dùng cuối)
 
-> Base REST như trên. WebSocket cần JWT.
+> **KHÔNG dùng Firebase auth.** Mobile gọi thẳng bộ `/api/charger-*` với `uid`
+> truyền trên URL. Realtime: nghe MQTT broker trực tiếp (mục 3.2).
 
-### 3.1 REST
+### 3.1 REST — `/api/charger-*` (uid trên URL, không guard)
 
 | Method | Path | Mục đích |
 |---|---|---|
 | GET | `/api/charger-device/data/device/{uid}` | Danh sách charger của user |
 | GET | `/api/charger-device/data/{uid}/{deviceId}` | Chi tiết 1 charger |
-| GET | `/api/charger/data/{uid}/{deviceId}/latest` | Snapshot realtime mới nhất |
+| GET | `/api/charger/data/{uid}/{deviceId}/latest` | Snapshot realtime (kèm `status` online/offline) |
 | GET | `/api/charger-setting/data/{uid}/{deviceId}` | Đọc setting (kèm `vbat`/`ibat` đã decode) |
 | PATCH | `/api/charger-setting/data/{uid}/{deviceId}` | Ghi setting thân thiện `{ "vbat":54.0, "ibat":20.0 }` |
 | PATCH | `/api/charger-setting/data/{uid}/{deviceId}/value` | Ghi setting raw `{ "value":"05400200" }` |
-| PATCH | `/api/charger-device/data/{uid}/{deviceId}/description` | Đổi tên/ghi chú |
+| PATCH | `/api/charger-device/data/{uid}/{deviceId}/description` | Đổi ghi chú |
 | GET | `/api/charger-firmware/version?userId={uid}&deviceId={deviceId}` | Version hiện tại |
-| GET | `/api/charger-firmware/newest` | Version mới nhất (để so sánh, gợi ý update) |
+| GET | `/api/charger-firmware/newest` | Version mới nhất (gợi ý update) |
 
 Khi PATCH setting, backend **tự** publish `cmd/settings` (retain, qos1) → device
 tự đi lấy giá trị mới.
@@ -167,7 +167,20 @@ socket.on('chargerOtaStatus', d => {}); // tiến trình OTA
 
 ## 4. Phần dùng cho Web
 
-Web bản **người dùng cuối**: dùng **y hệt** bộ API + WebSocket ở mục 3 (Mobile).
+Web bản **người dùng cuối**: dùng bộ `/api/user/chargers/*` với **Firebase JWT**
+(header `Authorization: Bearer <firebase-id-token>`), giống hệt web inverter chạy
+qua `/api/user/*`. `uid` lấy từ token — **không truyền trên URL**. Realtime: nghe
+MQTT broker trực tiếp (mục 3.2).
+
+| Method | Path | Mục đích |
+|---|---|---|
+| GET | `/api/user/chargers` | Danh sách charger của user |
+| GET | `/api/user/chargers/{deviceId}` | Chi tiết 1 charger |
+| GET | `/api/user/chargers/{deviceId}/data/latest` | Snapshot realtime (kèm `status`) |
+| GET | `/api/user/chargers/{deviceId}/settings` | Đọc setting (kèm `vbat`/`ibat` decode) |
+| PATCH | `/api/user/chargers/{deviceId}/settings` | Ghi `{ "vbat":54.0, "ibat":20.0 }` **hoặc** `{ "value":"05400200" }` |
+| PATCH | `/api/user/chargers/{deviceId}/description` | Đổi ghi chú |
+| PATCH | `/api/user/chargers/{deviceId}` | Đổi `deviceName` / `description` |
 
 Web bản **quản trị/CMS** dùng bộ endpoint riêng `/api/cms/charger/*`.
 **Tất cả yêu cầu JWT admin** (header `Authorization: Bearer <admin-token>`, lấy từ

@@ -24,6 +24,7 @@ import { ChargerSettingModule } from './modules/charger-setting.module';
 import { ChargerDataModule } from './modules/charger-data.module';
 import { ChargerFirmwareModule } from './modules/charger-firmware.module';
 import { CmsChargerModule } from './modules/cms-charger.module';
+import { UserChargerModule } from './modules/user-charger.module';
 
 @Module({
   imports: [
@@ -91,6 +92,7 @@ import { CmsChargerModule } from './modules/cms-charger.module';
     ChargerDataModule,
     ChargerFirmwareModule,
     CmsChargerModule,
+    UserChargerModule,
   ],
   controllers: [AppController, FirmwareController],
   providers: [AppService, FirmwareService],
