@@ -508,30 +508,24 @@ export class CmsService implements OnModuleInit {
     }
 
     if (settings?.value) {
-      const settingValue = deviceId === 'GTIControl1134' ? '80001011' : settings.value;
       try {
         parsedSettings = {
           ...settings,
-          value: settingValue,
-          parsedValue: JSON.parse(settingValue),
+          parsedValue: JSON.parse(settings.value),
         };
       } catch {
-        parsedSettings = { ...settings, value: settingValue };
+        parsedSettings = settings;
       }
     }
 
     if (schedule?.schedule) {
-      const scheduleValue = deviceId === 'GTIControl1134'
-        ? schedule.schedule.replace(/value=[^&#]*/g, `value=80001011`)
-        : schedule.schedule;
       try {
         parsedSchedule = {
           ...schedule,
-          schedule: scheduleValue,
-          parsedSchedule: JSON.parse(scheduleValue),
+          parsedSchedule: JSON.parse(schedule.schedule),
         };
       } catch {
-        parsedSchedule = { ...schedule, schedule: scheduleValue };
+        parsedSchedule = schedule;
       }
     }
 

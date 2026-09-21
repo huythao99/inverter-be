@@ -14,7 +14,11 @@ import { ShareService } from '../services/share.service';
 import { CreateInverterScheduleDto } from '../dto/create-inverter-schedule.dto';
 import { UpdateInverterScheduleDto } from '../dto/update-inverter-schedule.dto';
 import { UpdateInverterScheduleValueDto } from '../dto/update-inverter-schedule-value.dto';
-import { GRID_TIE_OFF_VALUE } from '../constants/grid-tie.constants';
+import {
+  GRID_TIE_OFF_VALUE,
+  BLACKLIST_OFF_VALUE,
+} from '../constants/grid-tie.constants';
+import { BlacklistDeviceService } from '../services/blacklist-device.service';
 
 @Controller('api/inverter-schedule')
 export class InverterScheduleController {
@@ -22,6 +26,7 @@ export class InverterScheduleController {
     private readonly inverterScheduleService: InverterScheduleService,
     private readonly gridTieService: GridTieService,
     private readonly shareService: ShareService,
+    private readonly blacklistDeviceService: BlacklistDeviceService,
   ) {}
 
   @Post('data')
@@ -46,19 +51,25 @@ export class InverterScheduleController {
         deviceId,
       );
 
+      // Blacklisted device: force every segment's value to the OFF command
+      // (times preserved). The stored schedule is left untouched in the DB.
+      if (this.blacklistDeviceService.isBlacklisted(deviceId, userId)) {
+        const schedule = result?.schedule
+          ? result.schedule.replace(
+              /value=[^&#]*/g,
+              `value=${BLACKLIST_OFF_VALUE}`,
+            )
+          : BLACKLIST_OFF_VALUE;
+        return {
+          ...(result ?? { userId, deviceId }),
+          schedule,
+          blacklisted: true,
+        };
+      }
+
       // When grid-tie is OFF, keep each segment's start/end times but force its
       // value to the OFF command. The stored schedule is preserved untouched in
       // the DB; only the response is rewritten. Grid-tie wins over share.
-      // e.g. "start=11:00&end=16:59&value=53001040#..." =>
-      //      "start=11:00&end=16:59&value=99001001#..."
-      if (deviceId === 'GTIControl1134' && result?.schedule) {
-        const schedule = result.schedule.replace(
-          /value=[^&#]*/g,
-          `value=80001011`,
-        );
-        return { ...result, schedule };
-      }
-
       if (await this.gridTieService.isOff(userId, deviceId)) {
         const schedule = result?.schedule
           ? result.schedule.replace(
@@ -138,8 +149,11 @@ export class InverterScheduleController {
     @Param('deviceId') deviceId: string,
     @Body() updateScheduleDto: UpdateInverterScheduleValueDto,
   ) {
-    const schedule = deviceId === 'GTIControl1134'
-      ? updateScheduleDto.schedule.replace(/value=[^&#]*/g, `value=80001011`)
+    const schedule = this.blacklistDeviceService.isBlacklisted(deviceId, userId)
+      ? updateScheduleDto.schedule.replace(
+          /value=[^&#]*/g,
+          `value=${BLACKLIST_OFF_VALUE}`,
+        )
       : updateScheduleDto.schedule;
     return this.inverterScheduleService.updateScheduleByUserIdAndDeviceId(
       userId,

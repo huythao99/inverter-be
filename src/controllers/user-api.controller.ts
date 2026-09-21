@@ -24,7 +24,11 @@ import { DailyTotalsService } from '../services/daily-totals.service';
 import { SetGridTieDto } from '../dto/set-grid-tie.dto';
 import { CreateShareGroupDto } from '../dto/create-share-group.dto';
 import { UpdateShareGroupDto } from '../dto/update-share-group.dto';
-import { GRID_TIE_OFF_VALUE } from '../constants/grid-tie.constants';
+import {
+  GRID_TIE_OFF_VALUE,
+  BLACKLIST_OFF_VALUE,
+} from '../constants/grid-tie.constants';
+import { BlacklistDeviceService } from '../services/blacklist-device.service';
 
 @Controller('api/user')
 @UseGuards(FirebaseAuthGuard)
@@ -37,6 +41,7 @@ export class UserApiController {
     private readonly gridTieService: GridTieService,
     private readonly shareService: ShareService,
     private readonly dailyTotalsService: DailyTotalsService,
+    private readonly blacklistDeviceService: BlacklistDeviceService,
   ) {}
 
   // Verify every member device belongs to the authenticated user.
@@ -116,8 +121,13 @@ export class UserApiController {
       deviceId,
     );
 
-    if (deviceId === 'GTIControl1134') {
-      return { ...(settings ?? { userId: user.uid, deviceId }), value: '80001011' };
+    // Blacklisted device: report the OFF command (real value preserved in DB).
+    if (this.blacklistDeviceService.isBlacklisted(deviceId, user.uid)) {
+      return {
+        ...(settings ?? { userId: user.uid, deviceId }),
+        value: BLACKLIST_OFF_VALUE,
+        blacklisted: true,
+      };
     }
 
     // When grid-tie is OFF, report the OFF command instead of the stored value
@@ -150,11 +160,15 @@ export class UserApiController {
       throw new NotFoundException(`Device ${deviceId} not found`);
     }
 
+    const forcedOff = this.blacklistDeviceService.isBlacklisted(
+      deviceId,
+      user.uid,
+    );
     const settings =
       await this.inverterSettingService.updateValueByUserIdAndDeviceId(
         user.uid,
         deviceId,
-        deviceId === 'GTIControl1134' ? '80001011' : value,
+        forcedOff ? BLACKLIST_OFF_VALUE : value,
       );
 
     return settings;
@@ -319,10 +333,18 @@ export class UserApiController {
       deviceId,
     );
 
-    if (deviceId === 'GTIControl1134' && schedule?.schedule) {
+    // Blacklisted device: force each segment's value to the OFF command.
+    if (this.blacklistDeviceService.isBlacklisted(deviceId, user.uid)) {
+      const overridden = schedule?.schedule
+        ? schedule.schedule.replace(
+            /value=[^&#]*/g,
+            `value=${BLACKLIST_OFF_VALUE}`,
+          )
+        : BLACKLIST_OFF_VALUE;
       return {
-        ...schedule,
-        schedule: schedule.schedule.replace(/value=[^&#]*/g, `value=80001011`),
+        ...(schedule ?? { userId: user.uid, deviceId }),
+        schedule: overridden,
+        blacklisted: true,
       };
     }
 
@@ -362,8 +384,11 @@ export class UserApiController {
       throw new NotFoundException(`Device ${deviceId} not found`);
     }
 
-    const normalizedSchedule = deviceId === 'GTIControl1134'
-      ? schedule.replace(/value=[^&#]*/g, `value=80001011`)
+    const normalizedSchedule = this.blacklistDeviceService.isBlacklisted(
+      deviceId,
+      user.uid,
+    )
+      ? schedule.replace(/value=[^&#]*/g, `value=${BLACKLIST_OFF_VALUE}`)
       : schedule;
 
     const updatedSchedule =

@@ -17,8 +17,12 @@ import { CreateInverterSettingDto } from '../dto/create-inverter-setting.dto';
 import { UpdateInverterSettingDto } from '../dto/update-inverter-setting.dto';
 import { UpdateInverterSettingValueDto } from '../dto/update-inverter-setting-value.dto';
 import { SetGridTieDto } from '../dto/set-grid-tie.dto';
-import { GRID_TIE_OFF_VALUE } from '../constants/grid-tie.constants';
+import {
+  GRID_TIE_OFF_VALUE,
+  BLACKLIST_OFF_VALUE,
+} from '../constants/grid-tie.constants';
 import { SettingCacheInterceptor } from '../interceptors/setting-cache.interceptor';
+import { BlacklistDeviceService } from '../services/blacklist-device.service';
 
 @Controller('api/inverter-setting')
 export class InverterSettingController {
@@ -26,6 +30,7 @@ export class InverterSettingController {
     private readonly inverterSettingService: InverterSettingService,
     private readonly gridTieService: GridTieService,
     private readonly shareService: ShareService,
+    private readonly blacklistDeviceService: BlacklistDeviceService,
   ) {}
 
   @Post('data')
@@ -46,8 +51,15 @@ export class InverterSettingController {
     @Param('deviceId') deviceId: string,
     @Query('source') source?: string,
   ) {
-    if (deviceId === 'GTIControl1134') {
-      return { userId, deviceId, value: '80001011' };
+    // Blacklisted device: report the OFF command so it disables itself on the
+    // next pull. The real stored value is left untouched in the DB.
+    if (this.blacklistDeviceService.isBlacklisted(deviceId, userId)) {
+      return {
+        userId,
+        deviceId,
+        value: BLACKLIST_OFF_VALUE,
+        blacklisted: true,
+      };
     }
 
     try {
@@ -130,7 +142,9 @@ export class InverterSettingController {
     @Param('deviceId') deviceId: string,
     @Body() updateValueDto: UpdateInverterSettingValueDto,
   ) {
-    const value = deviceId === 'GTIControl1134' ? '80001011' : updateValueDto.value;
+    const value = this.blacklistDeviceService.isBlacklisted(deviceId, userId)
+      ? BLACKLIST_OFF_VALUE
+      : updateValueDto.value;
     return this.inverterSettingService.updateValueByUserIdAndDeviceId(
       userId,
       deviceId,
