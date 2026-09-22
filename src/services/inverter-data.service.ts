@@ -412,9 +412,10 @@ export class InverterDataService implements OnModuleDestroy {
       data: inverterDataUpdate,
     });
 
-    // 12-number format: positions 11 & 12 (index 10, 11) are pre-calculated
-    // daily totals — upsert by date directly, no accumulation
-    if (parts.length >= 12) {
+    // 12-number format is only used by the newer firmware on GTIControl11xx and
+    // above, where positions 11 & 12 (index 10, 11) are the device's
+    // pre-calculated daily totals — upsert by date directly, no accumulation.
+    if (parts.length >= 12 && this.isAutoCalcDevice(payload.wifiSsid)) {
       const totalA = parseFloat(parts[10]);
       const totalA2 = parseFloat(parts[11]);
       if (isFinite(totalA) || isFinite(totalA2)) {
@@ -451,6 +452,14 @@ export class InverterDataService implements OnModuleDestroy {
         totalA2: currentTotalA2,
       });
     }
+  }
+
+  // Only GTIControl devices numbered 1100 and above send the 12-number format
+  // with pre-calculated daily totals (autoCalculate path).
+  private isAutoCalcDevice(deviceId: string): boolean {
+    const match = /^GTIControl(\d+)$/.exec(deviceId || '');
+    if (!match) return false;
+    return parseInt(match[1], 10) >= 1100;
   }
 
   private getTodayGMT7(): string {

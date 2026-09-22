@@ -41,6 +41,15 @@ export class DailyTotalsService {
     return { start, end };
   }
 
+  // Only GTIControl devices numbered 1100 and above use the autoCalculate path.
+  // autoCalculate records belonging to any other device are invalid and must be
+  // ignored by the calculations.
+  private isAutoCalcDevice(deviceId: string): boolean {
+    const match = /^GTIControl(\d+)$/.exec(deviceId || '');
+    if (!match) return false;
+    return parseInt(match[1], 10) >= 1100;
+  }
+
   /**
    * For auto-calculated records the stored totalA/totalA2 is a cumulative
    * counter reported by the device, not the daily value. The real daily value
@@ -74,6 +83,48 @@ export class DailyTotalsService {
     };
   }
 
+  // Last reading of the GMT+7 day immediately before `dayStart`. Handles legacy
+  // duplicate buckets by taking the max value within that day (the counter is
+  // monotonic, so the max is the day's last reading).
+  private async getPrevDayReading(
+    userId: string,
+    deviceId: string,
+    dayStart: Date,
+  ): Promise<{ totalA: number; totalA2: number } | null> {
+    const latest = await this.dailyTotalsModel
+      .findOne({
+        userId,
+        deviceId,
+        autoCalculate: true,
+        date: { $lt: dayStart },
+        deletedAt: null,
+      })
+      .sort({ date: -1 })
+      .exec();
+    if (!latest) return null;
+
+    const prevStart = this.getGMT7Date(latest.date);
+    const prevEnd = new Date(prevStart.getTime() + 24 * 3600000 - 1);
+    const dayRecords = await this.dailyTotalsModel
+      .find({
+        userId,
+        deviceId,
+        autoCalculate: true,
+        date: { $gte: prevStart, $lte: prevEnd },
+        deletedAt: null,
+      })
+      .exec();
+
+    let maxA = new Decimal(latest.totalA);
+    let maxA2 = new Decimal(latest.totalA2);
+    for (const r of dayRecords) {
+      if (new Decimal(r.totalA).greaterThan(maxA)) maxA = new Decimal(r.totalA);
+      if (new Decimal(r.totalA2).greaterThan(maxA2))
+        maxA2 = new Decimal(r.totalA2);
+    }
+    return { totalA: maxA.toNumber(), totalA2: maxA2.toNumber() };
+  }
+
   /**
    * Convert a month's records into real daily values.
    * For auto-calculated devices the stored value is a cumulative counter, so
@@ -104,10 +155,14 @@ export class DailyTotalsService {
     }> = [];
 
     for (const [deviceId, devRecords] of byDevice) {
-      const isAuto = devRecords.some((r) => r.autoCalculate);
+      const isAuto =
+        this.isAutoCalcDevice(deviceId) &&
+        devRecords.some((r) => r.autoCalculate);
 
       if (!isAuto) {
         for (const record of devRecords) {
+          // Skip autoCalculate records on non-qualifying devices (< 1100).
+          if (record.autoCalculate) continue;
           result.push({
             record,
             totalA: record.totalA,
@@ -202,31 +257,84 @@ export class DailyTotalsService {
       }
     }
 
-    const sortValue = sortOrder === 'desc' ? -1 : 1;
-    const sort: any = { date: sortValue, createdAt: -1 };
+    // Fetch all matching records; auto-calculated devices are collapsed to one
+    // row per GMT+7 day, so pagination is applied in-memory afterwards.
+    const records = await this.dailyTotalsModel
+      .find(filter)
+      .sort({ date: 1 })
+      .exec();
 
-    const [records, total] = await Promise.all([
-      this.dailyTotalsModel
-        .find(filter)
-        .sort(sort)
-        .limit(limit)
-        .skip(offset)
-        .exec(),
-      this.dailyTotalsModel.countDocuments(filter),
-    ]);
+    const byDevice = new Map<string, DailyTotalsDocument[]>();
+    for (const record of records) {
+      const list = byDevice.get(record.deviceId);
+      if (list) list.push(record);
+      else byDevice.set(record.deviceId, [record]);
+    }
 
-    // Auto-calculated records store a cumulative counter; convert to the
-    // real daily value (current reading - previous day's reading).
-    const data = await Promise.all(
-      records.map(async (record) => {
-        if (!record.autoCalculate) return record;
-        const { totalA, totalA2 } = await this.getAutoCalculateDelta(record);
-        const obj = record.toObject();
+    const rows: DailyTotals[] = [];
+
+    for (const [devId, devRecords] of byDevice) {
+      // A device can have both legacy records (real daily values, no
+      // autoCalculate) and new records (cumulative counter, autoCalculate).
+      // Handle them separately — a non-auto record is NOT a cumulative reading
+      // and must never be used as a subtraction baseline.
+      // autoCalculate records only belong to GTIControl11xx+; on any other
+      // device they are invalid and skipped entirely.
+      const isAutoDevice = this.isAutoCalcDevice(devId);
+      const autoRecords = isAutoDevice
+        ? devRecords.filter((r) => r.autoCalculate)
+        : [];
+      const plainRecords = devRecords.filter((r) => !r.autoCalculate);
+
+      // Non auto-calculated records already hold real daily values.
+      rows.push(...plainRecords);
+
+      if (autoRecords.length === 0) continue;
+
+      // Collapse auto records to one reading per GMT+7 day (last reading = max
+      // of the monotonic counter), then daily value = this day - previous
+      // AUTO day.
+      const dayMap = new Map<number, DailyTotalsDocument>();
+      for (const r of autoRecords) {
+        const key = this.getGMT7Date(r.date).getTime();
+        const cur = dayMap.get(key);
+        if (!cur || r.totalA > cur.totalA) dayMap.set(key, r);
+      }
+
+      const dayKeys = [...dayMap.keys()].sort((a, b) => a - b);
+      const ownerId = userId || autoRecords[0].userId;
+      let prev = await this.getPrevDayReading(
+        ownerId,
+        devId,
+        new Date(dayKeys[0]),
+      );
+
+      for (const key of dayKeys) {
+        const rec = dayMap.get(key)!;
+        const totalA = prev
+          ? new Decimal(rec.totalA).minus(prev.totalA).toNumber()
+          : rec.totalA;
+        const totalA2 = prev
+          ? new Decimal(rec.totalA2).minus(prev.totalA2).toNumber()
+          : rec.totalA2;
+
+        const obj = rec.toObject() as DailyTotals;
+        obj.date = new Date(key);
         obj.totalA = totalA;
         obj.totalA2 = totalA2;
-        return obj as DailyTotals;
-      }),
-    );
+        rows.push(obj);
+
+        // Baseline for the next day is this day's raw reading.
+        prev = { totalA: rec.totalA, totalA2: rec.totalA2 };
+      }
+    }
+
+    // Sort combined rows and paginate in-memory.
+    const dir = sortOrder === 'desc' ? -1 : 1;
+    rows.sort((a, b) => (a.date.getTime() - b.date.getTime()) * dir);
+
+    const total = rows.length;
+    const data = rows.slice(offset, offset + limit);
 
     return { data, total, limit, offset };
   }
@@ -428,23 +536,28 @@ export class DailyTotalsService {
     let totalADec = new Decimal(0);
     let totalA2Dec = new Decimal(0);
 
-    for (const devRecords of byDevice.values()) {
-      const isAuto = devRecords.some((r) => r.autoCalculate);
+    for (const [deviceId, devRecords] of byDevice) {
+      const isAuto =
+        this.isAutoCalcDevice(deviceId) &&
+        devRecords.some((r) => r.autoCalculate);
 
       if (isAuto) {
         // Cumulative counter: the range total is the last reading of the end
         // day minus the last reading of the start day (GMT+7). There is one
         // record per day and its value already holds that day's last reading,
         // so the first/last records in the range are those two readings.
-        const first = devRecords[0];
-        const last = devRecords[devRecords.length - 1];
+        const autoRecords = devRecords.filter((r) => r.autoCalculate);
+        const first = autoRecords[0];
+        const last = autoRecords[autoRecords.length - 1];
         const dA = new Decimal(last.totalA).minus(first.totalA);
         const dA2 = new Decimal(last.totalA2).minus(first.totalA2);
         totalADec = totalADec.plus(dA.isNegative() ? 0 : dA);
         totalA2Dec = totalA2Dec.plus(dA2.isNegative() ? 0 : dA2);
       } else {
         // Non auto-calculated records already hold real daily values → sum.
+        // Skip autoCalculate records on non-qualifying devices (< 1100).
         for (const r of devRecords) {
+          if (r.autoCalculate) continue;
           totalADec = totalADec.plus(r.totalA);
           totalA2Dec = totalA2Dec.plus(r.totalA2);
         }
@@ -481,18 +594,23 @@ export class DailyTotalsService {
       .sort({ date: -1, createdAt: -1 })
       .exec();
 
-    // Auto-calculated records store a cumulative counter; convert to the
-    // real daily value (current reading - previous day's reading).
-    return Promise.all(
-      records.map(async (record) => {
-        if (!record.autoCalculate) return record;
-        const { totalA, totalA2 } = await this.getAutoCalculateDelta(record);
-        const obj = record.toObject();
-        obj.totalA = totalA;
-        obj.totalA2 = totalA2;
-        return obj as DailyTotals;
-      }),
-    );
+    // Auto-calculated records store a cumulative counter; convert to the real
+    // daily value (current reading - previous day's reading). autoCalculate
+    // records on non-qualifying devices (< 1100) are invalid and skipped.
+    const results: DailyTotals[] = [];
+    for (const record of records) {
+      if (!record.autoCalculate) {
+        results.push(record);
+        continue;
+      }
+      if (!this.isAutoCalcDevice(record.deviceId)) continue;
+      const { totalA, totalA2 } = await this.getAutoCalculateDelta(record);
+      const obj = record.toObject() as DailyTotals;
+      obj.totalA = totalA;
+      obj.totalA2 = totalA2;
+      results.push(obj);
+    }
+    return results;
   }
 
   async getMonthlyTotals(
@@ -635,18 +753,17 @@ export class DailyTotalsService {
       .sort({ date: 1 })
       .exec();
 
-    const isAuto = records.some((record) => record.autoCalculate);
+    const isAuto =
+      this.isAutoCalcDevice(deviceId) &&
+      records.some((record) => record.autoCalculate);
 
     // Auto-calculated records hold a cumulative counter, so summing them is
     // wrong. The lifetime total is simply the latest reading minus the first
     // reading.
     if (isAuto) {
-      if (records.length === 0) {
-        return { totalA: 0, totalA2: 0 };
-      }
-
-      const first = records[0];
-      const last = records[records.length - 1];
+      const autoRecords = records.filter((record) => record.autoCalculate);
+      const first = autoRecords[0];
+      const last = autoRecords[autoRecords.length - 1];
 
       return {
         totalA: new Decimal(last.totalA).minus(first.totalA).toNumber(),
@@ -655,11 +772,13 @@ export class DailyTotalsService {
     }
 
     // Non auto-calculated records already hold real daily values → sum them.
-    // Use decimal.js for precise aggregation to avoid floating point errors
-    const totalA = records
+    // Skip autoCalculate records on non-qualifying devices (< 1100).
+    // Use decimal.js for precise aggregation to avoid floating point errors.
+    const plainRecords = records.filter((record) => !record.autoCalculate);
+    const totalA = plainRecords
       .reduce((sum, record) => sum.plus(record.totalA), new Decimal(0))
       .toNumber();
-    const totalA2 = records
+    const totalA2 = plainRecords
       .reduce((sum, record) => sum.plus(record.totalA2), new Decimal(0))
       .toNumber();
 
