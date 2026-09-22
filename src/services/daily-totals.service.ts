@@ -600,8 +600,29 @@ export class DailyTotalsService {
   }> {
     const records = await this.dailyTotalsModel
       .find({ userId, deviceId, deletedAt: null })
+      .sort({ date: 1 })
       .exec();
 
+    const isAuto = records.some((record) => record.autoCalculate);
+
+    // Auto-calculated records hold a cumulative counter, so summing them is
+    // wrong. The lifetime total is simply the latest reading minus the first
+    // reading.
+    if (isAuto) {
+      if (records.length === 0) {
+        return { totalA: 0, totalA2: 0 };
+      }
+
+      const first = records[0];
+      const last = records[records.length - 1];
+
+      return {
+        totalA: new Decimal(last.totalA).minus(first.totalA).toNumber(),
+        totalA2: new Decimal(last.totalA2).minus(first.totalA2).toNumber(),
+      };
+    }
+
+    // Non auto-calculated records already hold real daily values → sum them.
     // Use decimal.js for precise aggregation to avoid floating point errors
     const totalA = records
       .reduce((sum, record) => sum.plus(record.totalA), new Decimal(0))
