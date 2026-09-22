@@ -96,6 +96,21 @@ export const removeFromBlacklist = (id: string) => api.delete(`/blacklist/${id}`
 export const removeDeviceFromBlacklist = (deviceId: string) =>
   api.delete(`/blacklist/device/${deviceId}`);
 
+// Beta Firmware Devices
+export const getBetaFirmwareDevices = () => api.get('/beta-firmware');
+
+export const addBetaFirmwareDevice = (data: {
+  deviceId: string;
+  userId?: string;
+  note?: string;
+}) => api.post('/beta-firmware', data);
+
+export const removeBetaFirmwareDevice = (id: string) =>
+  api.delete(`/beta-firmware/${id}`);
+
+export const removeBetaFirmwareByDeviceId = (deviceId: string) =>
+  api.delete(`/beta-firmware/device/${deviceId}`);
+
 // Settings
 export const getSettings = () => api.get('/settings');
 

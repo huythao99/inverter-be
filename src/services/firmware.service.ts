@@ -1,19 +1,22 @@
 import { Injectable } from '@nestjs/common';
 import { InverterDeviceService } from './inverter-device.service';
+import { BetaFirmwareDeviceService } from './beta-firmware-device.service';
 
 @Injectable()
 export class FirmwareService {
   private readonly FIRMWARE_BASE_URL = 'https://giabao-inverter.com/firmware';
 
-  constructor(private readonly inverterDeviceService: InverterDeviceService) {}
+  constructor(
+    private readonly inverterDeviceService: InverterDeviceService,
+    private readonly betaFirmwareDeviceService: BetaFirmwareDeviceService,
+  ) {}
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  getFirmwareUrl(deviceId: string): { url: string } {
-    // You can add logic here to return different firmware URLs based on deviceId
-    // For now, returning the same firmware URL for all devices
+  // Beta devices are managed from the CMS (matched by deviceId, optionally
+  // scoped to a userId) instead of being hard-coded here.
+  getFirmwareUrl(deviceId: string, userId?: string): { url: string } {
     const firmwareUrl = `${this.FIRMWARE_BASE_URL}/firmware.bin`;
     const firmwareBetaUrl = `${this.FIRMWARE_BASE_URL}/firmware-beta.bin`;
-    if (deviceId == 'GTIControl1349') {
+    if (this.betaFirmwareDeviceService.isBeta(deviceId, userId)) {
       return { url: firmwareBetaUrl };
     }
     return {

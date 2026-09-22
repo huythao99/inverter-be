@@ -7,6 +7,7 @@ import {
   BatteryCharging,
   Users,
   ShieldOff,
+  FlaskConical,
   Settings,
   LogOut,
   Menu,
@@ -29,6 +30,7 @@ const Layout: React.FC = () => {
     { to: '/chargers', icon: BatteryCharging, label: 'Chargers' },
     { to: '/users', icon: Users, label: 'Users' },
     { to: '/blacklist', icon: ShieldOff, label: 'Blacklist' },
+    { to: '/beta-firmware', icon: FlaskConical, label: 'Beta Firmware' },
     { to: '/settings', icon: Settings, label: 'Settings' },
   ];
 

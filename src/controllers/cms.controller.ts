@@ -16,6 +16,7 @@ import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import { AdminGuard } from '../auth/guards/admin.guard';
 import { CmsService } from '../services/cms.service';
 import { BlacklistDeviceService } from '../services/blacklist-device.service';
+import { BetaFirmwareDeviceService } from '../services/beta-firmware-device.service';
 import { AdminLoginDto } from '../dto/admin-login.dto';
 import {
   DeviceQueryDto,
@@ -30,6 +31,7 @@ export class CmsController {
   constructor(
     private readonly cmsService: CmsService,
     private readonly blacklistDeviceService: BlacklistDeviceService,
+    private readonly betaFirmwareDeviceService: BetaFirmwareDeviceService,
   ) {}
 
   // ==================== Authentication ====================
@@ -190,5 +192,35 @@ export class CmsController {
   @UseGuards(AdminGuard)
   async removeDeviceFromBlacklist(@Param('deviceId') deviceId: string) {
     return this.blacklistDeviceService.removeByDeviceId(deviceId);
+  }
+
+  // ==================== Beta Firmware Devices ====================
+
+  @Get('beta-firmware')
+  @UseGuards(AdminGuard)
+  async getBetaFirmwareDevices() {
+    return this.betaFirmwareDeviceService.findAll();
+  }
+
+  @Post('beta-firmware')
+  @UseGuards(AdminGuard)
+  async addBetaFirmwareDevice(
+    @Body('deviceId') deviceId: string,
+    @Body('userId') userId?: string,
+    @Body('note') note?: string,
+  ) {
+    return this.betaFirmwareDeviceService.create({ deviceId, userId, note });
+  }
+
+  @Delete('beta-firmware/:id')
+  @UseGuards(AdminGuard)
+  async removeBetaFirmwareDevice(@Param('id') id: string) {
+    return this.betaFirmwareDeviceService.remove(id);
+  }
+
+  @Delete('beta-firmware/device/:deviceId')
+  @UseGuards(AdminGuard)
+  async removeBetaFirmwareByDeviceId(@Param('deviceId') deviceId: string) {
+    return this.betaFirmwareDeviceService.removeByDeviceId(deviceId);
   }
 }

@@ -9,6 +9,7 @@ import Chargers from './pages/Chargers';
 import ChargerDetail from './pages/ChargerDetail';
 import Users from './pages/Users';
 import Blacklist from './pages/Blacklist';
+import BetaFirmware from './pages/BetaFirmware';
 import Settings from './pages/Settings';
 import './App.css';
 
@@ -65,6 +66,7 @@ function AppRoutes() {
         <Route path="/chargers/:userId/:deviceId" element={<ChargerDetail />} />
         <Route path="/users" element={<Users />} />
         <Route path="/blacklist" element={<Blacklist />} />
+        <Route path="/beta-firmware" element={<BetaFirmware />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

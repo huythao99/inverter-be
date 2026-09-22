@@ -12,12 +12,15 @@ export class FirmwareController {
   constructor(private readonly firmwareService: FirmwareService) {}
 
   @Get()
-  async getFirmwareUrl(@Query('deviceId') deviceId: string) {
+  async getFirmwareUrl(
+    @Query('deviceId') deviceId: string,
+    @Query('userId') userId?: string,
+  ) {
     if (!deviceId) {
       throw new HttpException('deviceId is required', HttpStatus.BAD_REQUEST);
     }
 
-    return this.firmwareService.getFirmwareUrl(deviceId);
+    return this.firmwareService.getFirmwareUrl(deviceId, userId);
   }
 
   @Get('version')
