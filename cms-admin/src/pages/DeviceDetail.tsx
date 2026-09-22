@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import mqtt from 'mqtt';
 import type { MqttClient } from 'mqtt';
 import { getDeviceDetails, triggerFirmwareUpdate } from '../services/api';
+import VirtualList from '../components/VirtualList';
 import {
   ArrowLeft,
   Cpu,
@@ -244,7 +245,7 @@ const DeviceDetail: React.FC = () => {
 
         setRealtimeData(realtimeEntry);
         setRealtimeHistory((prev) => {
-          const newHistory = [realtimeEntry, ...prev].slice(0, 50); // Keep last 50 messages
+          const newHistory = [realtimeEntry, ...prev].slice(0, 10000); // Keep last 10000 messages
           return newHistory;
         });
       } catch (err) {
@@ -470,35 +471,33 @@ const DeviceDetail: React.FC = () => {
               </div>
             )}
 
-            {realtimeData && (
-              <div className="realtime-current">
-                <h4>Latest Data</h4>
-                <p className="last-updated">
-                  Received: {new Date(realtimeData.timestamp).toLocaleString()}
-                </p>
-                {renderJsonValue(
-                  realtimeData.data.parsedValue || realtimeData.data.value,
-                  'real-time data',
-                )}
-              </div>
-            )}
-
             {realtimeHistory.length > 0 && (
-              <div className="realtime-history">
-                <h4>History (Last {realtimeHistory.length} messages)</h4>
-                <div className="history-list">
-                  {realtimeHistory.map((item, index) => (
-                    <div key={index} className="history-item">
-                      <span className="history-time">
-                        {new Date(item.timestamp).toLocaleTimeString()}
-                      </span>
-                      <span className="history-capacity">
-                        A: {formatNumber(item.data.totalACapacity)} | A2:{' '}
-                        {formatNumber(item.data.totalA2Capacity)}
-                      </span>
+              <div className="realtime-messages">
+                <h4>Messages ({realtimeHistory.length})</h4>
+                <VirtualList
+                  items={realtimeHistory}
+                  itemHeight={180}
+                  height={600}
+                  renderItem={(item, index) => (
+                    <div
+                      className={`message-item ${index === 0 ? 'newest' : ''}`}
+                    >
+                      <div className="message-header">
+                        <span className="message-time">
+                          {new Date(item.timestamp).toLocaleString()}
+                        </span>
+                        <span className="history-capacity">
+                          A: {formatNumber(item.data.totalACapacity)} | A2:{' '}
+                          {formatNumber(item.data.totalA2Capacity)}
+                        </span>
+                      </div>
+                      {renderJsonValue(
+                        item.data.parsedValue || item.data.value,
+                        'message',
+                      )}
                     </div>
-                  ))}
-                </div>
+                  )}
+                />
               </div>
             )}
 

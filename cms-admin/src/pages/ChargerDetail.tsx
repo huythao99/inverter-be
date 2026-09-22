@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import mqtt from 'mqtt';
 import type { MqttClient } from 'mqtt';
 import { getChargerDetails, triggerChargerFirmwareUpdate } from '../services/api';
+import VirtualList from '../components/VirtualList';
 import {
   ArrowLeft,
   Cpu,
@@ -166,7 +167,7 @@ const ChargerDetail: React.FC = () => {
       if (!frame) return;
       const entry: FrameEntry = { frame, timestamp: new Date().toISOString() };
       setLatestFrame(entry);
-      setFrameHistory((prev) => [entry, ...prev].slice(0, 50));
+      setFrameHistory((prev) => [entry, ...prev].slice(0, 10000));
       if (frame.type?.toUpperCase() === 'CFG' && frame.SRC) {
         setLiveSrc(frame.SRC);
       }
@@ -355,36 +356,34 @@ const ChargerDetail: React.FC = () => {
               </div>
             )}
 
-            {latestFrame && (
-              <div className="realtime-current">
-                <h4>Latest frame ({latestFrame.frame.type})</h4>
-                <p className="last-updated">
-                  Received: {new Date(latestFrame.timestamp).toLocaleString()}
-                </p>
-                <pre className="json-viewer">
-                  {JSON.stringify(latestFrame.frame, null, 2)}
-                </pre>
-              </div>
-            )}
-
             {frameHistory.length > 0 && (
-              <div className="realtime-history">
-                <h4>History (last {frameHistory.length})</h4>
-                <div className="history-list">
-                  {frameHistory.map((item, i) => (
-                    <div key={i} className="history-item">
-                      <span className="history-time">
-                        {new Date(item.timestamp).toLocaleTimeString()}
-                      </span>
-                      <span className="history-capacity monospace">
-                        {item.frame.type}
-                        {item.frame.VBAT ? ` · VBAT=${item.frame.VBAT}` : ''}
-                        {item.frame.IBAT ? ` · IBAT=${item.frame.IBAT}` : ''}
-                        {item.frame.PPV ? ` · PPV=${item.frame.PPV}` : ''}
-                      </span>
+              <div className="realtime-messages">
+                <h4>Messages ({frameHistory.length})</h4>
+                <VirtualList
+                  items={frameHistory}
+                  itemHeight={180}
+                  height={600}
+                  renderItem={(item, index) => (
+                    <div
+                      className={`message-item ${index === 0 ? 'newest' : ''}`}
+                    >
+                      <div className="message-header">
+                        <span className="message-time">
+                          {new Date(item.timestamp).toLocaleString()}
+                        </span>
+                        <span className="history-capacity monospace">
+                          {item.frame.type}
+                          {item.frame.VBAT ? ` · VBAT=${item.frame.VBAT}` : ''}
+                          {item.frame.IBAT ? ` · IBAT=${item.frame.IBAT}` : ''}
+                          {item.frame.PPV ? ` · PPV=${item.frame.PPV}` : ''}
+                        </span>
+                      </div>
+                      <pre className="json-viewer">
+                        {JSON.stringify(item.frame, null, 2)}
+                      </pre>
                     </div>
-                  ))}
-                </div>
+                  )}
+                />
               </div>
             )}
 
