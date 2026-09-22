@@ -17,24 +17,27 @@ export class DailyTotalsService {
     private dailyTotalsModel: Model<DailyTotalsDocument>,
   ) {}
 
-  private getGMT7Date(date?: Date): Date {
-    const now = date || new Date();
-    const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-    const gmt7 = new Date(utc + 7 * 3600000);
+  private readonly GMT7_OFFSET_MS = 7 * 3600000;
 
-    // Get start of day in GMT+7
-    gmt7.setHours(0, 0, 0, 0);
-    return gmt7;
+  // Start of the given instant's GMT+7 calendar day, expressed in UTC.
+  // Timezone-INDEPENDENT (does not use the server's local timezone), so every
+  // process/server computes the same day key. This prevents the same GMT+7 day
+  // from being stored under two different keys (duplicate buckets).
+  private getGMT7Date(date?: Date): Date {
+    const base = date || new Date();
+    const shifted = new Date(base.getTime() + this.GMT7_OFFSET_MS);
+    return new Date(
+      Date.UTC(
+        shifted.getUTCFullYear(),
+        shifted.getUTCMonth(),
+        shifted.getUTCDate(),
+      ) - this.GMT7_OFFSET_MS,
+    );
   }
 
   private getGMT7DateRange(dateStr: string): { start: Date; end: Date } {
-    const inputDate = new Date(dateStr);
-    const gmt7Date = this.getGMT7Date(inputDate);
-
-    const start = new Date(gmt7Date);
-    const end = new Date(gmt7Date);
-    end.setHours(23, 59, 59, 999);
-
+    const start = this.getGMT7Date(new Date(dateStr));
+    const end = new Date(start.getTime() + 24 * 3600000 - 1);
     return { start, end };
   }
 
@@ -414,13 +417,42 @@ export class DailyTotalsService {
       .sort({ date: 1 })
       .exec();
 
-    // Use decimal.js for precise aggregation to avoid floating point errors
-    const totalA = records
-      .reduce((sum, record) => sum.plus(record.totalA), new Decimal(0))
-      .toNumber();
-    const totalA2 = records
-      .reduce((sum, record) => sum.plus(record.totalA2), new Decimal(0))
-      .toNumber();
+    // Group by device (records are already sorted ascending by date).
+    const byDevice = new Map<string, DailyTotalsDocument[]>();
+    for (const record of records) {
+      const list = byDevice.get(record.deviceId);
+      if (list) list.push(record);
+      else byDevice.set(record.deviceId, [record]);
+    }
+
+    let totalADec = new Decimal(0);
+    let totalA2Dec = new Decimal(0);
+
+    for (const devRecords of byDevice.values()) {
+      const isAuto = devRecords.some((r) => r.autoCalculate);
+
+      if (isAuto) {
+        // Cumulative counter: the range total is the last reading of the end
+        // day minus the last reading of the start day (GMT+7). There is one
+        // record per day and its value already holds that day's last reading,
+        // so the first/last records in the range are those two readings.
+        const first = devRecords[0];
+        const last = devRecords[devRecords.length - 1];
+        const dA = new Decimal(last.totalA).minus(first.totalA);
+        const dA2 = new Decimal(last.totalA2).minus(first.totalA2);
+        totalADec = totalADec.plus(dA.isNegative() ? 0 : dA);
+        totalA2Dec = totalA2Dec.plus(dA2.isNegative() ? 0 : dA2);
+      } else {
+        // Non auto-calculated records already hold real daily values → sum.
+        for (const r of devRecords) {
+          totalADec = totalADec.plus(r.totalA);
+          totalA2Dec = totalA2Dec.plus(r.totalA2);
+        }
+      }
+    }
+
+    const totalA = totalADec.toNumber();
+    const totalA2 = totalA2Dec.toNumber();
 
     return {
       totalA,
