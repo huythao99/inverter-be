@@ -25,6 +25,9 @@ export class DailyTotals {
   @Prop({ type: String, default: 'Asia/Ho_Chi_Minh' })
   timezone: string;
 
+  @Prop({ type: Boolean, default: false })
+  autoCalculate: boolean;
+
   @Prop({ default: Date.now })
   createdAt: Date;
 

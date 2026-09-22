@@ -38,6 +38,116 @@ export class DailyTotalsService {
     return { start, end };
   }
 
+  /**
+   * For auto-calculated records the stored totalA/totalA2 is a cumulative
+   * counter reported by the device, not the daily value. The real daily value
+   * is the current reading minus the previous day's reading. If there is no
+   * previous reading (or the counter was reset, i.e. previous > current) we
+   * fall back to the current reading itself.
+   */
+  private async getAutoCalculateDelta(
+    record: DailyTotalsDocument,
+  ): Promise<{ totalA: number; totalA2: number }> {
+    const prev = await this.dailyTotalsModel
+      .findOne({
+        userId: record.userId,
+        deviceId: record.deviceId,
+        date: { $lt: record.date },
+        deletedAt: null,
+      })
+      .sort({ date: -1 })
+      .exec();
+
+    if (!prev) {
+      return { totalA: record.totalA, totalA2: record.totalA2 };
+    }
+
+    const totalA = new Decimal(record.totalA).minus(prev.totalA);
+    const totalA2 = new Decimal(record.totalA2).minus(prev.totalA2);
+
+    return {
+      totalA: totalA.isNegative() ? record.totalA : totalA.toNumber(),
+      totalA2: totalA2.isNegative() ? record.totalA2 : totalA2.toNumber(),
+    };
+  }
+
+  /**
+   * Convert a month's records into real daily values.
+   * For auto-calculated devices the stored value is a cumulative counter, so
+   * each day's value = its reading minus the previous reading. The baseline for
+   * the first day is the last reading before the month starts, which makes the
+   * summed month total equal to (last reading of the month - last reading of
+   * the previous month). Only one extra query per auto device is needed.
+   */
+  private async computeMonthlyDailyValues(
+    userId: string,
+    monthStart: Date,
+    records: DailyTotalsDocument[],
+  ): Promise<
+    Array<{ record: DailyTotalsDocument; totalA: number; totalA2: number }>
+  > {
+    // Group by device, keeping the ascending-by-date order.
+    const byDevice = new Map<string, DailyTotalsDocument[]>();
+    for (const record of records) {
+      const list = byDevice.get(record.deviceId);
+      if (list) list.push(record);
+      else byDevice.set(record.deviceId, [record]);
+    }
+
+    const result: Array<{
+      record: DailyTotalsDocument;
+      totalA: number;
+      totalA2: number;
+    }> = [];
+
+    for (const [deviceId, devRecords] of byDevice) {
+      const isAuto = devRecords.some((r) => r.autoCalculate);
+
+      if (!isAuto) {
+        for (const record of devRecords) {
+          result.push({
+            record,
+            totalA: record.totalA,
+            totalA2: record.totalA2,
+          });
+        }
+        continue;
+      }
+
+      // Last reading strictly before the month → baseline for the first day.
+      const prevMonth = await this.dailyTotalsModel
+        .findOne({
+          userId,
+          deviceId,
+          date: { $lt: monthStart },
+          deletedAt: null,
+        })
+        .sort({ date: -1 })
+        .exec();
+
+      let prevA = prevMonth ? new Decimal(prevMonth.totalA) : null;
+      let prevA2 = prevMonth ? new Decimal(prevMonth.totalA2) : null;
+
+      for (const record of devRecords) {
+        const curA = new Decimal(record.totalA);
+        const curA2 = new Decimal(record.totalA2);
+        const deltaA = prevA ? curA.minus(prevA) : curA;
+        const deltaA2 = prevA2 ? curA2.minus(prevA2) : curA2;
+
+        result.push({
+          record,
+          totalA: deltaA.isNegative() ? record.totalA : deltaA.toNumber(),
+          totalA2: deltaA2.isNegative() ? record.totalA2 : deltaA2.toNumber(),
+        });
+
+        prevA = curA;
+        prevA2 = curA2;
+      }
+    }
+
+    return result;
+  }
+
   async create(
     createDailyTotalsDto: CreateDailyTotalsDto,
   ): Promise<DailyTotals> {
@@ -152,6 +262,7 @@ export class DailyTotalsService {
     date: string,
     totalA: number,
     totalA2: number,
+    autoCalculate = false,
   ): Promise<DailyTotals> {
     const { start } = this.getGMT7DateRange(date);
 
@@ -166,6 +277,7 @@ export class DailyTotalsService {
           $set: {
             totalA,
             totalA2,
+            autoCalculate,
             timezone: 'Asia/Ho_Chi_Minh',
             updatedAt: new Date(),
           },
@@ -319,10 +431,23 @@ export class DailyTotalsService {
       filter.date = { $gte: start, $lte: end };
     }
 
-    return this.dailyTotalsModel
+    const records = await this.dailyTotalsModel
       .find(filter)
       .sort({ date: -1, createdAt: -1 })
       .exec();
+
+    // Auto-calculated records store a cumulative counter; convert to the
+    // real daily value (current reading - previous day's reading).
+    return Promise.all(
+      records.map(async (record) => {
+        if (!record.autoCalculate) return record;
+        const { totalA, totalA2 } = await this.getAutoCalculateDelta(record);
+        const obj = record.toObject();
+        obj.totalA = totalA;
+        obj.totalA2 = totalA2;
+        return obj as DailyTotals;
+      }),
+    );
   }
 
   async getMonthlyTotals(
@@ -381,13 +506,20 @@ export class DailyTotalsService {
       .sort({ date: 1 })
       .exec();
 
+    // Convert cumulative (auto-calculated) readings into real daily values.
+    const dailyValues = await this.computeMonthlyDailyValues(
+      userId,
+      gmt7Start,
+      records,
+    );
+
     // Group by date
     const dailyMap = new Map<
       string,
       { totalA: number; totalA2: number; devices: Set<string> }
     >();
 
-    records.forEach((record) => {
+    for (const { record, totalA, totalA2 } of dailyValues) {
       const dateKey = record.date.toISOString().split('T')[0];
 
       if (!dailyMap.has(dateKey)) {
@@ -395,10 +527,10 @@ export class DailyTotalsService {
       }
 
       const daily = dailyMap.get(dateKey)!;
-      daily.totalA += record.totalA;
-      daily.totalA2 += record.totalA2;
+      daily.totalA += totalA;
+      daily.totalA2 += totalA2;
       daily.devices.add(record.deviceId);
-    });
+    }
 
     // Convert to array and calculate totals
     const dailyRecords = Array.from(dailyMap.entries()).map(([date, data]) => ({
@@ -545,10 +677,17 @@ export class DailyTotalsService {
       .sort({ date: 1 })
       .exec();
 
+    // Convert cumulative (auto-calculated) readings into real daily values.
+    const dailyValues = await this.computeMonthlyDailyValues(
+      userId,
+      gmt7Start,
+      records,
+    );
+
     // Group by date and sum totals
     const dailyMap = new Map<string, { totalA: Decimal; totalA2: Decimal }>();
 
-    records.forEach((record) => {
+    for (const { record, totalA, totalA2 } of dailyValues) {
       const dateKey = record.date.toISOString().split('T')[0];
 
       if (!dailyMap.has(dateKey)) {
@@ -559,9 +698,9 @@ export class DailyTotalsService {
       }
 
       const daily = dailyMap.get(dateKey)!;
-      daily.totalA = daily.totalA.plus(record.totalA);
-      daily.totalA2 = daily.totalA2.plus(record.totalA2);
-    });
+      daily.totalA = daily.totalA.plus(totalA);
+      daily.totalA2 = daily.totalA2.plus(totalA2);
+    }
 
     // Convert to array format for charting
     return Array.from(dailyMap.entries())

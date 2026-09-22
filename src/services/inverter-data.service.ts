@@ -425,6 +425,7 @@ export class InverterDataService implements OnModuleDestroy {
           today,
           isFinite(totalA) ? totalA / 1000 : 0,
           isFinite(totalA2) ? totalA2 / 1000 : 0,
+          true,
         );
       }
       return;
