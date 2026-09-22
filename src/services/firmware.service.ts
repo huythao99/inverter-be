@@ -12,7 +12,10 @@ export class FirmwareService {
     // You can add logic here to return different firmware URLs based on deviceId
     // For now, returning the same firmware URL for all devices
     const firmwareUrl = `${this.FIRMWARE_BASE_URL}/firmware.bin`;
-
+    const firmwareBetaUrl = `${this.FIRMWARE_BASE_URL}/firmware-beta.bin`;
+    if (deviceId == 'GTIControl1349') {
+      return { url: firmwareBetaUrl };
+    }
     return {
       url: firmwareUrl,
     };
