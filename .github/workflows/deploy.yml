@@ -22,7 +22,16 @@ jobs:
             cd /var/www/inverter-be
 
             echo "Pull latest code..."
+            BEFORE=$(git rev-parse HEAD)
             git pull origin main
+            AFTER=$(git rev-parse HEAD)
+
+            echo "Check for cms-admin changes..."
+            if git diff --name-only "$BEFORE" "$AFTER" -- cms-admin | grep -q .; then
+              CMS_CHANGED=1
+            else
+              CMS_CHANGED=0
+            fi
 
             echo "Install dependencies..."
             npm ci
@@ -30,17 +39,25 @@ jobs:
             echo "Build..."
             npm run build
 
-            echo "Build CMS Admin..."
-            cd cms-admin
-            echo "Build..."
-            npm ci
-            npm run build
+            if [ "$CMS_CHANGED" -eq 1 ]; then
+              echo "CMS Admin changed, building..."
+              cd cms-admin
+              npm ci
+              npm run build
+              cd ..
+            else
+              echo "No cms-admin changes, skipping build."
+            fi
 
             echo "Restart PM2..."
             pm2 restart nestjs
 
-            echo "Reload Nginx..."
-            sudo nginx -t
-            sudo systemctl restart nginx
+            if [ "$CMS_CHANGED" -eq 1 ]; then
+              echo "Reload Nginx..."
+              sudo nginx -t
+              sudo systemctl restart nginx
+            else
+              echo "No cms-admin changes, skipping Nginx restart."
+            fi
 
             echo "Deploy completed!"

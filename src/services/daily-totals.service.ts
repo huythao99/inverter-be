@@ -202,7 +202,7 @@ export class DailyTotalsService {
     const sortValue = sortOrder === 'desc' ? -1 : 1;
     const sort: any = { date: sortValue, createdAt: -1 };
 
-    const [data, total] = await Promise.all([
+    const [records, total] = await Promise.all([
       this.dailyTotalsModel
         .find(filter)
         .sort(sort)
@@ -211,6 +211,19 @@ export class DailyTotalsService {
         .exec(),
       this.dailyTotalsModel.countDocuments(filter),
     ]);
+
+    // Auto-calculated records store a cumulative counter; convert to the
+    // real daily value (current reading - previous day's reading).
+    const data = await Promise.all(
+      records.map(async (record) => {
+        if (!record.autoCalculate) return record;
+        const { totalA, totalA2 } = await this.getAutoCalculateDelta(record);
+        const obj = record.toObject();
+        obj.totalA = totalA;
+        obj.totalA2 = totalA2;
+        return obj as DailyTotals;
+      }),
+    );
 
     return { data, total, limit, offset };
   }
