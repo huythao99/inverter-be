@@ -502,6 +502,17 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     await this.publish(`inverter/${userId}/${deviceId}/cmd/schedule`, {});
   }
 
+  // Remote reboot. QoS 1 and NOT retained: a retained restart would reboot the
+  // device again every time it reconnects. The firmware also ignores commands
+  // older than ~2 minutes (via `ts`) and during the first seconds after boot.
+  async emitRestartDevice(
+    userId: string,
+    deviceId: string,
+    payload: { requestId: string; source: string; ts: number },
+  ): Promise<void> {
+    await this.publish(`inverter/${userId}/${deviceId}/cmd/restart`, payload);
+  }
+
   // ---- Charger triggers (separate namespace, retained per INTEGRATION doc) ----
 
   // Trigger: "setting changed, go pull it". Retained so a device that comes

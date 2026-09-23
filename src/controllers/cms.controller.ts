@@ -17,6 +17,7 @@ import { AdminGuard } from '../auth/guards/admin.guard';
 import { CmsService } from '../services/cms.service';
 import { BlacklistDeviceService } from '../services/blacklist-device.service';
 import { BetaFirmwareDeviceService } from '../services/beta-firmware-device.service';
+import { DeviceRestartService } from '../services/device-restart.service';
 import { AdminLoginDto } from '../dto/admin-login.dto';
 import {
   DeviceQueryDto,
@@ -32,6 +33,7 @@ export class CmsController {
     private readonly cmsService: CmsService,
     private readonly blacklistDeviceService: BlacklistDeviceService,
     private readonly betaFirmwareDeviceService: BetaFirmwareDeviceService,
+    private readonly deviceRestartService: DeviceRestartService,
   ) {}
 
   // ==================== Authentication ====================
@@ -119,6 +121,13 @@ export class CmsController {
     @Body('targetVersion') targetVersion: string,
   ) {
     return this.cmsService.triggerFirmwareUpdate(id, targetVersion);
+  }
+
+  @Post('devices/:id/restart')
+  @UseGuards(AdminGuard)
+  @HttpCode(HttpStatus.OK)
+  async restartDevice(@Param('id') id: string) {
+    return this.deviceRestartService.restartById(id, 'cms');
   }
 
   // ==================== User Management ====================

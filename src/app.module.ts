@@ -16,6 +16,7 @@ import { CmsModule } from './modules/cms.module';
 import { UserApiModule } from './modules/user-api.module';
 import { TrackLogErrorModule } from './modules/track-log-error.module';
 import { MqttModule } from './modules/mqtt.module';
+import { DeviceRestartModule } from './modules/device-restart.module';
 import { BlacklistDeviceModule } from './modules/blacklist-device.module';
 import { BetaFirmwareDeviceModule } from './modules/beta-firmware-device.module';
 import { FirmwareController } from './controllers/firmware.controller';
@@ -62,6 +63,7 @@ import { UserChargerModule } from './modules/user-charger.module';
     BlacklistDeviceModule,
     BetaFirmwareDeviceModule,
     MqttModule,
+    DeviceRestartModule,
     InverterSettingModule,
     MongooseModule.forRootAsync({
       imports: [ConfigModule],

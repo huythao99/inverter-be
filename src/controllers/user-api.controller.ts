@@ -10,6 +10,7 @@ import {
   UseGuards,
   NotFoundException,
   Header,
+  Headers,
 } from '@nestjs/common';
 import { FirebaseAuthGuard } from '../auth/guards/firebase-auth.guard';
 import { CurrentFirebaseUser } from '../auth/decorators/firebase-user.decorator';
@@ -29,6 +30,7 @@ import {
   BLACKLIST_OFF_VALUE,
 } from '../constants/grid-tie.constants';
 import { BlacklistDeviceService } from '../services/blacklist-device.service';
+import { DeviceRestartService } from '../services/device-restart.service';
 
 @Controller('api/user')
 @UseGuards(FirebaseAuthGuard)
@@ -42,6 +44,7 @@ export class UserApiController {
     private readonly shareService: ShareService,
     private readonly dailyTotalsService: DailyTotalsService,
     private readonly blacklistDeviceService: BlacklistDeviceService,
+    private readonly deviceRestartService: DeviceRestartService,
   ) {}
 
   // Verify every member device belongs to the authenticated user.
@@ -566,6 +569,21 @@ export class UserApiController {
     );
 
     return result;
+  }
+
+  // Remote reboot of the device's ESP32 (mobile app + web). Rate-limited to
+  // one request per device per minute.
+  @Post('devices/:deviceId/restart')
+  async restartDevice(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('deviceId') deviceId: string,
+    @Headers('x-client') client?: string,
+  ) {
+    return this.deviceRestartService.restartByUserAndDevice(
+      user.uid,
+      deviceId,
+      client === 'mobile' ? 'app' : 'web',
+    );
   }
 
   // Update device description

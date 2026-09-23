@@ -70,6 +70,9 @@ export const getDeviceDetails = (userId: string, deviceId: string) =>
 export const triggerFirmwareUpdate = (id: string, targetVersion: string) =>
   api.post(`/devices/${id}/firmware-update`, { targetVersion });
 
+// Remote ESP32 reboot via MQTT cmd/restart (1 request per device per minute).
+export const restartDevice = (id: string) => api.post(`/devices/${id}/restart`);
+
 // Users
 export const getUsers = (params?: {
   page?: number;

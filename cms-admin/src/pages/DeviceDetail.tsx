@@ -2,7 +2,11 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import mqtt from 'mqtt';
 import type { MqttClient } from 'mqtt';
-import { getDeviceDetails, triggerFirmwareUpdate } from '../services/api';
+import {
+  getDeviceDetails,
+  triggerFirmwareUpdate,
+  restartDevice,
+} from '../services/api';
 import VirtualList from '../components/VirtualList';
 import {
   ArrowLeft,
@@ -16,6 +20,7 @@ import {
   WifiOff,
   Download,
   Loader2,
+  RotateCcw,
 } from 'lucide-react';
 
 // MQTT WebSocket URL (broker must have WebSocket listener enabled on port 9001)
@@ -98,6 +103,7 @@ const DeviceDetail: React.FC = () => {
 
   // Firmware update state
   const [isUpdatingFirmware, setIsUpdatingFirmware] = useState(false);
+  const [isRestarting, setIsRestarting] = useState(false);
   const [otaStatus, setOtaStatus] = useState<OtaStatus | null>(null);
 
   // Real-time state
@@ -287,6 +293,30 @@ const DeviceDetail: React.FC = () => {
     }
   };
 
+  const handleRestart = async () => {
+    if (!data?.device?._id) return;
+
+    const confirmed = window.confirm(
+      `Restart ${data.device.deviceName || deviceId}?\n\nThe ESP32 will reboot and be offline for about 30 seconds. Settings and schedules are kept.`,
+    );
+    if (!confirmed) return;
+
+    setIsRestarting(true);
+    try {
+      await restartDevice(data.device._id);
+      alert(
+        isConnected
+          ? 'Restart command sent. The device will reboot in a few seconds.'
+          : 'Restart command sent. Note: live MQTT is offline, so the device may not be reachable.',
+      );
+    } catch (err: any) {
+      console.error('Failed to restart device', err);
+      alert(err.response?.data?.message || 'Failed to send restart command');
+    } finally {
+      setIsRestarting(false);
+    }
+  };
+
   if (isLoading) {
     return <div className="loading">Loading device details...</div>;
   }
@@ -351,6 +381,19 @@ const DeviceDetail: React.FC = () => {
                 <Download size={16} />
               )}
               {isUpdatingFirmware ? 'Updating...' : 'Update'}
+            </button>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={handleRestart}
+              disabled={isRestarting}
+              title="Reboot the ESP32 via MQTT"
+            >
+              {isRestarting ? (
+                <Loader2 size={16} className="spin" />
+              ) : (
+                <RotateCcw size={16} />
+              )}
+              {isRestarting ? 'Sending...' : 'Restart'}
             </button>
           </div>
           {/* OTA Progress Display */}
