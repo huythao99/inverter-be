@@ -174,7 +174,15 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
     return { totalA, totalA2, autoCalculate };
   }
 
-  // Batch increment for multiple devices at once - single Redis pipeline
+  // Batch increment for multiple devices at once - single Redis pipeline.
+  //
+  // Redis is the running total for today and is periodically written OVER the
+  // Mongo record ($set). If the Redis hash is missing (Redis restarted /
+  // flushed / evicted mid-day) a plain HINCRBYFLOAT would restart from 0 and
+  // the next flush would overwrite today's Mongo value with a smaller one.
+  // So a missing hash is first seeded from Mongo (HSETNX, never overwrites
+  // increments that landed in the meantime). If Redis is down, the increments
+  // go straight to Mongo; the seed picks them up once Redis is back.
   async incrementDailyTotalsBatch(
     items: Array<{
       userId: string;
@@ -185,31 +193,91 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
   ): Promise<void> {
     if (this.isShuttingDown || items.length === 0) return;
 
+    const date = this.getGMT7Date();
+
+    if (!this.redis || this.redis.status !== 'ready') {
+      await this.incrementInDatabase(items, date);
+      return;
+    }
+
     try {
-      if (!this.redis || this.redis.status !== 'ready') {
-        return; // Skip if Redis not available
-      }
+      const keys = items.map((item) =>
+        this.getRedisKey(item.userId, item.deviceId, date),
+      );
 
-      const date = this.getGMT7Date();
+      // Which hashes are missing?
+      const existsResults = await this.redis
+        .pipeline(keys.map((k) => ['exists', k]))
+        .exec();
+
       const pipeline = this.redis.pipeline();
+      const dbFallback: typeof items = [];
 
-      for (const item of items) {
-        const redisKey = this.getRedisKey(item.userId, item.deviceId, date);
+      await Promise.all(
+        items.map(async (item, i) => {
+          const exists = existsResults?.[i]?.[1];
+          if (exists === 1) return;
+          try {
+            const record = await this.dailyTotalsService.findByUserAndDevice(
+              item.userId,
+              item.deviceId,
+              date,
+            );
+            if (record && !record.autoCalculate) {
+              pipeline.hsetnx(keys[i], 'totalA', String(record.totalA || 0));
+              pipeline.hsetnx(keys[i], 'totalA2', String(record.totalA2 || 0));
+            }
+          } catch {
+            // Can't read today's value: don't risk overwriting it later with
+            // a Redis total that started from 0 — write this one to Mongo.
+            dbFallback.push(item);
+          }
+        }),
+      );
+
+      items.forEach((item, i) => {
+        if (dbFallback.includes(item)) return;
         const dirtyKey = this.getDirtyKey(item.userId, item.deviceId, date);
-
-        pipeline.hincrbyfloat(redisKey, 'totalA', item.totalA);
-        pipeline.hincrbyfloat(redisKey, 'totalA2', item.totalA2);
-        pipeline.expire(redisKey, 7 * 24 * 3600);
+        pipeline.hincrbyfloat(keys[i], 'totalA', item.totalA);
+        pipeline.hincrbyfloat(keys[i], 'totalA2', item.totalA2);
+        pipeline.expire(keys[i], 7 * 24 * 3600);
         pipeline.sadd(this.DIRTY_SET_KEY, dirtyKey);
-      }
+      });
 
       // Set expiry for dirty set once
       pipeline.expire(this.DIRTY_SET_KEY, 7 * 24 * 3600);
 
       await pipeline.exec();
+
+      if (dbFallback.length > 0) {
+        await this.incrementInDatabase(dbFallback, date);
+      }
     } catch {
       // Redis pipeline error - silent
     }
+  }
+
+  // Fallback when Redis can't be used: atomic $inc on today's Mongo record.
+  private async incrementInDatabase(
+    items: Array<{
+      userId: string;
+      deviceId: string;
+      totalA: number;
+      totalA2: number;
+    }>,
+    date: string,
+  ): Promise<void> {
+    await Promise.allSettled(
+      items.map((item) =>
+        this.dailyTotalsService.incrementTotals(
+          item.userId,
+          item.deviceId,
+          date,
+          item.totalA,
+          item.totalA2,
+        ),
+      ),
+    );
   }
 
   async incrementDailyTotals(
@@ -333,10 +401,12 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
       // cumulative counter in Mongo.
       if (!db.autoCalculate) {
         try {
-          await this.redis.hset(redisKey, {
-            totalA: db.totalA.toString(),
-            totalA2: db.totalA2.toString(),
-          });
+          // HSETNX: never overwrite increments that landed after the read.
+          await this.redis
+            .pipeline()
+            .hsetnx(redisKey, 'totalA', db.totalA.toString())
+            .hsetnx(redisKey, 'totalA2', db.totalA2.toString())
+            .exec();
           await this.redis.expire(redisKey, 7 * 24 * 3600);
         } catch {
           // Failed to cache data in Redis - silent
@@ -395,6 +465,10 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
               );
 
               // Remove from dirty set after successful write
+              await this.redis.srem(this.DIRTY_SET_KEY, dirtyKey);
+            } else {
+              // Hash already gone (previous day saved & deleted, or expired):
+              // nothing to flush, drop the stale dirty entry.
               await this.redis.srem(this.DIRTY_SET_KEY, dirtyKey);
             }
           } catch {
@@ -503,21 +577,20 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {}
   }
 
+  // Called when the GMT+7 day changes. The previous day's totals were already
+  // saved to Mongo by savePreviousDayData(); here we only drop the previous
+  // day's entries from the dirty set.
+  //
+  // IMPORTANT: this must NOT delete the new day's keys or the whole dirty set.
+  // The check runs every 10 minutes (and once per cluster instance), so by the
+  // time it runs the new day already holds real increments (totalA2 = grid
+  // import, which happens at night) — deleting them loses that energy.
   private async resetDailyTotals(newDay: string): Promise<void> {
     try {
-      // Clear dirty set for the new day
-      await this.redis.del(this.DIRTY_SET_KEY);
-
-      // Get all Redis keys for the new day (should be empty, but clean up just in case)
-      const newDayPattern = `${this.KEY_PREFIX}:*:*:${newDay}`;
-      const newDayKeys = await this.scanKeys(newDayPattern);
-
-      if (newDayKeys.length > 0) {
-        const batchSize = 100;
-        for (let i = 0; i < newDayKeys.length; i += batchSize) {
-          const batch = newDayKeys.slice(i, i + batchSize);
-          await this.redis.del(...batch);
-        }
+      const dirtyKeys = await this.redis.smembers(this.DIRTY_SET_KEY);
+      const stale = dirtyKeys.filter((k) => !k.endsWith(`:${newDay}`));
+      if (stale.length > 0) {
+        await this.redis.srem(this.DIRTY_SET_KEY, ...stale);
       }
     } catch {
       // Error resetting daily totals - silent

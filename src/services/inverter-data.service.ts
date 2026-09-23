@@ -23,7 +23,9 @@ export class InverterDataService implements OnModuleDestroy {
   >();
   private cleanupTimer: NodeJS.Timeout | null;
   private batchTimer: NodeJS.Timeout | null;
-  private readonly DEDUPLICATION_WINDOW = 3000; // 3 seconds
+  // Must stay <= MqttService.DEVICE_RATE_LIMIT_MS, otherwise two legit frames
+  // with identical content arriving ~2.5s apart would be dropped.
+  private readonly DEDUPLICATION_WINDOW = 2000; // 2 seconds
   private readonly MAX_MEMORY_ENTRIES = 2000; // Support 1000 devices
   private readonly BATCH_INTERVAL = 5000; // Redis batch every 5 seconds
   private readonly DB_FLUSH_INTERVAL = 60000; // MongoDB flush every 60 seconds
@@ -52,6 +54,17 @@ export class InverterDataService implements OnModuleDestroy {
   // Devices already flagged autoCalculate in the DB this process, so we don't
   // hit MongoDB on every 12-number message.
   private autoCalcMarked = new Set<string>();
+
+  // Last accepted odometer reading per device (kWh), for the plausibility
+  // check on 12-number frames.
+  private lastOdometer = new Map<
+    string,
+    { totalA: number; totalA2: number; at: number }
+  >();
+  // Upper bound of a single inverter's power, used to reject impossible
+  // odometer jumps. Generous on purpose: it only has to catch garbage values.
+  private readonly MAX_DEVICE_KW = 50;
+  private readonly ODOMETER_JUMP_MARGIN_KWH = 1;
 
   constructor(
     @InjectModel(InverterData.name)
@@ -422,26 +435,39 @@ export class InverterDataService implements OnModuleDestroy {
       data: inverterDataUpdate,
     });
 
-    // The 12-number format carries pre-calculated daily totals at positions 11
-    // & 12 (index 10, 11) — upsert by date directly, no accumulation. Any device
-    // sending this format is an autoCalculate device; flag it in the DB (once)
-    // so reads can rely on the stored flag instead of the device name.
+    // The 12-number format carries the STM32 ODOMETERS (Wh, monotonic like a
+    // car's km counter) at positions 11 & 12 (index 10, 11). We store the
+    // day's latest reading; the daily value is computed on read as
+    // (this day's reading - previous day's reading). Any device sending this
+    // format is an autoCalculate device; flag it in the DB (once) so reads can
+    // rely on the stored flag instead of the device name.
     if (parts.length >= 12) {
       this.markDeviceAutoCalculate(payload.currentUid, payload.wifiSsid);
 
-      const totalA = parseFloat(parts[10]);
-      const totalA2 = parseFloat(parts[11]);
-      if (isFinite(totalA) || isFinite(totalA2)) {
-        const today = this.getTodayGMT7();
-        void this.dailyTotalsService.upsertByUserAndDevice(
+      const rawA = parseFloat(parts[10]);
+      const rawA2 = parseFloat(parts[11]);
+      // Both odometers must be valid: writing 0 for a bad field would become
+      // the next day's baseline and create a huge fake daily value.
+      if (!isFinite(rawA) || !isFinite(rawA2) || rawA < 0 || rawA2 < 0) {
+        return;
+      }
+      const totalA = rawA / 1000; // Wh -> kWh
+      const totalA2 = rawA2 / 1000;
+
+      if (!this.isPlausibleOdometer(deviceKey, totalA, totalA2, now)) return;
+
+      const today = this.getTodayGMT7();
+      this.dailyTotalsService
+        .upsertOdometerReading(
           payload.currentUid,
           payload.wifiSsid,
           today,
-          isFinite(totalA) ? totalA / 1000 : 0,
-          isFinite(totalA2) ? totalA2 / 1000 : 0,
-          true,
-        );
-      }
+          totalA,
+          totalA2,
+        )
+        .catch(() => {
+          // Write failed - next frame (3s later) carries the same odometer
+        });
       return;
     }
 
@@ -465,6 +491,34 @@ export class InverterDataService implements OnModuleDestroy {
         totalA2: currentTotalA2,
       });
     }
+  }
+
+  /**
+   * Reject odometer frames that jump up faster than physically possible
+   * (serial noise / corrupted digits). The allowance grows with the time since
+   * the last accepted reading, so a legit jump after a long offline gap is
+   * accepted once enough time has passed. A DROP is accepted (STM32 reset);
+   * the DB keeps the day's max via $max anyway.
+   */
+  private isPlausibleOdometer(
+    deviceKey: string,
+    totalA: number,
+    totalA2: number,
+    now: number,
+  ): boolean {
+    const last = this.lastOdometer.get(deviceKey);
+    if (last) {
+      const hours = Math.max(now - last.at, 0) / 3600000;
+      const allowed = this.MAX_DEVICE_KW * hours + this.ODOMETER_JUMP_MARGIN_KWH;
+      if (totalA - last.totalA > allowed || totalA2 - last.totalA2 > allowed) {
+        return false;
+      }
+    }
+    if (this.lastOdometer.size > this.MAX_MEMORY_ENTRIES) {
+      this.lastOdometer.clear();
+    }
+    this.lastOdometer.set(deviceKey, { totalA, totalA2, at: now });
+    return true;
   }
 
   // Flag a device as autoCalculate in the DB the first time it reports the

@@ -28,6 +28,17 @@ export class DailyTotals {
   @Prop({ type: Boolean, default: false })
   autoCalculate: boolean;
 
+  // Odometer devices only: FIRST odometer reading seen on this GMT+7 day
+  // (kept with $min). Used as the baseline when there is no previous day's
+  // reading (first day online), so that day's value is (last - first seen)
+  // instead of the whole odometer. Absent on legacy records.
+  // NO default on purpose: $min on a null field would keep null forever.
+  @Prop({ type: Number })
+  odoStartA?: number;
+
+  @Prop({ type: Number })
+  odoStartA2?: number;
+
   @Prop({ default: Date.now })
   createdAt: Date;
 

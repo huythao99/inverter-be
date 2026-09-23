@@ -15,6 +15,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   private messageHandlers = new Map<string, number>();
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 10;
+  private readonly DEVICE_RATE_LIMIT_MS = 2000;
   private haStatePrefix: string;
 
   constructor(
@@ -162,12 +163,17 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const deviceKey = `${currentUid}-${wifiSsid}`;
+    // Separate rate-limit buckets for data and device-info messages, so a
+    // device-info message can never swallow the next data frame.
+    const deviceKey = `${isInverter ? 'data' : 'dev'}:${currentUid}-${wifiSsid}`;
 
-    // Rate limit: 3 seconds per device (matches device send interval)
+    // Rate limit per device. The ESP32 publishes every 3s; the window is kept
+    // BELOW that so normal network jitter (e.g. 2.9s between two arrivals)
+    // does not drop a real frame — for 10-number devices every dropped frame
+    // is lost energy.
     const now = Date.now();
     const lastProcessed = this.messageHandlers.get(deviceKey);
-    if (lastProcessed && now - lastProcessed < 3000) {
+    if (lastProcessed && now - lastProcessed < this.DEVICE_RATE_LIMIT_MS) {
       return;
     }
     this.messageHandlers.set(deviceKey, now);

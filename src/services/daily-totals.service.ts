@@ -41,37 +41,109 @@ export class DailyTotalsService {
     return { start, end };
   }
 
-  /**
-   * For auto-calculated records the stored totalA/totalA2 is a cumulative
-   * counter reported by the device, not the daily value. The real daily value
-   * is the current reading minus the previous day's reading. If there is no
-   * previous reading (or the counter was reset, i.e. previous > current) we
-   * fall back to the current reading itself.
-   */
-  private async getAutoCalculateDelta(
-    record: DailyTotalsDocument,
-  ): Promise<{ totalA: number; totalA2: number }> {
-    const prev = await this.dailyTotalsModel
-      .findOne({
-        userId: record.userId,
-        deviceId: record.deviceId,
-        date: { $lt: record.date },
-        deletedAt: null,
-      })
-      .sort({ date: -1 })
-      .exec();
+  // YYYY-MM-DD of the GMT+7 calendar day that contains `date`.
+  // (record.date is stored as GMT+7 midnight = 17:00Z of the previous UTC day,
+  // so a plain toISOString() would be one day early.)
+  private toGMT7DateKey(date: Date): string {
+    return new Date(date.getTime() + this.GMT7_OFFSET_MS)
+      .toISOString()
+      .split('T')[0];
+  }
 
-    if (!prev) {
-      return { totalA: record.totalA, totalA2: record.totalA2 };
+  // [start, end] of a GMT+7 calendar month. Timezone-INDEPENDENT (does not
+  // depend on the server's TZ). Defaults to the current GMT+7 month.
+  private getGMT7MonthRange(
+    year?: number,
+    month?: number,
+  ): { year: number; month: number; start: Date; end: Date } {
+    const nowKey = this.toGMT7DateKey(new Date());
+    const y = Number(year) || Number(nowKey.slice(0, 4));
+    const m = Number(month) || Number(nowKey.slice(5, 7));
+    const start = new Date(Date.UTC(y, m - 1, 1) - this.GMT7_OFFSET_MS);
+    const end = new Date(Date.UTC(y, m, 1) - this.GMT7_OFFSET_MS - 1);
+    return { year: y, month: m, start, end };
+  }
+
+  /**
+   * Convert ONE device's odometer (autoCalculate) records into real daily
+   * values. Records are collapsed to one reading per GMT+7 day (max of each
+   * counter = the day's last reading, also absorbs legacy duplicate buckets).
+   * Daily value = this day's reading - previous day's reading. With no
+   * previous reading (first day online) the first reading seen that day is
+   * the baseline (odoStartA/odoStartA2); if the counter went down (STM32
+   * odometer reset) the reading itself is used.
+   */
+  private odometerToDailyValues(
+    autoRecords: DailyTotalsDocument[],
+    baseline: { totalA: number; totalA2: number } | null,
+  ): Array<{
+    dayStart: Date;
+    record: DailyTotalsDocument;
+    totalA: number;
+    totalA2: number;
+  }> {
+    const toDec = (v: number | null | undefined): Decimal | null =>
+      v === null || v === undefined || !isFinite(v) ? null : new Decimal(v);
+    const minDec = (x: Decimal | null, y: Decimal | null): Decimal | null =>
+      x === null ? y : y === null ? x : Decimal.min(x, y);
+
+    const dayMap = new Map<
+      number,
+      {
+        record: DailyTotalsDocument;
+        a: Decimal;
+        a2: Decimal;
+        startA: Decimal | null;
+        startA2: Decimal | null;
+      }
+    >();
+    for (const r of autoRecords) {
+      const key = this.getGMT7Date(r.date).getTime();
+      const a = new Decimal(r.totalA || 0);
+      const a2 = new Decimal(r.totalA2 || 0);
+      const startA = toDec(r.odoStartA);
+      const startA2 = toDec(r.odoStartA2);
+      const cur = dayMap.get(key);
+      if (!cur) {
+        dayMap.set(key, { record: r, a, a2, startA, startA2 });
+        continue;
+      }
+      if (a.greaterThan(cur.a)) {
+        cur.a = a;
+        cur.record = r;
+      }
+      if (a2.greaterThan(cur.a2)) cur.a2 = a2;
+      cur.startA = minDec(cur.startA, startA);
+      cur.startA2 = minDec(cur.startA2, startA2);
     }
 
-    const totalA = new Decimal(record.totalA).minus(prev.totalA);
-    const totalA2 = new Decimal(record.totalA2).minus(prev.totalA2);
+    let prevA = baseline ? new Decimal(baseline.totalA) : null;
+    let prevA2 = baseline ? new Decimal(baseline.totalA2) : null;
+    const out: Array<{
+      dayStart: Date;
+      record: DailyTotalsDocument;
+      totalA: number;
+      totalA2: number;
+    }> = [];
 
-    return {
-      totalA: totalA.isNegative() ? record.totalA : totalA.toNumber(),
-      totalA2: totalA2.isNegative() ? record.totalA2 : totalA2.toNumber(),
-    };
+    for (const key of [...dayMap.keys()].sort((x, y) => x - y)) {
+      const { record, a, a2, startA, startA2 } = dayMap.get(key)!;
+      // No previous day: measure against the first reading seen that day
+      // (legacy records without it fall back to the whole reading).
+      const baseA = prevA ?? startA;
+      const baseA2 = prevA2 ?? startA2;
+      const dA = baseA ? a.minus(baseA) : a;
+      const dA2 = baseA2 ? a2.minus(baseA2) : a2;
+      out.push({
+        dayStart: new Date(key),
+        record,
+        totalA: dA.isNegative() ? a.toNumber() : dA.toNumber(),
+        totalA2: dA2.isNegative() ? a2.toNumber() : dA2.toNumber(),
+      });
+      prevA = a;
+      prevA2 = a2;
+    }
+    return out;
   }
 
   // Last reading of the GMT+7 day immediately before `dayStart`. Handles legacy
@@ -129,7 +201,12 @@ export class DailyTotalsService {
     monthStart: Date,
     records: DailyTotalsDocument[],
   ): Promise<
-    Array<{ record: DailyTotalsDocument; totalA: number; totalA2: number }>
+    Array<{
+      dateKey: string;
+      deviceId: string;
+      totalA: number;
+      totalA2: number;
+    }>
   > {
     // Group by device, keeping the ascending-by-date order.
     const byDevice = new Map<string, DailyTotalsDocument[]>();
@@ -140,53 +217,40 @@ export class DailyTotalsService {
     }
 
     const result: Array<{
-      record: DailyTotalsDocument;
+      dateKey: string;
+      deviceId: string;
       totalA: number;
       totalA2: number;
     }> = [];
 
     for (const [deviceId, devRecords] of byDevice) {
-      const isAuto = devRecords.some((r) => r.autoCalculate);
-
-      if (!isAuto) {
-        for (const record of devRecords) {
-          result.push({
-            record,
-            totalA: record.totalA,
-            totalA2: record.totalA2,
-          });
-        }
-        continue;
+      // A device can have legacy daily-value records AND odometer records
+      // (after a firmware upgrade) — handle them separately.
+      for (const r of devRecords.filter((x) => !x.autoCalculate)) {
+        result.push({
+          dateKey: this.toGMT7DateKey(r.date),
+          deviceId,
+          totalA: r.totalA,
+          totalA2: r.totalA2,
+        });
       }
 
-      // Last reading strictly before the month → baseline for the first day.
-      const prevMonth = await this.dailyTotalsModel
-        .findOne({
-          userId,
-          deviceId,
-          date: { $lt: monthStart },
-          deletedAt: null,
-        })
-        .sort({ date: -1 })
-        .exec();
+      const autoRecords = devRecords.filter((x) => x.autoCalculate);
+      if (autoRecords.length === 0) continue;
 
-      let prevA = prevMonth ? new Decimal(prevMonth.totalA) : null;
-      let prevA2 = prevMonth ? new Decimal(prevMonth.totalA2) : null;
-
-      for (const record of devRecords) {
-        const curA = new Decimal(record.totalA);
-        const curA2 = new Decimal(record.totalA2);
-        const deltaA = prevA ? curA.minus(prevA) : curA;
-        const deltaA2 = prevA2 ? curA2.minus(prevA2) : curA2;
-
+      // Last odometer reading before the month → baseline for the first day.
+      const baseline = await this.getPrevDayReading(
+        userId,
+        deviceId,
+        monthStart,
+      );
+      for (const d of this.odometerToDailyValues(autoRecords, baseline)) {
         result.push({
-          record,
-          totalA: deltaA.isNegative() ? record.totalA : deltaA.toNumber(),
-          totalA2: deltaA2.isNegative() ? record.totalA2 : deltaA2.toNumber(),
+          dateKey: this.toGMT7DateKey(d.dayStart),
+          deviceId,
+          totalA: d.totalA,
+          totalA2: d.totalA2,
         });
-
-        prevA = curA;
-        prevA2 = curA2;
       }
     }
 
@@ -273,41 +337,20 @@ export class DailyTotalsService {
 
       if (autoRecords.length === 0) continue;
 
-      // Collapse auto records to one reading per GMT+7 day (last reading = max
-      // of the monotonic counter), then daily value = this day - previous
-      // AUTO day.
-      const dayMap = new Map<number, DailyTotalsDocument>();
-      for (const r of autoRecords) {
-        const key = this.getGMT7Date(r.date).getTime();
-        const cur = dayMap.get(key);
-        if (!cur || r.totalA > cur.totalA) dayMap.set(key, r);
-      }
-
-      const dayKeys = [...dayMap.keys()].sort((a, b) => a - b);
+      // Odometer records → one real daily value per GMT+7 day.
       const ownerId = userId || autoRecords[0].userId;
-      let prev = await this.getPrevDayReading(
+      const baseline = await this.getPrevDayReading(
         ownerId,
         devId,
-        new Date(dayKeys[0]),
+        this.getGMT7Date(autoRecords[0].date),
       );
 
-      for (const key of dayKeys) {
-        const rec = dayMap.get(key)!;
-        const totalA = prev
-          ? new Decimal(rec.totalA).minus(prev.totalA).toNumber()
-          : rec.totalA;
-        const totalA2 = prev
-          ? new Decimal(rec.totalA2).minus(prev.totalA2).toNumber()
-          : rec.totalA2;
-
-        const obj = rec.toObject() as DailyTotals;
-        obj.date = new Date(key);
-        obj.totalA = totalA;
-        obj.totalA2 = totalA2;
+      for (const d of this.odometerToDailyValues(autoRecords, baseline)) {
+        const obj = d.record.toObject() as DailyTotals;
+        obj.date = d.dayStart;
+        obj.totalA = d.totalA;
+        obj.totalA2 = d.totalA2;
         rows.push(obj);
-
-        // Baseline for the next day is this day's raw reading.
-        prev = { totalA: rec.totalA, totalA2: rec.totalA2 };
       }
     }
 
@@ -386,6 +429,10 @@ export class DailyTotalsService {
             autoCalculate,
             timezone: 'Asia/Ho_Chi_Minh',
             updatedAt: new Date(),
+            // The unique index (userId, deviceId, date) makes a soft-deleted
+            // record the only possible target: revive it, otherwise new data
+            // would keep landing in an invisible record.
+            deletedAt: null,
           },
           $setOnInsert: {
             userId,
@@ -398,6 +445,46 @@ export class DailyTotalsService {
           new: true,
           upsert: true,
         },
+      )
+      .exec();
+  }
+
+  /**
+   * Store an odometer reading (12-number frame, positions 11 & 12) as the
+   * day's reading. `$max` keeps the stored value monotonic within the day, so
+   * a late/out-of-order frame or a lower glitch value can never pull the
+   * day's last reading (= next day's baseline) down.
+   */
+  async upsertOdometerReading(
+    userId: string,
+    deviceId: string,
+    date: string,
+    totalA: number,
+    totalA2: number,
+  ): Promise<void> {
+    const { start } = this.getGMT7DateRange(date);
+
+    await this.dailyTotalsModel
+      .updateOne(
+        { userId, deviceId, date: start },
+        {
+          $max: { totalA, totalA2 },
+          // First reading of the day = baseline for the first day online.
+          $min: { odoStartA: totalA, odoStartA2: totalA2 },
+          $set: {
+            autoCalculate: true,
+            timezone: 'Asia/Ho_Chi_Minh',
+            updatedAt: new Date(),
+            deletedAt: null,
+          },
+          $setOnInsert: {
+            userId,
+            deviceId,
+            date: start,
+            createdAt: new Date(),
+          },
+        },
+        { upsert: true },
       )
       .exec();
   }
@@ -427,6 +514,7 @@ export class DailyTotalsService {
           },
           $set: {
             updatedAt: new Date(),
+            deletedAt: null,
           },
           $setOnInsert: {
             userId,
@@ -518,36 +606,32 @@ export class DailyTotalsService {
     let totalADec = new Decimal(0);
     let totalA2Dec = new Decimal(0);
 
-    for (const [, devRecords] of byDevice) {
-      const isAuto = devRecords.some((r) => r.autoCalculate);
+    for (const [devId, devRecords] of byDevice) {
+      // Legacy records already hold real daily values → sum.
+      for (const r of devRecords.filter((x) => !x.autoCalculate)) {
+        totalADec = totalADec.plus(r.totalA);
+        totalA2Dec = totalA2Dec.plus(r.totalA2);
+      }
 
-      if (isAuto) {
-        // Cumulative counter: the range total is the last reading of the end
-        // day minus the last reading of the start day (GMT+7). There is one
-        // record per day and its value already holds that day's last reading,
-        // so the first/last records in the range are those two readings.
-        const autoRecords = devRecords.filter((r) => r.autoCalculate);
-        const first = autoRecords[0];
-        const last = autoRecords[autoRecords.length - 1];
-        const dA = new Decimal(last.totalA).minus(first.totalA);
-        const dA2 = new Decimal(last.totalA2).minus(first.totalA2);
-        totalADec = totalADec.plus(dA.isNegative() ? 0 : dA);
-        totalA2Dec = totalA2Dec.plus(dA2.isNegative() ? 0 : dA2);
-      } else {
-        // Non auto-calculated records already hold real daily values → sum.
-        for (const r of devRecords) {
-          totalADec = totalADec.plus(r.totalA);
-          totalA2Dec = totalA2Dec.plus(r.totalA2);
-        }
+      // Odometer records: sum of real daily values, where the first day is
+      // measured against the last reading BEFORE the range (so the first
+      // day's production is not lost).
+      const autoRecords = devRecords.filter((x) => x.autoCalculate);
+      if (autoRecords.length === 0) continue;
+      const baseline = await this.getPrevDayReading(
+        userId,
+        devId,
+        this.getGMT7Date(autoRecords[0].date),
+      );
+      for (const d of this.odometerToDailyValues(autoRecords, baseline)) {
+        totalADec = totalADec.plus(d.totalA);
+        totalA2Dec = totalA2Dec.plus(d.totalA2);
       }
     }
 
-    const totalA = totalADec.toNumber();
-    const totalA2 = totalA2Dec.toNumber();
-
     return {
-      totalA,
-      totalA2,
+      totalA: totalADec.toNumber(),
+      totalA2: totalA2Dec.toNumber(),
       count: records.length,
       records,
     };
@@ -558,7 +642,7 @@ export class DailyTotalsService {
    * deltas applied per device. Global scope by default (no user filter) so CMS
    * analytics can aggregate across everyone; optionally narrowed by
    * userId/deviceId. Each returned entry is one (device, GMT+7 day) with the
-   * day's real value. Summing them is always safe — cumulative counters are
+   * day's real value. Summing them is always safe — odometer readings are
    * never summed raw.
    */
   async getDailyValuesForRange(options: {
@@ -626,43 +710,21 @@ export class DailyTotalsService {
 
       if (autoRecords.length === 0) continue;
 
-      // Collapse cumulative auto readings to one row per GMT+7 day (last reading
-      // = max of the monotonic counter), then daily value = day - previous day.
-      const dayMap = new Map<number, DailyTotalsDocument>();
-      for (const r of autoRecords) {
-        const dayKey = this.getGMT7Date(r.date).getTime();
-        const cur = dayMap.get(dayKey);
-        if (!cur || r.totalA > cur.totalA) dayMap.set(dayKey, r);
-      }
-
-      const dayKeys = [...dayMap.keys()].sort((a, b) => a - b);
       const first = autoRecords[0];
-      let prev = await this.getPrevDayReading(
+      const baseline = await this.getPrevDayReading(
         first.userId,
         first.deviceId,
-        new Date(dayKeys[0]),
+        this.getGMT7Date(first.date),
       );
-
-      for (const dayKey of dayKeys) {
-        const rec = dayMap.get(dayKey)!;
-        const dA = prev
-          ? new Decimal(rec.totalA).minus(prev.totalA)
-          : new Decimal(rec.totalA);
-        const dA2 = prev
-          ? new Decimal(rec.totalA2).minus(prev.totalA2)
-          : new Decimal(rec.totalA2);
-
+      for (const d of this.odometerToDailyValues(autoRecords, baseline)) {
         out.push({
-          userId: rec.userId,
-          deviceId: rec.deviceId,
-          date: new Date(dayKey),
-          totalA: dA.isNegative() ? rec.totalA : dA.toNumber(),
-          totalA2: dA2.isNegative() ? rec.totalA2 : dA2.toNumber(),
-          updatedAt: rec.updatedAt ?? new Date(dayKey),
+          userId: d.record.userId,
+          deviceId: d.record.deviceId,
+          date: d.dayStart,
+          totalA: d.totalA,
+          totalA2: d.totalA2,
+          updatedAt: d.record.updatedAt ?? d.dayStart,
         });
-
-        // Baseline for the next day is this day's raw cumulative reading.
-        prev = { totalA: rec.totalA, totalA2: rec.totalA2 };
       }
     }
 
@@ -685,24 +747,36 @@ export class DailyTotalsService {
 
     const records = await this.dailyTotalsModel
       .find(filter)
-      .sort({ date: -1, createdAt: -1 })
+      .sort({ date: 1, createdAt: 1 })
       .exec();
 
-    // Auto-calculated records store a cumulative counter; convert to the real
-    // daily value (current reading - previous day's reading).
-    const results: DailyTotals[] = [];
-    for (const record of records) {
-      if (!record.autoCalculate) {
-        results.push(record);
-        continue;
-      }
-      const { totalA, totalA2 } = await this.getAutoCalculateDelta(record);
-      const obj = record.toObject() as DailyTotals;
-      obj.totalA = totalA;
-      obj.totalA2 = totalA2;
-      results.push(obj);
+    const results: DailyTotals[] = records.filter((r) => !r.autoCalculate);
+
+    // Odometer records → real daily values, one per device per GMT+7 day
+    // (legacy duplicate buckets in the same day are collapsed, not summed).
+    const autoByDevice = new Map<string, DailyTotalsDocument[]>();
+    for (const r of records) {
+      if (!r.autoCalculate) continue;
+      const list = autoByDevice.get(r.deviceId);
+      if (list) list.push(r);
+      else autoByDevice.set(r.deviceId, [r]);
     }
-    return results;
+    for (const [devId, autoRecords] of autoByDevice) {
+      const baseline = await this.getPrevDayReading(
+        userId,
+        devId,
+        this.getGMT7Date(autoRecords[0].date),
+      );
+      for (const d of this.odometerToDailyValues(autoRecords, baseline)) {
+        const obj = d.record.toObject() as DailyTotals;
+        obj.date = d.dayStart;
+        obj.totalA = d.totalA;
+        obj.totalA2 = d.totalA2;
+        results.push(obj);
+      }
+    }
+
+    return results.sort((a, b) => b.date.getTime() - a.date.getTime());
   }
 
   async getMonthlyTotals(
@@ -729,28 +803,11 @@ export class DailyTotalsService {
       peakDayA2: { date: string; value: number };
     };
   }> {
-    const currentDate = new Date();
-    const targetYear = year || currentDate.getFullYear();
-    const targetMonth = month || currentDate.getMonth() + 1;
-
-    // Create date range for the month in GMT+7
-    const startOfMonth = new Date(targetYear, targetMonth - 1, 1);
-    const endOfMonth = new Date(targetYear, targetMonth, 0, 23, 59, 59, 999);
-
-    // Convert to GMT+7
-    const utcStart =
-      startOfMonth.getTime() + startOfMonth.getTimezoneOffset() * 60000;
-    const gmt7Start = new Date(utcStart + 7 * 3600000);
-    gmt7Start.setHours(0, 0, 0, 0);
-
-    const utcEnd =
-      endOfMonth.getTime() + endOfMonth.getTimezoneOffset() * 60000;
-    const gmt7End = new Date(utcEnd + 7 * 3600000);
-    gmt7End.setHours(23, 59, 59, 999);
+    const range = this.getGMT7MonthRange(year, month);
 
     const filter: any = {
       userId,
-      date: { $gte: gmt7Start, $lte: gmt7End },
+      date: { $gte: range.start, $lte: range.end },
       deletedAt: null,
     };
 
@@ -761,42 +818,49 @@ export class DailyTotalsService {
       .sort({ date: 1 })
       .exec();
 
-    // Convert cumulative (auto-calculated) readings into real daily values.
+    // Convert odometer (auto-calculated) readings into real daily values.
     const dailyValues = await this.computeMonthlyDailyValues(
       userId,
-      gmt7Start,
+      range.start,
       records,
     );
 
-    // Group by date
+    // Group by GMT+7 date
     const dailyMap = new Map<
       string,
-      { totalA: number; totalA2: number; devices: Set<string> }
+      { totalA: Decimal; totalA2: Decimal; devices: Set<string> }
     >();
 
-    for (const { record, totalA, totalA2 } of dailyValues) {
-      const dateKey = record.date.toISOString().split('T')[0];
-
-      if (!dailyMap.has(dateKey)) {
-        dailyMap.set(dateKey, { totalA: 0, totalA2: 0, devices: new Set() });
+    for (const v of dailyValues) {
+      let daily = dailyMap.get(v.dateKey);
+      if (!daily) {
+        daily = {
+          totalA: new Decimal(0),
+          totalA2: new Decimal(0),
+          devices: new Set(),
+        };
+        dailyMap.set(v.dateKey, daily);
       }
-
-      const daily = dailyMap.get(dateKey)!;
-      daily.totalA += totalA;
-      daily.totalA2 += totalA2;
-      daily.devices.add(record.deviceId);
+      daily.totalA = daily.totalA.plus(v.totalA);
+      daily.totalA2 = daily.totalA2.plus(v.totalA2);
+      daily.devices.add(v.deviceId);
     }
 
-    // Convert to array and calculate totals
-    const dailyRecords = Array.from(dailyMap.entries()).map(([date, data]) => ({
-      date,
-      totalA: data.totalA,
-      totalA2: data.totalA2,
-      devices: data.devices.size,
-    }));
+    const dailyRecords = Array.from(dailyMap.entries())
+      .map(([date, data]) => ({
+        date,
+        totalA: data.totalA.toNumber(),
+        totalA2: data.totalA2.toNumber(),
+        devices: data.devices.size,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
 
-    const totalA = dailyRecords.reduce((sum, day) => sum + day.totalA, 0);
-    const totalA2 = dailyRecords.reduce((sum, day) => sum + day.totalA2, 0);
+    const totalA = dailyRecords
+      .reduce((sum, day) => sum.plus(day.totalA), new Decimal(0))
+      .toNumber();
+    const totalA2 = dailyRecords
+      .reduce((sum, day) => sum.plus(day.totalA2), new Decimal(0))
+      .toNumber();
 
     // Calculate summary statistics
     const totalDays = dailyRecords.length;
@@ -818,8 +882,8 @@ export class DailyTotalsService {
     );
 
     return {
-      year: targetYear,
-      month: targetMonth,
+      year: range.year,
+      month: range.month,
       totalA,
       totalA2,
       dailyRecords,
@@ -845,35 +909,26 @@ export class DailyTotalsService {
       .sort({ date: 1 })
       .exec();
 
-    const isAuto = records.some((record) => record.autoCalculate);
+    // Legacy records (real daily values) + odometer records converted to real
+    // daily values — the same numbers the daily list / charts show, so the
+    // lifetime total always equals the sum of the days.
+    let totalA = new Decimal(0);
+    let totalA2 = new Decimal(0);
 
-    // Auto-calculated records hold a cumulative counter, so summing them is
-    // wrong. The lifetime total is simply the latest reading minus the first
-    // reading.
-    if (isAuto) {
-      const autoRecords = records.filter((record) => record.autoCalculate);
-      const first = autoRecords[0];
-      const last = autoRecords[autoRecords.length - 1];
-
-      return {
-        totalA: new Decimal(last.totalA).minus(first.totalA).toNumber(),
-        totalA2: new Decimal(last.totalA2).minus(first.totalA2).toNumber(),
-      };
+    for (const r of records.filter((x) => !x.autoCalculate)) {
+      totalA = totalA.plus(r.totalA);
+      totalA2 = totalA2.plus(r.totalA2);
     }
 
-    // Non auto-calculated records already hold real daily values → sum them.
-    // Use decimal.js for precise aggregation to avoid floating point errors.
-    const plainRecords = records.filter((record) => !record.autoCalculate);
-    const totalA = plainRecords
-      .reduce((sum, record) => sum.plus(record.totalA), new Decimal(0))
-      .toNumber();
-    const totalA2 = plainRecords
-      .reduce((sum, record) => sum.plus(record.totalA2), new Decimal(0))
-      .toNumber();
+    const autoRecords = records.filter((x) => x.autoCalculate);
+    for (const d of this.odometerToDailyValues(autoRecords, null)) {
+      totalA = totalA.plus(d.totalA);
+      totalA2 = totalA2.plus(d.totalA2);
+    }
 
     return {
-      totalA,
-      totalA2,
+      totalA: totalA.toNumber(),
+      totalA2: totalA2.toNumber(),
     };
   }
 
@@ -881,27 +936,16 @@ export class DailyTotalsService {
     userId: string,
     deviceId?: string,
   ): Promise<void> {
-    const currentDate = new Date();
-    const targetYear = currentDate.getFullYear();
-    const targetMonth = currentDate.getMonth() + 1;
-
-    const startOfMonth = new Date(targetYear, targetMonth - 1, 1);
-    const endOfMonth = new Date(targetYear, targetMonth, 0, 23, 59, 59, 999);
-
-    const utcStart =
-      startOfMonth.getTime() + startOfMonth.getTimezoneOffset() * 60000;
-    const gmt7Start = new Date(utcStart + 7 * 3600000);
-    gmt7Start.setHours(0, 0, 0, 0);
-
-    const utcEnd =
-      endOfMonth.getTime() + endOfMonth.getTimezoneOffset() * 60000;
-    const gmt7End = new Date(utcEnd + 7 * 3600000);
-    gmt7End.setHours(23, 59, 59, 999);
+    const range = this.getGMT7MonthRange();
 
     const filter: any = {
       userId,
-      date: { $gte: gmt7Start, $lte: gmt7End },
+      date: { $gte: range.start, $lte: range.end },
       deletedAt: null,
+      // Odometer readings are never cleared: they are the baselines for the
+      // following days, deleting them would make the next day's value jump
+      // by the whole month.
+      autoCalculate: { $ne: true },
     };
 
     if (deviceId) {
@@ -919,28 +963,11 @@ export class DailyTotalsService {
     year?: number,
     month?: number,
   ): Promise<Array<{ date: string; totalA: number; totalA2: number }>> {
-    const currentDate = new Date();
-    const targetYear = year || currentDate.getFullYear();
-    const targetMonth = month || currentDate.getMonth() + 1;
-
-    // Create date range for the month in GMT+7
-    const startOfMonth = new Date(targetYear, targetMonth - 1, 1);
-    const endOfMonth = new Date(targetYear, targetMonth, 0, 23, 59, 59, 999);
-
-    // Convert to GMT+7
-    const utcStart =
-      startOfMonth.getTime() + startOfMonth.getTimezoneOffset() * 60000;
-    const gmt7Start = new Date(utcStart + 7 * 3600000);
-    gmt7Start.setHours(0, 0, 0, 0);
-
-    const utcEnd =
-      endOfMonth.getTime() + endOfMonth.getTimezoneOffset() * 60000;
-    const gmt7End = new Date(utcEnd + 7 * 3600000);
-    gmt7End.setHours(23, 59, 59, 999);
+    const range = this.getGMT7MonthRange(year, month);
 
     const filter: any = {
       userId,
-      date: { $gte: gmt7Start, $lte: gmt7End },
+      date: { $gte: range.start, $lte: range.end },
       deletedAt: null,
     };
 
@@ -951,29 +978,24 @@ export class DailyTotalsService {
       .sort({ date: 1 })
       .exec();
 
-    // Convert cumulative (auto-calculated) readings into real daily values.
+    // Convert odometer (auto-calculated) readings into real daily values.
     const dailyValues = await this.computeMonthlyDailyValues(
       userId,
-      gmt7Start,
+      range.start,
       records,
     );
 
-    // Group by date and sum totals
+    // Group by GMT+7 date and sum totals
     const dailyMap = new Map<string, { totalA: Decimal; totalA2: Decimal }>();
 
-    for (const { record, totalA, totalA2 } of dailyValues) {
-      const dateKey = record.date.toISOString().split('T')[0];
-
-      if (!dailyMap.has(dateKey)) {
-        dailyMap.set(dateKey, {
-          totalA: new Decimal(0),
-          totalA2: new Decimal(0),
-        });
+    for (const v of dailyValues) {
+      let daily = dailyMap.get(v.dateKey);
+      if (!daily) {
+        daily = { totalA: new Decimal(0), totalA2: new Decimal(0) };
+        dailyMap.set(v.dateKey, daily);
       }
-
-      const daily = dailyMap.get(dateKey)!;
-      daily.totalA = daily.totalA.plus(totalA);
-      daily.totalA2 = daily.totalA2.plus(totalA2);
+      daily.totalA = daily.totalA.plus(v.totalA);
+      daily.totalA2 = daily.totalA2.plus(v.totalA2);
     }
 
     // Convert to array format for charting
