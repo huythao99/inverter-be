@@ -146,6 +146,34 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
     return gmt7.toISOString().split('T')[0]; // YYYY-MM-DD
   }
 
+  // Resolve a device's daily value from Mongo with autoCalculate deltas applied.
+  // getDailyTotalsByDay converts cumulative counters to the real daily value and
+  // preserves the per-record autoCalculate flag, which we surface so callers can
+  // avoid caching auto values into Redis.
+  private async getDailyValueFromDb(
+    userId: string,
+    deviceId: string,
+    date: string,
+  ): Promise<{
+    totalA: number;
+    totalA2: number;
+    autoCalculate: boolean;
+  } | null> {
+    const records = await this.dailyTotalsService.getDailyTotalsByDay(
+      userId,
+      deviceId,
+      date,
+    );
+    if (!records || records.length === 0) return null;
+
+    const totalA = records.reduce((sum, r) => sum + r.totalA, 0);
+    const totalA2 = records.reduce((sum, r) => sum + r.totalA2, 0);
+    const autoCalculate = records.some(
+      (r) => (r as { autoCalculate?: boolean }).autoCalculate === true,
+    );
+    return { totalA, totalA2, autoCalculate };
+  }
+
   // Batch increment for multiple devices at once - single Redis pipeline
   async incrementDailyTotalsBatch(
     items: Array<{
@@ -277,59 +305,48 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
 
     try {
       if (!this.redis || this.redis.status !== 'ready') {
-        // console.warn('Redis not available, falling back to database query');
-        const dbRecord = await this.dailyTotalsService.findByUserAndDevice(
-          userId,
-          deviceId,
-          targetDate,
-        );
-        return dbRecord
-          ? { totalA: dbRecord.totalA, totalA2: dbRecord.totalA2 }
-          : null;
+        const db = await this.getDailyValueFromDb(userId, deviceId, targetDate);
+        return db ? { totalA: db.totalA, totalA2: db.totalA2 } : null;
       }
 
       const redisKey = this.getRedisKey(userId, deviceId, targetDate);
       const result = await this.redis.hmget(redisKey, 'totalA', 'totalA2');
 
-      if (!result[0] && !result[1]) {
-        // Try to load from database if not in cache
-        const dbRecord = await this.dailyTotalsService.findByUserAndDevice(
-          userId,
-          deviceId,
-          targetDate,
-        );
-
-        if (dbRecord) {
-          // Load into Redis cache
-          try {
-            await this.redis.hset(redisKey, {
-              totalA: dbRecord.totalA.toString(),
-              totalA2: dbRecord.totalA2.toString(),
-            });
-            await this.redis.expire(redisKey, 7 * 24 * 3600);
-          } catch {
-            // Failed to cache data in Redis - silent
-          }
-
-          return { totalA: dbRecord.totalA, totalA2: dbRecord.totalA2 };
-        }
-
-        return null;
+      // A Redis hit is always a non-autoCalculate device (autoCalculate devices
+      // upsert straight to Mongo and never touch Redis), so the raw value here
+      // is already the correct daily value.
+      if (result[0] || result[1]) {
+        return {
+          totalA: parseFloat(result[0] || '0'),
+          totalA2: parseFloat(result[1] || '0'),
+        };
       }
 
-      return {
-        totalA: parseFloat(result[0] || '0'),
-        totalA2: parseFloat(result[1] || '0'),
-      };
+      // Redis miss: either a non-auto device with no traffic yet, or an
+      // autoCalculate device that lives only in Mongo. Resolve from the DB with
+      // the delta applied.
+      const db = await this.getDailyValueFromDb(userId, deviceId, targetDate);
+      if (!db) return null;
+
+      // Warm the Redis cache only for non-auto devices. Caching an auto value
+      // would serve the wrong number and could later be flushed back over the
+      // cumulative counter in Mongo.
+      if (!db.autoCalculate) {
+        try {
+          await this.redis.hset(redisKey, {
+            totalA: db.totalA.toString(),
+            totalA2: db.totalA2.toString(),
+          });
+          await this.redis.expire(redisKey, 7 * 24 * 3600);
+        } catch {
+          // Failed to cache data in Redis - silent
+        }
+      }
+
+      return { totalA: db.totalA, totalA2: db.totalA2 };
     } catch {
-      const dbRecord = await this.dailyTotalsService.findByUserAndDevice(
-        userId,
-        deviceId,
-        targetDate,
-      );
-      return dbRecord
-        ? { totalA: dbRecord.totalA, totalA2: dbRecord.totalA2 }
-        : null;
+      const db = await this.getDailyValueFromDb(userId, deviceId, targetDate);
+      return db ? { totalA: db.totalA, totalA2: db.totalA2 } : null;
     }
   }
 
@@ -562,6 +579,36 @@ export class RedisDailyTotalsService implements OnModuleInit, OnModuleDestroy {
             });
           }
         }
+      }
+
+      // autoCalculate devices never live in Redis (they upsert straight to
+      // Mongo), so the scan above misses them. Pull them from the DB with the
+      // delta applied and merge them in. No double-counting: non-auto devices
+      // are excluded here and covered by the Redis scan.
+      try {
+        const dbRecords = await this.dailyTotalsService.getDailyTotalsByDay(
+          userId,
+          undefined,
+          today,
+        );
+        const autoByDevice = new Map<
+          string,
+          { totalA: number; totalA2: number }
+        >();
+        for (const r of dbRecords) {
+          if ((r as { autoCalculate?: boolean }).autoCalculate !== true) {
+            continue;
+          }
+          const cur = autoByDevice.get(r.deviceId) || { totalA: 0, totalA2: 0 };
+          cur.totalA += r.totalA;
+          cur.totalA2 += r.totalA2;
+          autoByDevice.set(r.deviceId, cur);
+        }
+        for (const [devId, totals] of autoByDevice) {
+          results.push({ deviceId: devId, ...totals });
+        }
+      } catch {
+        // Failed to merge autoCalculate devices - silent
       }
     }
 

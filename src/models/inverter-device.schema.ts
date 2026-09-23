@@ -22,6 +22,11 @@ export class InverterDevice {
   @Prop({ type: String, default: '' })
   description: string;
 
+  // True once the device has reported the 12-number (pre-calculated daily
+  // totals) format at least once. Marks it as an autoCalculate device.
+  @Prop({ type: Boolean, default: false })
+  autoCalculate: boolean;
+
   @Prop({ default: Date.now })
   updatedAt: Date;
 }

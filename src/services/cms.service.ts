@@ -36,6 +36,7 @@ import {
   InverterSchedule,
   InverterScheduleDocument,
 } from '../models/inverter-schedule.schema';
+import { DailyTotalsService } from './daily-totals.service';
 import {
   DeviceQueryDto,
   UserQueryDto,
@@ -105,6 +106,7 @@ export class CmsService implements OnModuleInit {
     private configService: ConfigService,
     private jwtService: JwtService,
     private mqttService: MqttService,
+    private dailyTotalsService: DailyTotalsService,
   ) {
     this.defaultAdminUsername = this.configService.get<string>(
       'CMS_ADMIN_USERNAME',
@@ -206,30 +208,16 @@ export class CmsService implements OnModuleInit {
       totalDevices,
       totalUsers,
       activeUsers,
-      todayTotals,
+      todayValues,
       devicesAddedToday,
       devicesAddedThisWeek,
     ] = await Promise.all([
       this.inverterDeviceModel.countDocuments().exec(),
       this.mqttCredentialModel.countDocuments().exec(),
       this.mqttCredentialModel.countDocuments({ isActive: true }).exec(),
-      this.dailyTotalsModel
-        .aggregate([
-          {
-            $match: {
-              date: { $gte: todayStart },
-              deletedAt: null,
-            },
-          },
-          {
-            $group: {
-              _id: null,
-              totalA: { $sum: '$totalA' },
-              totalA2: { $sum: '$totalA2' },
-            },
-          },
-        ])
-        .exec(),
+      // Convert to real daily values (autoCalculate deltas applied) before
+      // summing — raw counters must never be summed.
+      this.dailyTotalsService.getDailyValuesForRange({ start: todayStart }),
       this.inverterDeviceModel
         .countDocuments({
           createdAt: { $gte: todayStart },
@@ -242,14 +230,15 @@ export class CmsService implements OnModuleInit {
         .exec(),
     ]);
 
-    const todayData = todayTotals[0] || { totalA: 0, totalA2: 0 };
+    const todayTotalA = todayValues.reduce((sum, v) => sum + v.totalA, 0);
+    const todayTotalA2 = todayValues.reduce((sum, v) => sum + v.totalA2, 0);
 
     return {
       totalDevices,
       totalUsers,
       activeUsers,
-      todayTotalA: todayData.totalA,
-      todayTotalA2: todayData.totalA2,
+      todayTotalA,
+      todayTotalA2,
       devicesAddedToday,
       devicesAddedThisWeek,
     };
@@ -258,110 +247,113 @@ export class CmsService implements OnModuleInit {
   async getAnalytics(query: AnalyticsQueryDto): Promise<AnalyticsData> {
     const { startDate, endDate, userId, deviceId } = query;
 
-    const match: any = { deletedAt: null };
+    let start: Date | undefined;
+    let end: Date | undefined;
 
     if (startDate || endDate) {
-      match.date = {};
-      if (startDate) {
-        match.date.$gte = this.getGMT7DateStart(new Date(startDate));
-      }
+      if (startDate) start = this.getGMT7DateStart(new Date(startDate));
       if (endDate) {
-        const end = this.getGMT7DateStart(new Date(endDate));
+        end = this.getGMT7DateStart(new Date(endDate));
         end.setHours(23, 59, 59, 999);
-        match.date.$lte = end;
       }
     } else {
       // Default to last 30 days
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      match.date = { $gte: this.getGMT7DateStart(thirtyDaysAgo) };
+      start = this.getGMT7DateStart(thirtyDaysAgo);
     }
 
-    if (userId) match.userId = userId;
-    if (deviceId) match.deviceId = deviceId;
+    // Real daily values with autoCalculate deltas applied (never raw counters).
+    const values = await this.dailyTotalsService.getDailyValuesForRange({
+      userId,
+      deviceId,
+      start,
+      end,
+    });
 
-    const [dailyAggregation, deviceAggregation] = await Promise.all([
-      this.dailyTotalsModel
-        .aggregate([
-          { $match: match },
-          {
-            $group: {
-              _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
-              totalA: { $sum: '$totalA' },
-              totalA2: { $sum: '$totalA2' },
-              deviceCount: { $addToSet: '$deviceId' },
-            },
-          },
-          {
-            $project: {
-              date: '$_id',
-              totalA: 1,
-              totalA2: 1,
-              deviceCount: { $size: '$deviceCount' },
-            },
-          },
-          { $sort: { date: 1 } },
-        ])
-        .exec(),
-      this.dailyTotalsModel
-        .aggregate([
-          { $match: match },
-          {
-            $group: {
-              _id: { deviceId: '$deviceId', userId: '$userId' },
-              totalA: { $sum: '$totalA' },
-              totalA2: { $sum: '$totalA2' },
-              lastUpdated: { $max: '$updatedAt' },
-            },
-          },
-          {
-            $lookup: {
-              from: 'inverterdevices',
-              let: { deviceId: '$_id.deviceId', userId: '$_id.userId' },
-              pipeline: [
-                {
-                  $match: {
-                    $expr: {
-                      $and: [
-                        { $eq: ['$deviceId', '$$deviceId'] },
-                        { $eq: ['$userId', '$$userId'] },
-                      ],
-                    },
-                  },
-                },
-              ],
-              as: 'device',
-            },
-          },
-          {
-            $project: {
-              deviceId: '$_id.deviceId',
-              userId: '$_id.userId',
-              totalA: 1,
-              totalA2: 1,
-              lastUpdated: 1,
-              deviceName: { $arrayElemAt: ['$device.deviceName', 0] },
-            },
-          },
-          { $sort: { totalA: -1 } },
-          { $limit: 100 },
-        ])
-        .exec(),
-    ]);
+    // GMT+7 calendar-day label for a stored day-start instant.
+    const dayLabel = (d: Date): string =>
+      new Date(d.getTime() + 7 * 3600000).toISOString().slice(0, 10);
 
-    const dailyTotals = dailyAggregation.map((d: any) => ({
-      date: d.date,
-      totalA: d.totalA,
-      totalA2: d.totalA2,
-      deviceCount: d.deviceCount,
-    }));
+    // Group by day for the daily chart.
+    const dailyMap = new Map<
+      string,
+      { totalA: Decimal; totalA2: Decimal; devices: Set<string> }
+    >();
+    // Group by device for the per-device leaderboard.
+    const deviceMap = new Map<
+      string,
+      { deviceId: string; userId: string; totalA: Decimal; totalA2: Decimal; lastUpdated: Date }
+    >();
 
-    const deviceStats = deviceAggregation.map((d: any) => ({
+    for (const v of values) {
+      const label = dayLabel(v.date);
+      const deviceKey = `${v.userId}:${v.deviceId}`;
+
+      const day = dailyMap.get(label);
+      if (day) {
+        day.totalA = day.totalA.plus(v.totalA);
+        day.totalA2 = day.totalA2.plus(v.totalA2);
+        day.devices.add(deviceKey);
+      } else {
+        dailyMap.set(label, {
+          totalA: new Decimal(v.totalA),
+          totalA2: new Decimal(v.totalA2),
+          devices: new Set([deviceKey]),
+        });
+      }
+
+      const dev = deviceMap.get(deviceKey);
+      if (dev) {
+        dev.totalA = dev.totalA.plus(v.totalA);
+        dev.totalA2 = dev.totalA2.plus(v.totalA2);
+        if (v.updatedAt > dev.lastUpdated) dev.lastUpdated = v.updatedAt;
+      } else {
+        deviceMap.set(deviceKey, {
+          deviceId: v.deviceId,
+          userId: v.userId,
+          totalA: new Decimal(v.totalA),
+          totalA2: new Decimal(v.totalA2),
+          lastUpdated: v.updatedAt,
+        });
+      }
+    }
+
+    const dailyTotals = [...dailyMap.entries()]
+      .map(([date, d]) => ({
+        date,
+        totalA: d.totalA.toNumber(),
+        totalA2: d.totalA2.toNumber(),
+        deviceCount: d.devices.size,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    // Top 100 devices by totalA.
+    const topDevices = [...deviceMap.values()]
+      .sort((a, b) => b.totalA.comparedTo(a.totalA))
+      .slice(0, 100);
+
+    // Resolve device names in one query.
+    const nameMap = new Map<string, string>();
+    if (topDevices.length > 0) {
+      const nameDocs = await this.inverterDeviceModel
+        .find(
+          { deviceId: { $in: topDevices.map((d) => d.deviceId) } },
+          { userId: 1, deviceId: 1, deviceName: 1 },
+        )
+        .lean()
+        .exec();
+      for (const doc of nameDocs) {
+        nameMap.set(`${doc.userId}:${doc.deviceId}`, doc.deviceName);
+      }
+    }
+
+    const deviceStats = topDevices.map((d) => ({
       deviceId: d.deviceId,
-      deviceName: d.deviceName || d.deviceId,
+      deviceName: nameMap.get(`${d.userId}:${d.deviceId}`) || d.deviceId,
       userId: d.userId,
-      totalA: d.totalA,
-      totalA2: d.totalA2,
+      totalA: d.totalA.toNumber(),
+      totalA2: d.totalA2.toNumber(),
       lastUpdated: d.lastUpdated,
     }));
 

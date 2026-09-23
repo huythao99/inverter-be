@@ -1312,3 +1312,147 @@ body {
   font-size: 12px;
   margin-left: 4px;
 }
+
+/* ===== Responsive / Mobile enhancements ===== */
+
+/* Tablet & below */
+@media (max-width: 900px) {
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Phones */
+@media (max-width: 768px) {
+  /* Tables scroll horizontally instead of squishing/clipping */
+  .table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .data-table {
+    min-width: 640px;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 10px 12px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  /* Page titles smaller */
+  .page-header h1,
+  .page-header-actions h1 {
+    font-size: 22px;
+  }
+
+  /* Header with action button stacks */
+  .page-header-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .page-header-actions .btn,
+  .page-header-actions .btn-primary,
+  .page-header-actions .btn-danger {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Search bar stacks */
+  .search-bar {
+    flex-direction: column;
+  }
+
+  .search-bar .btn,
+  .search-bar .btn-primary {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Stat cards tighter */
+  .stats-grid {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+  }
+
+  .stat-card {
+    padding: 16px;
+    gap: 12px;
+  }
+
+  .stat-value {
+    font-size: 20px;
+  }
+
+  /* Info / analytics cards to single column */
+  .info-card {
+    grid-template-columns: 1fr;
+  }
+
+  .analytics-section,
+  .tab-content {
+    padding: 16px;
+  }
+
+  /* Realtime header wraps */
+  .realtime-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* Form actions full width */
+  .form-actions {
+    flex-direction: column-reverse;
+  }
+
+  .form-actions .btn,
+  .form-actions .btn-primary,
+  .form-actions .btn-secondary,
+  .form-actions .btn-danger {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Form card padding */
+  .form-card {
+    padding: 16px;
+  }
+
+  /* Pagination wraps */
+  .pagination {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  /* Connection warning stacks */
+  .connection-warning {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  /* Login card padding */
+  .login-card {
+    padding: 28px 20px;
+  }
+}
+
+/* Very small phones */
+@media (max-width: 420px) {
+  .main-content {
+    padding: 12px;
+    padding-top: 60px;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .page-header h1,
+  .page-header-actions h1 {
+    font-size: 20px;
+  }
+}

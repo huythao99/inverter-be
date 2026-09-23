@@ -7,6 +7,10 @@ import {
   InverterData,
   InverterDataDocument,
 } from '../models/inverter-data.schema';
+import {
+  InverterDevice,
+  InverterDeviceDocument,
+} from '../models/inverter-device.schema';
 import { MqttService } from './mqtt.service';
 import { RedisDailyTotalsService } from './redis-daily-totals.service';
 import { DailyTotalsService } from './daily-totals.service';
@@ -45,9 +49,15 @@ export class InverterDataService implements OnModuleDestroy {
 
   private dbFlushTimer: NodeJS.Timeout | null;
 
+  // Devices already flagged autoCalculate in the DB this process, so we don't
+  // hit MongoDB on every 12-number message.
+  private autoCalcMarked = new Set<string>();
+
   constructor(
     @InjectModel(InverterData.name)
     private inverterDataModel: Model<InverterDataDocument>,
+    @InjectModel(InverterDevice.name)
+    private inverterDeviceModel: Model<InverterDeviceDocument>,
     private mqttService: MqttService,
     private redisDailyTotalsService: RedisDailyTotalsService,
     private dailyTotalsService: DailyTotalsService,
@@ -412,10 +422,13 @@ export class InverterDataService implements OnModuleDestroy {
       data: inverterDataUpdate,
     });
 
-    // 12-number format is only used by the newer firmware on GTIControl11xx and
-    // above, where positions 11 & 12 (index 10, 11) are the device's
-    // pre-calculated daily totals — upsert by date directly, no accumulation.
-    if (parts.length >= 12 && this.isAutoCalcDevice(payload.wifiSsid)) {
+    // The 12-number format carries pre-calculated daily totals at positions 11
+    // & 12 (index 10, 11) — upsert by date directly, no accumulation. Any device
+    // sending this format is an autoCalculate device; flag it in the DB (once)
+    // so reads can rely on the stored flag instead of the device name.
+    if (parts.length >= 12) {
+      this.markDeviceAutoCalculate(payload.currentUid, payload.wifiSsid);
+
       const totalA = parseFloat(parts[10]);
       const totalA2 = parseFloat(parts[11]);
       if (isFinite(totalA) || isFinite(totalA2)) {
@@ -454,12 +467,28 @@ export class InverterDataService implements OnModuleDestroy {
     }
   }
 
-  // Only GTIControl devices numbered 1100 and above send the 12-number format
-  // with pre-calculated daily totals (autoCalculate path).
-  private isAutoCalcDevice(deviceId: string): boolean {
-    const match = /^GTIControl(\d+)$/.exec(deviceId || '');
-    if (!match) return false;
-    return parseInt(match[1], 10) >= 1100;
+  // Flag a device as autoCalculate in the DB the first time it reports the
+  // 12-number format. Cached in-memory so we only write once per process.
+  private markDeviceAutoCalculate(userId: string, deviceId: string): void {
+    const key = `${userId}:${deviceId}`;
+    if (this.autoCalcMarked.has(key)) return;
+    this.autoCalcMarked.add(key);
+
+    this.inverterDeviceModel
+      .updateOne({ userId, deviceId }, { $set: { autoCalculate: true } })
+      .exec()
+      .then((res) => {
+        // The device row may not exist yet (registration is async and handled
+        // elsewhere). If nothing matched, drop the cache flag so a later message
+        // retries once the device has been created.
+        if (!res || res.matchedCount === 0) {
+          this.autoCalcMarked.delete(key);
+        }
+      })
+      .catch(() => {
+        // Failed to flag device - allow a retry on the next message
+        this.autoCalcMarked.delete(key);
+      });
   }
 
   private getTodayGMT7(): string {

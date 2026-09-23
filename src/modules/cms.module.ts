@@ -29,11 +29,13 @@ import {
 } from '../models/inverter-schedule.schema';
 import { AdminJwtStrategy } from '../auth/strategies/admin-jwt.strategy';
 import { CmsGateway } from '../gateways/cms.gateway';
+import { DailyTotalsModule } from './daily-totals.module';
 
 
 @Module({
   imports: [
     ConfigModule,
+    DailyTotalsModule,
     PassportModule.register({ defaultStrategy: 'admin-jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

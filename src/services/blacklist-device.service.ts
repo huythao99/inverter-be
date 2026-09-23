@@ -56,9 +56,16 @@ export class BlacklistDeviceService implements OnModuleInit {
     if (userId) {
       uids = [userId];
     } else {
-      const model =
-        type === 'charger' ? this.chargerDeviceModel : this.inverterDeviceModel;
-      const docs = await model.find({ deviceId }, { userId: 1 }).lean().exec();
+      const docs: Array<{ userId?: string }> =
+        type === 'charger'
+          ? await this.chargerDeviceModel
+              .find({ deviceId }, { userId: 1 })
+              .lean()
+              .exec()
+          : await this.inverterDeviceModel
+              .find({ deviceId }, { userId: 1 })
+              .lean()
+              .exec();
       uids = docs.map((d) => d.userId).filter((u): u is string => !!u);
     }
 
