@@ -18,6 +18,8 @@ import { CmsService } from '../services/cms.service';
 import { BlacklistDeviceService } from '../services/blacklist-device.service';
 import { BetaFirmwareDeviceService } from '../services/beta-firmware-device.service';
 import { DeviceRestartService } from '../services/device-restart.service';
+import { FirmwareBulkUpdateService } from '../services/firmware-bulk-update.service';
+import { BulkFirmwareUpdateDto } from '../dto/bulk-firmware-update.dto';
 import { AdminLoginDto } from '../dto/admin-login.dto';
 import {
   DeviceQueryDto,
@@ -34,6 +36,7 @@ export class CmsController {
     private readonly blacklistDeviceService: BlacklistDeviceService,
     private readonly betaFirmwareDeviceService: BetaFirmwareDeviceService,
     private readonly deviceRestartService: DeviceRestartService,
+    private readonly firmwareBulkUpdateService: FirmwareBulkUpdateService,
   ) {}
 
   // ==================== Authentication ====================
@@ -121,6 +124,28 @@ export class CmsController {
     @Body('targetVersion') targetVersion: string,
   ) {
     return this.cmsService.triggerFirmwareUpdate(id, targetVersion);
+  }
+
+  // ---- Bulk (forced) firmware update ----
+  // Declared before the ':id' routes so 'firmware-bulk-updates' is never
+  // captured as a device id.
+  @Post('firmware-bulk-updates')
+  @UseGuards(AdminGuard)
+  @HttpCode(HttpStatus.OK)
+  async startBulkFirmwareUpdate(@Body() dto: BulkFirmwareUpdateDto) {
+    return this.firmwareBulkUpdateService.start(dto);
+  }
+
+  @Get('firmware-bulk-updates/latest')
+  @UseGuards(AdminGuard)
+  async getLatestBulkFirmwareUpdate() {
+    return { job: await this.firmwareBulkUpdateService.getLatest() };
+  }
+
+  @Get('firmware-bulk-updates/:jobId')
+  @UseGuards(AdminGuard)
+  async getBulkFirmwareUpdate(@Param('jobId') jobId: string) {
+    return this.firmwareBulkUpdateService.getStatus(jobId);
   }
 
   @Post('devices/:id/restart')

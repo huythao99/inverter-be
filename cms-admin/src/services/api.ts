@@ -73,6 +73,37 @@ export const triggerFirmwareUpdate = (id: string, targetVersion: string) =>
 // Remote ESP32 reboot via MQTT cmd/restart (1 request per device per minute).
 export const restartDevice = (id: string) => api.post(`/devices/${id}/restart`);
 
+// Bulk (forced) firmware update: selected device _ids, or every device
+// matching `search` when `all` is true. Triggers are sent in batches.
+export interface BulkFirmwareJob {
+  jobId: string;
+  status: 'sending' | 'sent';
+  createdAt: string;
+  sendingFinishedAt: string | null;
+  total: number;
+  counts: {
+    queued: number;
+    sent: number;
+    in_progress: number;
+    success: number;
+    failed: number;
+  };
+  failed: string[];
+  noResponse: string[];
+}
+
+export const startBulkFirmwareUpdate = (body: {
+  ids?: string[];
+  all?: boolean;
+  search?: string;
+}) => api.post<BulkFirmwareJob>('/firmware-bulk-updates', body);
+
+export const getLatestBulkFirmwareUpdate = () =>
+  api.get<{ job: BulkFirmwareJob | null }>('/firmware-bulk-updates/latest');
+
+export const getBulkFirmwareUpdate = (jobId: string) =>
+  api.get<BulkFirmwareJob>(`/firmware-bulk-updates/${jobId}`);
+
 // Users
 export const getUsers = (params?: {
   page?: number;

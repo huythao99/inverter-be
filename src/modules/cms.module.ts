@@ -30,6 +30,8 @@ import {
 import { AdminJwtStrategy } from '../auth/strategies/admin-jwt.strategy';
 import { CmsGateway } from '../gateways/cms.gateway';
 import { DailyTotalsModule } from './daily-totals.module';
+import { RedisConfig } from '../config/redis.config';
+import { FirmwareBulkUpdateService } from '../services/firmware-bulk-update.service';
 
 
 @Module({
@@ -73,7 +75,13 @@ import { DailyTotalsModule } from './daily-totals.module';
     ]),
   ],
   controllers: [CmsController],
-  providers: [CmsService, AdminJwtStrategy, CmsGateway],
+  providers: [
+    CmsService,
+    AdminJwtStrategy,
+    CmsGateway,
+    RedisConfig,
+    FirmwareBulkUpdateService,
+  ],
   exports: [CmsService],
 })
 export class CmsModule {}
