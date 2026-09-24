@@ -15,7 +15,15 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   private messageHandlers = new Map<string, number>();
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 10;
-  private readonly DEVICE_RATE_LIMIT_MS = 2000;
+  // Backend processes at most one data frame per device every ~3s (DB writes,
+  // 10-number energy accumulation, CMS). ESP32 firmware >= improve_read
+  // publishes every 1s for the live view (apps read MQTT directly, so they
+  // still get 1s); older firmware publishes every 3s. 2.5s accepts exactly
+  // one frame per ~3s for BOTH (1s cadence -> t=0,3,6..; 3s cadence with
+  // up to 0.5s jitter). Do NOT lower below ~2s: the 10-number format adds its
+  // last two values once per accepted frame, so more accepted frames per
+  // minute would inflate those devices' daily energy.
+  private readonly DEVICE_RATE_LIMIT_MS = 2500;
   private haStatePrefix: string;
 
   constructor(
@@ -167,10 +175,8 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     // device-info message can never swallow the next data frame.
     const deviceKey = `${isInverter ? 'data' : 'dev'}:${currentUid}-${wifiSsid}`;
 
-    // Rate limit per device. The ESP32 publishes every 3s; the window is kept
-    // BELOW that so normal network jitter (e.g. 2.9s between two arrivals)
-    // does not drop a real frame — for 10-number devices every dropped frame
-    // is lost energy.
+    // Rate limit per device (see DEVICE_RATE_LIMIT_MS): one frame per ~3s
+    // whether the ESP32 publishes every 1s (new) or every 3s (old firmware).
     const now = Date.now();
     const lastProcessed = this.messageHandlers.get(deviceKey);
     if (lastProcessed && now - lastProcessed < this.DEVICE_RATE_LIMIT_MS) {
