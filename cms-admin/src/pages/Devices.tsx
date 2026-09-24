@@ -59,6 +59,8 @@ const Devices: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectAllMatching, setSelectAllMatching] = useState(false);
   const [showBulkConfirm, setShowBulkConfirm] = useState(false);
+  const [includeUpToDate, setIncludeUpToDate] = useState(false);
+  const [includeBeta, setIncludeBeta] = useState(false);
   const [isStartingBulk, setIsStartingBulk] = useState(false);
   const [bulkError, setBulkError] = useState('');
   const [bulkJob, setBulkJob] = useState<BulkFirmwareJob | null>(null);
@@ -163,8 +165,8 @@ const Devices: React.FC = () => {
     try {
       const res = await startBulkFirmwareUpdate(
         selectAllMatching
-          ? { all: true, search: appliedSearch || undefined }
-          : { ids: Array.from(selectedIds) },
+          ? { all: true, search: appliedSearch || undefined, includeUpToDate, includeBeta }
+          : { ids: Array.from(selectedIds), includeUpToDate, includeBeta },
       );
       setBulkJob(res.data);
       setShowBulkConfirm(false);
@@ -316,8 +318,11 @@ const Devices: React.FC = () => {
             </p>
             <ul className="modal-notes">
               <li>
-                Every device re-downloads and flashes the current firmware, even if it
-                is already up to date, then reboots (offline ~1 minute).
+                Each device downloads and flashes the newest firmware, then reboots
+                (offline ~1 minute).{' '}
+                {includeUpToDate
+                  ? 'Devices already on the newest version are re-flashed too.'
+                  : 'Devices that already report the newest version are skipped.'}
               </li>
               <li>
                 Commands are sent in batches of 10 every 10 seconds
@@ -331,6 +336,24 @@ const Devices: React.FC = () => {
                 again for them later.
               </li>
             </ul>
+            <label className="modal-check">
+              <input
+                type="checkbox"
+                checked={includeUpToDate}
+                onChange={(e) => setIncludeUpToDate(e.target.checked)}
+                disabled={isStartingBulk}
+              />{' '}
+              Also re-flash devices already on the newest version
+            </label>
+            <label className="modal-check">
+              <input
+                type="checkbox"
+                checked={includeBeta}
+                onChange={(e) => setIncludeBeta(e.target.checked)}
+                disabled={isStartingBulk}
+              />{' '}
+              Include beta devices (they get the beta build)
+            </label>
             {bulkError && <p className="error-text">{bulkError}</p>}
             <div className="modal-actions">
               <button
@@ -594,6 +617,15 @@ const BulkJobPanel: React.FC<{
 
       <div className="bulk-counts">
         <span>Total <strong>{total}</strong></span>
+        {job.targetVersion && (
+          <span>Target <strong>{job.targetVersion}</strong></span>
+        )}
+        {(job.skipped ?? 0) > 0 && (
+          <span>Skipped (up to date) <strong>{job.skipped}</strong></span>
+        )}
+        {(job.skippedBeta ?? 0) > 0 && (
+          <span>Skipped (beta) <strong>{job.skippedBeta}</strong></span>
+        )}
         <span>Waiting to send <strong>{counts.queued}</strong></span>
         <span>Sent, no reply <strong>{counts.sent}</strong></span>
         <span>Updating <strong>{counts.in_progress}</strong></span>

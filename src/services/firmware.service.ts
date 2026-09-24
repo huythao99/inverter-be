@@ -2,6 +2,20 @@ import { Injectable } from '@nestjs/common';
 import { InverterDeviceService } from './inverter-device.service';
 import { BetaFirmwareDeviceService } from './beta-firmware-device.service';
 
+/** Newest ESP32 inverter firmware. Bump when a new build is uploaded. */
+export const NEWEST_FIRMWARE_VERSION = '1.0.13';
+
+/** Compare dotted versions numerically: <0 if a<b, 0 if equal, >0 if a>b. */
+export function compareFirmwareVersions(a: string, b: string): number {
+  const pa = a.split('.').map((x) => parseInt(x, 10) || 0);
+  const pb = b.split('.').map((x) => parseInt(x, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
+
 @Injectable()
 export class FirmwareService {
   private readonly FIRMWARE_BASE_URL = 'https://giabao-inverter.com/firmware';
@@ -39,18 +53,18 @@ export class FirmwareService {
     // If device number < 436, return 1.0.6, otherwise return 1.0.0
     if (!isNaN(numericPart) && numericPart < 436) {
       return {
-        firmwareVersion: '1.0.13',
+        firmwareVersion: NEWEST_FIRMWARE_VERSION,
       };
     }
     return {
-      firmwareVersion: device?.firmwareVersion ?? '1.0.13',
+      firmwareVersion: device?.firmwareVersion ?? NEWEST_FIRMWARE_VERSION,
     };
   }
 
   getNewestFirmwareVersion(): { version: string } {
     // Return the current newest firmware version
     // You can update this version number when new firmware is available
-    const newestVersion = '1.0.13';
+    const newestVersion = NEWEST_FIRMWARE_VERSION;
 
     return {
       version: newestVersion,

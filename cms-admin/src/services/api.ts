@@ -81,6 +81,9 @@ export interface BulkFirmwareJob {
   createdAt: string;
   sendingFinishedAt: string | null;
   total: number;
+  targetVersion?: string;
+  skipped?: number;
+  skippedBeta?: number;
   counts: {
     queued: number;
     sent: number;
@@ -96,6 +99,8 @@ export const startBulkFirmwareUpdate = (body: {
   ids?: string[];
   all?: boolean;
   search?: string;
+  includeUpToDate?: boolean;
+  includeBeta?: boolean;
 }) => api.post<BulkFirmwareJob>('/firmware-bulk-updates', body);
 
 export const getLatestBulkFirmwareUpdate = () =>

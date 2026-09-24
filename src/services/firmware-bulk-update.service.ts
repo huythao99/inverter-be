@@ -19,7 +19,12 @@ import {
   InverterDeviceDocument,
 } from '../models/inverter-device.schema';
 import { MqttService } from './mqtt.service';
+import { BetaFirmwareDeviceService } from './beta-firmware-device.service';
 import { BulkFirmwareUpdateDto } from '../dto/bulk-firmware-update.dto';
+import {
+  NEWEST_FIRMWARE_VERSION,
+  compareFirmwareVersions,
+} from './firmware.service';
 
 type DeviceState =
   | 'queued' // waiting for its batch
@@ -34,6 +39,12 @@ export interface BulkJobStatus {
   createdAt: string;
   sendingFinishedAt: string | null;
   total: number;
+  /** Firmware version the job targets. */
+  targetVersion: string;
+  /** Selected devices left out because they already run targetVersion. */
+  skipped: number;
+  /** Selected devices left out because they are on the beta list. */
+  skippedBeta: number;
   counts: Record<DeviceState, number>;
   /** Devices that failed or have not answered yet (capped list). */
   failed: string[];
@@ -70,6 +81,7 @@ export class FirmwareBulkUpdateService implements OnModuleInit, OnModuleDestroy 
     private inverterDeviceModel: Model<InverterDeviceDocument>,
     private redisConfig: RedisConfig,
     private mqttService: MqttService,
+    private betaFirmwareDeviceService: BetaFirmwareDeviceService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -146,7 +158,7 @@ export class FirmwareBulkUpdateService implements OnModuleInit, OnModuleDestroy 
     }
 
     const devices = await this.inverterDeviceModel
-      .find(filter, { userId: 1, deviceId: 1 })
+      .find(filter, { userId: 1, deviceId: 1, firmwareVersion: 1 })
       .sort({ updatedAt: -1 })
       .limit(this.MAX_DEVICES + 1)
       .lean()
@@ -160,8 +172,37 @@ export class FirmwareBulkUpdateService implements OnModuleInit, OnModuleDestroy 
       );
     }
 
+    // Skip devices already on the newest firmware. The version is the one the
+    // device itself PATCHes after every boot, so it is accurate after an OTA.
+    // Devices with no reported version are kept (unknown = maybe outdated).
+    // Beta devices are skipped first (they follow their own beta build, whose
+    // version is unrelated to the stable NEWEST_FIRMWARE_VERSION).
+    const targetVersion = NEWEST_FIRMWARE_VERSION;
+    const nonBeta = dto.includeBeta
+      ? devices
+      : devices.filter(
+          (d) => !this.betaFirmwareDeviceService.isBeta(d.deviceId, d.userId),
+        );
+    const skippedBeta = devices.length - nonBeta.length;
+    const toUpdate = dto.includeUpToDate
+      ? nonBeta
+      : nonBeta.filter(
+          (d) =>
+            !d.firmwareVersion ||
+            compareFirmwareVersions(d.firmwareVersion, targetVersion) < 0,
+        );
+    const skipped = nonBeta.length - toUpdate.length;
+    if (toUpdate.length === 0) {
+      const reasons: string[] = [];
+      if (skipped > 0) reasons.push(`${skipped} already on ${targetVersion}`);
+      if (skippedBeta > 0) reasons.push(`${skippedBeta} on the beta list`);
+      throw new BadRequestException(
+        `Nothing to update: ${reasons.join(', ')}`,
+      );
+    }
+
     const jobId = randomUUID();
-    const targets = devices.map((d) => `${d.userId}/${d.deviceId}`);
+    const targets = toUpdate.map((d) => `${d.userId}/${d.deviceId}`);
     const createdAt = new Date().toISOString();
 
     const pipeline = this.redis.pipeline();
@@ -169,6 +210,9 @@ export class FirmwareBulkUpdateService implements OnModuleInit, OnModuleDestroy 
       status: 'sending',
       createdAt,
       total: String(targets.length),
+      targetVersion,
+      skipped: String(skipped),
+      skippedBeta: String(skippedBeta),
       sendingFinishedAt: '',
     });
     for (let i = 0; i < targets.length; i += 500) {
@@ -182,7 +226,7 @@ export class FirmwareBulkUpdateService implements OnModuleInit, OnModuleDestroy 
     await pipeline.exec();
 
     this.logger.log(
-      `Bulk firmware update ${jobId}: ${targets.length} device(s)`,
+      `Bulk firmware update ${jobId} -> ${targetVersion}: ${targets.length} device(s), ${skipped} skipped (up to date), ${skippedBeta} skipped (beta)`,
     );
     void this.runBatches(jobId, targets);
 
@@ -305,6 +349,9 @@ export class FirmwareBulkUpdateService implements OnModuleInit, OnModuleDestroy 
       createdAt: job.createdAt,
       sendingFinishedAt: job.sendingFinishedAt || null,
       total: Number(job.total) || Object.keys(devices).length,
+      targetVersion: job.targetVersion || NEWEST_FIRMWARE_VERSION,
+      skipped: Number(job.skipped) || 0,
+      skippedBeta: Number(job.skippedBeta) || 0,
       counts,
       failed,
       noResponse,
