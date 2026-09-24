@@ -1605,3 +1605,82 @@ body {
   font-size: 14px;
   cursor: pointer;
 }
+
+/* ---- Bulk update: per-device table ---- */
+.bulk-devices {
+  margin-top: 12px;
+}
+.bulk-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.bulk-filter {
+  border: 1px solid #d1d5db;
+  background: #fff;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.bulk-filter.active {
+  background: #1f2937;
+  border-color: #1f2937;
+  color: #fff;
+}
+.bulk-export {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.bulk-table-wrap {
+  overflow-x: auto;
+  max-height: 420px;
+  overflow-y: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+.bulk-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.bulk-table th,
+.bulk-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid #f0f0f0;
+  text-align: left;
+  vertical-align: top;
+}
+.bulk-table th {
+  position: sticky;
+  top: 0;
+  background: #f9fafb;
+  font-weight: 600;
+}
+.bulk-table td.center {
+  text-align: center;
+}
+.bulk-state {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: #f3f4f6;
+  color: #374151;
+  white-space: nowrap;
+}
+.bulk-state.state-success { background: #dcfce7; color: #166534; }
+.bulk-state.state-failed { background: #fee2e2; color: #991b1b; }
+.bulk-state.state-sent { background: #fef3c7; color: #92400e; }
+.bulk-state.state-in_progress { background: #dbeafe; color: #1e40af; }
+.bulk-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}

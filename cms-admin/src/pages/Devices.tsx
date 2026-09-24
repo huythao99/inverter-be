@@ -10,6 +10,7 @@ import {
   getBulkFirmwareUpdate,
 } from '../services/api';
 import type { BulkFirmwareJob } from '../services/api';
+import BulkJobDevices from '../components/BulkJobDevices';
 import {
   Search,
   Edit2,
@@ -271,17 +272,21 @@ const Devices: React.FC = () => {
                 ? ' (all devices)'
                 : ''}
           </span>
-          {allOnPageSelected &&
-            !selectAllMatching &&
+          {!selectAllMatching &&
             devices &&
             devices.total > selectedIds.size && (
-              <button
-                className="link-button"
-                onClick={() => setSelectAllMatching(true)}
-              >
-                Select all {devices.total} devices
-                {appliedSearch ? ` matching "${appliedSearch}"` : ''}
-              </button>
+              <>
+                <span className="muted">
+                  {allOnPageSelected ? ' — only this page. ' : ' '}
+                </span>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setSelectAllMatching(true)}
+                >
+                  Select all {devices.total} devices
+                  {appliedSearch ? ` matching "${appliedSearch}"` : ''}
+                </button>
+              </>
             )}
           <div className="bulk-bar-actions">
             <button className="btn btn-secondary btn-sm" onClick={clearSelection}>
@@ -354,6 +359,20 @@ const Devices: React.FC = () => {
               />{' '}
               Include beta devices (they get the beta build)
             </label>
+            {!selectAllMatching && devices && devices.total > selectedIds.size && (
+              <p className="muted">
+                Only the {selectedIds.size} checked device
+                {selectedIds.size === 1 ? '' : 's'} will be updated, not all{' '}
+                {devices.total}.{' '}
+                <button
+                  className="link-button"
+                  onClick={() => setSelectAllMatching(true)}
+                  disabled={isStartingBulk}
+                >
+                  Select all {devices.total} instead
+                </button>
+              </p>
+            )}
             {bulkError && <p className="error-text">{bulkError}</p>}
             <div className="modal-actions">
               <button
@@ -626,6 +645,9 @@ const BulkJobPanel: React.FC<{
         {(job.skippedBeta ?? 0) > 0 && (
           <span>Skipped (beta) <strong>{job.skippedBeta}</strong></span>
         )}
+        {(job.skippedLegacy ?? 0) > 0 && (
+          <span>Skipped (legacy &lt; 436) <strong>{job.skippedLegacy}</strong></span>
+        )}
         <span>Waiting to send <strong>{counts.queued}</strong></span>
         <span>Sent, no reply <strong>{counts.sent}</strong></span>
         <span>Updating <strong>{counts.in_progress}</strong></span>
@@ -633,37 +655,13 @@ const BulkJobPanel: React.FC<{
         <span className="bad">Failed <strong>{counts.failed}</strong></span>
       </div>
 
-      {(job.failed.length > 0 || job.noResponse.length > 0) && (
-        <>
-          <button className="link-button" onClick={() => setShowLists(!showLists)}>
-            {showLists ? 'Hide' : 'Show'} failed / no-reply devices
-          </button>
-          {showLists && (
-            <div className="bulk-lists">
-              {job.failed.length > 0 && (
-                <div>
-                  <h4>Failed</h4>
-                  <ul>
-                    {job.failed.map((d) => (
-                      <li key={d} className="monospace">{d}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {job.noResponse.length > 0 && (
-                <div>
-                  <h4>No reply (offline or old firmware)</h4>
-                  <ul>
-                    {job.noResponse.map((d) => (
-                      <li key={d} className="monospace">{d}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
-        </>
-      )}
+      <button className="link-button" onClick={() => setShowLists(!showLists)}>
+        {showLists ? 'Hide' : 'Show'} device details
+        {counts.failed + counts.sent > 0
+          ? ` (${counts.failed} failed, ${counts.sent} no reply)`
+          : ''}
+      </button>
+      {showLists && <BulkJobDevices job={job} />}
     </div>
   );
 };

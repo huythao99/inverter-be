@@ -24,6 +24,7 @@ import { BulkFirmwareUpdateDto } from '../dto/bulk-firmware-update.dto';
 import {
   NEWEST_FIRMWARE_VERSION,
   compareFirmwareVersions,
+  isLegacyDevice,
 } from './firmware.service';
 
 type DeviceState =
@@ -31,7 +32,48 @@ type DeviceState =
   | 'sent' // trigger published, no OTA status yet
   | 'in_progress' // device reported starting / downloading
   | 'success'
-  | 'failed';
+  | 'failed'
+  | 'skipped_uptodate' // not sent: already on the target version
+  | 'skipped_beta' // not sent: on the beta list
+  | 'skipped_legacy'; // not sent: legacy device (number < 436), no OTA
+
+const DEVICE_STATES: DeviceState[] = [
+  'queued',
+  'sent',
+  'in_progress',
+  'success',
+  'failed',
+  'skipped_uptodate',
+  'skipped_beta',
+  'skipped_legacy',
+];
+
+/** Last known details of one device in a job (stored as JSON in Redis). */
+interface DeviceInfo {
+  /** Raw OTA status last reported by the device (starting, downloading...). */
+  otaStatus?: string;
+  progress?: number;
+  message?: string;
+  /** Firmware version the device reported when the job was created. */
+  version?: string;
+  /** ISO time of the last change. */
+  at?: string;
+}
+
+export interface BulkJobDeviceRow extends DeviceInfo {
+  userId: string;
+  deviceId: string;
+  state: DeviceState;
+}
+
+export interface BulkJobDevicesPage {
+  jobId: string;
+  state: DeviceState | 'all';
+  total: number;
+  page: number;
+  limit: number;
+  data: BulkJobDeviceRow[];
+}
 
 export interface BulkJobStatus {
   jobId: string;
@@ -45,6 +87,8 @@ export interface BulkJobStatus {
   skipped: number;
   /** Selected devices left out because they are on the beta list. */
   skippedBeta: number;
+  /** Selected legacy devices (number < 436) left out: they never get OTA. */
+  skippedLegacy: number;
   counts: Record<DeviceState, number>;
   /** Devices that failed or have not answered yet (capped list). */
   failed: string[];
@@ -65,7 +109,9 @@ export interface BulkJobStatus {
  *   reloads (state expires after JOB_TTL_SECONDS).
  */
 @Injectable()
-export class FirmwareBulkUpdateService implements OnModuleInit, OnModuleDestroy {
+export class FirmwareBulkUpdateService
+  implements OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger(FirmwareBulkUpdateService.name);
   private readonly BATCH_SIZE = 10;
   private readonly BATCH_INTERVAL_MS = 10000;
@@ -107,6 +153,12 @@ export class FirmwareBulkUpdateService implements OnModuleInit, OnModuleDestroy 
   }
   private devKey(jobId: string) {
     return `${this.KEY}:job:${jobId}:dev`;
+  }
+  private infoKey(jobId: string) {
+    return `${this.KEY}:job:${jobId}:info`;
+  }
+  private info(i: DeviceInfo): string {
+    return JSON.stringify({ ...i, at: i.at ?? new Date().toISOString() });
   }
   private activeKey(device: string) {
     return `${this.KEY}:active:${device}`;
@@ -177,13 +229,16 @@ export class FirmwareBulkUpdateService implements OnModuleInit, OnModuleDestroy 
     // Devices with no reported version are kept (unknown = maybe outdated).
     // Beta devices are skipped first (they follow their own beta build, whose
     // version is unrelated to the stable NEWEST_FIRMWARE_VERSION).
+    // Legacy devices (number < 436) never get OTA: always skipped.
     const targetVersion = NEWEST_FIRMWARE_VERSION;
+    const nonLegacy = devices.filter((d) => !isLegacyDevice(d.deviceId));
+    const skippedLegacy = devices.length - nonLegacy.length;
     const nonBeta = dto.includeBeta
-      ? devices
-      : devices.filter(
+      ? nonLegacy
+      : nonLegacy.filter(
           (d) => !this.betaFirmwareDeviceService.isBeta(d.deviceId, d.userId),
         );
-    const skippedBeta = devices.length - nonBeta.length;
+    const skippedBeta = nonLegacy.length - nonBeta.length;
     const toUpdate = dto.includeUpToDate
       ? nonBeta
       : nonBeta.filter(
@@ -196,9 +251,10 @@ export class FirmwareBulkUpdateService implements OnModuleInit, OnModuleDestroy 
       const reasons: string[] = [];
       if (skipped > 0) reasons.push(`${skipped} already on ${targetVersion}`);
       if (skippedBeta > 0) reasons.push(`${skippedBeta} on the beta list`);
-      throw new BadRequestException(
-        `Nothing to update: ${reasons.join(', ')}`,
-      );
+      if (skippedLegacy > 0) {
+        reasons.push(`${skippedLegacy} legacy device(s) (number < 436)`);
+      }
+      throw new BadRequestException(`Nothing to update: ${reasons.join(', ')}`);
     }
 
     const jobId = randomUUID();
@@ -213,20 +269,49 @@ export class FirmwareBulkUpdateService implements OnModuleInit, OnModuleDestroy 
       targetVersion,
       skipped: String(skipped),
       skippedBeta: String(skippedBeta),
+      skippedLegacy: String(skippedLegacy),
       sendingFinishedAt: '',
     });
-    for (let i = 0; i < targets.length; i += 500) {
-      const chunk: Record<string, string> = {};
-      for (const t of targets.slice(i, i + 500)) chunk[t] = 'queued';
-      pipeline.hset(this.devKey(jobId), chunk);
+    // Every selected device gets a row (skipped ones too) so the CMS can list
+    // exactly what happened to each of them.
+    const toUpdateSet = new Set(toUpdate);
+    const nonBetaSet = new Set(nonBeta);
+    const nonLegacySet = new Set(nonLegacy);
+    const rows = devices.map((d) => {
+      const state: DeviceState = toUpdateSet.has(d)
+        ? 'queued'
+        : !nonLegacySet.has(d)
+          ? 'skipped_legacy'
+          : nonBetaSet.has(d)
+            ? 'skipped_uptodate'
+            : 'skipped_beta';
+      return {
+        target: `${d.userId}/${d.deviceId}`,
+        state,
+        info: this.info({
+          version: d.firmwareVersion ?? undefined,
+          at: createdAt,
+        }),
+      };
+    });
+    for (let i = 0; i < rows.length; i += 500) {
+      const states: Record<string, string> = {};
+      const infos: Record<string, string> = {};
+      for (const r of rows.slice(i, i + 500)) {
+        states[r.target] = r.state;
+        infos[r.target] = r.info;
+      }
+      pipeline.hset(this.devKey(jobId), states);
+      pipeline.hset(this.infoKey(jobId), infos);
     }
     pipeline.expire(this.jobKey(jobId), this.JOB_TTL_SECONDS);
     pipeline.expire(this.devKey(jobId), this.JOB_TTL_SECONDS);
+    pipeline.expire(this.infoKey(jobId), this.JOB_TTL_SECONDS);
     pipeline.set(this.latestKey, jobId, 'EX', this.JOB_TTL_SECONDS);
     await pipeline.exec();
 
     this.logger.log(
-      `Bulk firmware update ${jobId} -> ${targetVersion}: ${targets.length} device(s), ${skipped} skipped (up to date), ${skippedBeta} skipped (beta)`,
+      `Bulk firmware update ${jobId} -> ${targetVersion}: ${targets.length} device(s), ${skipped} skipped (up to date), ${skippedBeta} skipped (beta), ${skippedLegacy} skipped (legacy)`,
     );
     void this.runBatches(jobId, targets);
 
@@ -255,10 +340,28 @@ export class FirmwareBulkUpdateService implements OnModuleInit, OnModuleDestroy 
             await this.redis
               .pipeline()
               .hset(this.devKey(jobId), target, 'sent')
+              .hset(
+                this.infoKey(jobId),
+                target,
+                await this.mergeInfo(jobId, target, {
+                  message: 'Update command sent, waiting for the device',
+                }),
+              )
               .set(this.activeKey(target), jobId, 'EX', this.ACTIVE_TTL_SECONDS)
               .exec();
           } catch {
-            await this.redis.hset(this.devKey(jobId), target, 'failed');
+            await this.redis
+              .pipeline()
+              .hset(this.devKey(jobId), target, 'failed')
+              .hset(
+                this.infoKey(jobId),
+                target,
+                await this.mergeInfo(jobId, target, {
+                  message: 'Could not publish the MQTT command',
+                }),
+              )
+              .exec()
+              .catch(() => undefined);
           }
         }
         if (i + this.BATCH_SIZE < targets.length) {
@@ -275,12 +378,30 @@ export class FirmwareBulkUpdateService implements OnModuleInit, OnModuleDestroy 
     }
   }
 
+  /** Merge new fields into a device's stored info JSON. */
+  private async mergeInfo(
+    jobId: string,
+    target: string,
+    patch: DeviceInfo,
+  ): Promise<string> {
+    let prev: DeviceInfo = {};
+    try {
+      const raw = await this.redis.hget(this.infoKey(jobId), target);
+      if (raw) prev = JSON.parse(raw) as DeviceInfo;
+    } catch {
+      // Corrupt / missing: start fresh.
+    }
+    return this.info({ ...prev, ...patch, at: undefined });
+  }
+
   /** Track progress from the devices' OTA reports. */
   @OnEvent('ota.status.received')
   async handleOtaStatus(payload: {
     userId: string;
     deviceId: string;
     status?: string;
+    progress?: number;
+    message?: string;
   }): Promise<void> {
     if (this.redis?.status !== 'ready' || !payload.status) return;
     const target = `${payload.userId}/${payload.deviceId}`;
@@ -302,7 +423,20 @@ export class FirmwareBulkUpdateService implements OnModuleInit, OnModuleDestroy 
 
       const prev = await this.redis.hget(this.devKey(jobId), target);
       if (prev === 'success') return; // never downgrade a finished device
-      await this.redis.hset(this.devKey(jobId), target, next);
+      const info = await this.mergeInfo(jobId, target, {
+        otaStatus: payload.status,
+        progress:
+          typeof payload.progress === 'number' ? payload.progress : undefined,
+        message:
+          typeof payload.message === 'string'
+            ? payload.message.slice(0, 200)
+            : undefined,
+      });
+      await this.redis
+        .pipeline()
+        .hset(this.devKey(jobId), target, next)
+        .hset(this.infoKey(jobId), target, info)
+        .exec();
       if (next === 'success' || next === 'failed') {
         await this.redis.del(this.activeKey(target));
       }
@@ -325,19 +459,16 @@ export class FirmwareBulkUpdateService implements OnModuleInit, OnModuleDestroy 
     }
     const devices = await this.redis.hgetall(this.devKey(jobId));
 
-    const counts: Record<DeviceState, number> = {
-      queued: 0,
-      sent: 0,
-      in_progress: 0,
-      success: 0,
-      failed: 0,
-    };
+    const counts = Object.fromEntries(
+      DEVICE_STATES.map((st) => [st, 0]),
+    ) as Record<DeviceState, number>;
     const failed: string[] = [];
     const noResponse: string[] = [];
     for (const [device, state] of Object.entries(devices)) {
       const s = state as DeviceState;
       if (s in counts) counts[s]++;
-      if (s === 'failed' && failed.length < this.LIST_LIMIT) failed.push(device);
+      if (s === 'failed' && failed.length < this.LIST_LIMIT)
+        failed.push(device);
       if (s === 'sent' && noResponse.length < this.LIST_LIMIT) {
         noResponse.push(device);
       }
@@ -352,9 +483,77 @@ export class FirmwareBulkUpdateService implements OnModuleInit, OnModuleDestroy 
       targetVersion: job.targetVersion || NEWEST_FIRMWARE_VERSION,
       skipped: Number(job.skipped) || 0,
       skippedBeta: Number(job.skippedBeta) || 0,
+      skippedLegacy: Number(job.skippedLegacy) || 0,
       counts,
       failed,
       noResponse,
+    };
+  }
+
+  /** Per-device rows of a job, optionally filtered by state (paginated). */
+  async getDevices(
+    jobId: string,
+    state: string | undefined,
+    page = 1,
+    limit = 50,
+  ): Promise<BulkJobDevicesPage> {
+    this.ensureRedis();
+    const exists = await this.redis.exists(this.jobKey(jobId));
+    if (!exists) {
+      throw new NotFoundException('Bulk update job not found or expired');
+    }
+    const filter =
+      state && (DEVICE_STATES as string[]).includes(state)
+        ? (state as DeviceState)
+        : 'all';
+    const [states, infos] = await Promise.all([
+      this.redis.hgetall(this.devKey(jobId)),
+      this.redis.hgetall(this.infoKey(jobId)),
+    ]);
+
+    // Most actionable first: failed, no reply, updating, waiting, done, skipped.
+    const order: Record<DeviceState, number> = {
+      failed: 0,
+      sent: 1,
+      in_progress: 2,
+      queued: 3,
+      success: 4,
+      skipped_uptodate: 5,
+      skipped_beta: 6,
+      skipped_legacy: 7,
+    };
+    const rows: BulkJobDeviceRow[] = [];
+    for (const [target, st] of Object.entries(states)) {
+      if (filter !== 'all' && st !== filter) continue;
+      const slash = target.indexOf('/');
+      let info: DeviceInfo = {};
+      try {
+        if (infos[target]) info = JSON.parse(infos[target]) as DeviceInfo;
+      } catch {
+        // ignore
+      }
+      rows.push({
+        userId: target.slice(0, slash),
+        deviceId: target.slice(slash + 1),
+        state: st as DeviceState,
+        ...info,
+      });
+    }
+    rows.sort(
+      (a, b) =>
+        (order[a.state] ?? 9) - (order[b.state] ?? 9) ||
+        a.deviceId.localeCompare(b.deviceId, undefined, { numeric: true }),
+    );
+
+    const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 5000);
+    const safePage = Math.max(Number(page) || 1, 1);
+    return {
+      jobId,
+      state: filter,
+      total: rows.length,
+      page: safePage,
+      limit: safeLimit,
+      data: rows.slice((safePage - 1) * safeLimit, safePage * safeLimit),
     };
   }
 }

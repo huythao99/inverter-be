@@ -84,12 +84,16 @@ export interface BulkFirmwareJob {
   targetVersion?: string;
   skipped?: number;
   skippedBeta?: number;
+  skippedLegacy?: number;
   counts: {
     queued: number;
     sent: number;
     in_progress: number;
     success: number;
     failed: number;
+    skipped_uptodate?: number;
+    skipped_beta?: number;
+    skipped_legacy?: number;
   };
   failed: string[];
   noResponse: string[];
@@ -108,6 +112,44 @@ export const getLatestBulkFirmwareUpdate = () =>
 
 export const getBulkFirmwareUpdate = (jobId: string) =>
   api.get<BulkFirmwareJob>(`/firmware-bulk-updates/${jobId}`);
+
+export type BulkDeviceState =
+  | 'queued'
+  | 'sent'
+  | 'in_progress'
+  | 'success'
+  | 'failed'
+  | 'skipped_uptodate'
+  | 'skipped_beta'
+  | 'skipped_legacy';
+
+export interface BulkJobDeviceRow {
+  userId: string;
+  deviceId: string;
+  state: BulkDeviceState;
+  otaStatus?: string;
+  progress?: number;
+  message?: string;
+  version?: string;
+  at?: string;
+}
+
+export interface BulkJobDevicesPage {
+  jobId: string;
+  state: BulkDeviceState | 'all';
+  total: number;
+  page: number;
+  limit: number;
+  data: BulkJobDeviceRow[];
+}
+
+export const getBulkFirmwareUpdateDevices = (
+  jobId: string,
+  params: { state?: BulkDeviceState; page?: number; limit?: number },
+) =>
+  api.get<BulkJobDevicesPage>(`/firmware-bulk-updates/${jobId}/devices`, {
+    params,
+  });
 
 // Users
 export const getUsers = (params?: {

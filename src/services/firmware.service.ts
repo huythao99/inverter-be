@@ -5,6 +5,19 @@ import { BetaFirmwareDeviceService } from './beta-firmware-device.service';
 /** Newest ESP32 inverter firmware. Bump when a new build is uploaded. */
 export const NEWEST_FIRMWARE_VERSION = '1.0.13';
 
+/**
+ * Devices numbered below this (e.g. GTIControl435) are legacy units that are
+ * never offered an OTA update: the app always shows them as up to date and
+ * bulk updates skip them.
+ */
+export const LEGACY_DEVICE_MAX_NUMBER = 436;
+
+/** True for legacy devices (numeric part of the deviceId < 436). */
+export function isLegacyDevice(deviceId: string): boolean {
+  const n = parseInt(deviceId.replace(/\D/g, ''), 10);
+  return !isNaN(n) && n < LEGACY_DEVICE_MAX_NUMBER;
+}
+
 /** Compare dotted versions numerically: <0 if a<b, 0 if equal, >0 if a>b. */
 export function compareFirmwareVersions(a: string, b: string): number {
   const pa = a.split('.').map((x) => parseInt(x, 10) || 0);
@@ -47,11 +60,8 @@ export class FirmwareService {
       deviceId,
     );
 
-    // Extract numeric part from deviceId (e.g., GTIControl495 -> 495)
-    const numericPart = parseInt(deviceId.replace(/\D/g, ''), 10);
-
-    // If device number < 436, return 1.0.6, otherwise return 1.0.0
-    if (!isNaN(numericPart) && numericPart < 436) {
+    // Legacy devices are always reported as up to date (no OTA for them).
+    if (isLegacyDevice(deviceId)) {
       return {
         firmwareVersion: NEWEST_FIRMWARE_VERSION,
       };

@@ -142,6 +142,22 @@ export class CmsController {
     return { job: await this.firmwareBulkUpdateService.getLatest() };
   }
 
+  @Get('firmware-bulk-updates/:jobId/devices')
+  @UseGuards(AdminGuard)
+  async getBulkFirmwareUpdateDevices(
+    @Param('jobId') jobId: string,
+    @Query('state') state?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.firmwareBulkUpdateService.getDevices(
+      jobId,
+      state,
+      Number(page) || 1,
+      Number(limit) || 50,
+    );
+  }
+
   @Get('firmware-bulk-updates/:jobId')
   @UseGuards(AdminGuard)
   async getBulkFirmwareUpdate(@Param('jobId') jobId: string) {
