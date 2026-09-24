@@ -2,8 +2,15 @@ import { Injectable } from '@nestjs/common';
 import { InverterDeviceService } from './inverter-device.service';
 import { BetaFirmwareDeviceService } from './beta-firmware-device.service';
 
-/** Newest ESP32 inverter firmware. Bump when a new build is uploaded. */
+/** Newest STABLE ESP32 inverter firmware (firmware.bin). Bump on release. */
 export const NEWEST_FIRMWARE_VERSION = '1.0.13';
+
+/**
+ * Newest BETA firmware (firmware-beta.bin), served to the devices on the CMS
+ * beta list. Bump when a new beta build is uploaded; set it equal to
+ * NEWEST_FIRMWARE_VERSION once the beta is promoted to stable.
+ */
+export const NEWEST_BETA_FIRMWARE_VERSION = '1.0.14';
 
 /**
  * Devices numbered below this (e.g. GTIControl435) are legacy units that are
@@ -71,13 +78,23 @@ export class FirmwareService {
     };
   }
 
-  getNewestFirmwareVersion(): { version: string } {
-    // Return the current newest firmware version
-    // You can update this version number when new firmware is available
-    const newestVersion = NEWEST_FIRMWARE_VERSION;
+  /** Newest version a given device should run (beta list -> beta build). */
+  getTargetVersion(deviceId?: string, userId?: string): string {
+    if (deviceId && this.betaFirmwareDeviceService.isBeta(deviceId, userId)) {
+      return NEWEST_BETA_FIRMWARE_VERSION;
+    }
+    return NEWEST_FIRMWARE_VERSION;
+  }
 
-    return {
-      version: newestVersion,
-    };
+  /**
+   * Without deviceId: the stable version (older apps call it that way).
+   * With deviceId (+ userId): the beta version for devices on the beta list,
+   * so the app offers them the beta update.
+   */
+  getNewestFirmwareVersion(
+    deviceId?: string,
+    userId?: string,
+  ): { version: string } {
+    return { version: this.getTargetVersion(deviceId, userId) };
   }
 }

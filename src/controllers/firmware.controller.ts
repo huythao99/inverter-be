@@ -38,8 +38,13 @@ export class FirmwareController {
     return this.firmwareService.getDeviceFirmwareVersion(userId, deviceId);
   }
 
+  // deviceId/userId are optional: without them the stable version is
+  // returned (backward compatible with older app builds).
   @Get('newest')
-  async getNewestFirmwareVersion() {
-    return this.firmwareService.getNewestFirmwareVersion();
+  getNewestFirmwareVersion(
+    @Query('deviceId') deviceId?: string,
+    @Query('userId') userId?: string,
+  ) {
+    return this.firmwareService.getNewestFirmwareVersion(deviceId, userId);
   }
 }

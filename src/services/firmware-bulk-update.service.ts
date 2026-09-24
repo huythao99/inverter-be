@@ -23,6 +23,7 @@ import { BetaFirmwareDeviceService } from './beta-firmware-device.service';
 import { BulkFirmwareUpdateDto } from '../dto/bulk-firmware-update.dto';
 import {
   NEWEST_FIRMWARE_VERSION,
+  NEWEST_BETA_FIRMWARE_VERSION,
   compareFirmwareVersions,
   isLegacyDevice,
 } from './firmware.service';
@@ -239,12 +240,18 @@ export class FirmwareBulkUpdateService
           (d) => !this.betaFirmwareDeviceService.isBeta(d.deviceId, d.userId),
         );
     const skippedBeta = nonLegacy.length - nonBeta.length;
+    // Each device is compared with the build it will actually download:
+    // beta-list devices (only present with includeBeta) get the beta build.
+    const versionFor = (d: { deviceId: string; userId: string }) =>
+      this.betaFirmwareDeviceService.isBeta(d.deviceId, d.userId)
+        ? NEWEST_BETA_FIRMWARE_VERSION
+        : targetVersion;
     const toUpdate = dto.includeUpToDate
       ? nonBeta
       : nonBeta.filter(
           (d) =>
             !d.firmwareVersion ||
-            compareFirmwareVersions(d.firmwareVersion, targetVersion) < 0,
+            compareFirmwareVersions(d.firmwareVersion, versionFor(d)) < 0,
         );
     const skipped = nonBeta.length - toUpdate.length;
     if (toUpdate.length === 0) {
