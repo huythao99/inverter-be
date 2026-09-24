@@ -3,7 +3,7 @@ import { InverterDeviceService } from './inverter-device.service';
 import { BetaFirmwareDeviceService } from './beta-firmware-device.service';
 
 /** Newest STABLE ESP32 inverter firmware (firmware.bin). Bump on release. */
-export const NEWEST_FIRMWARE_VERSION = '1.0.13';
+export const NEWEST_FIRMWARE_VERSION = '1.0.14';
 
 /**
  * Newest BETA firmware (firmware-beta.bin), served to the devices on the CMS

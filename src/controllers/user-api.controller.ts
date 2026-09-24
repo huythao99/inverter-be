@@ -9,6 +9,9 @@ import {
   Query,
   UseGuards,
   NotFoundException,
+  BadRequestException,
+  HttpException,
+  HttpStatus,
   Header,
   Headers,
 } from '@nestjs/common';
@@ -31,6 +34,17 @@ import {
 } from '../constants/grid-tie.constants';
 import { BlacklistDeviceService } from '../services/blacklist-device.service';
 import { DeviceRestartService } from '../services/device-restart.service';
+import { MqttService } from '../services/mqtt.service';
+import { BetaFirmwareDeviceService } from '../services/beta-firmware-device.service';
+import {
+  NEWEST_FIRMWARE_VERSION,
+  NEWEST_BETA_FIRMWARE_VERSION,
+  compareFirmwareVersions,
+  isLegacyDevice,
+} from '../services/firmware.service';
+
+// One firmware-update trigger per device per minute (double clicks, retries).
+const FIRMWARE_UPDATE_COOLDOWN_MS = 60000;
 
 @Controller('api/user')
 @UseGuards(FirebaseAuthGuard)
@@ -45,7 +59,29 @@ export class UserApiController {
     private readonly dailyTotalsService: DailyTotalsService,
     private readonly blacklistDeviceService: BlacklistDeviceService,
     private readonly deviceRestartService: DeviceRestartService,
+    private readonly mqttService: MqttService,
+    private readonly betaFirmwareDeviceService: BetaFirmwareDeviceService,
   ) {}
+
+  private readonly firmwareUpdateAt = new Map<string, number>();
+
+  /** Version this user's device should run (beta list -> beta build). */
+  private firmwareTargetFor(userId: string, deviceId: string): string {
+    return this.betaFirmwareDeviceService.isBeta(deviceId, userId)
+      ? NEWEST_BETA_FIRMWARE_VERSION
+      : NEWEST_FIRMWARE_VERSION;
+  }
+
+  /** Firmware the device reports running. Legacy (< 436) = always up to date. */
+  private firmwareCurrentFor(
+    userId: string,
+    deviceId: string,
+    reported?: string | null,
+  ): string {
+    if (isLegacyDevice(deviceId))
+      return this.firmwareTargetFor(userId, deviceId);
+    return reported || this.firmwareTargetFor(userId, deviceId);
+  }
 
   // Verify every member device belongs to the authenticated user.
   private async assertMembersOwned(
@@ -569,6 +605,115 @@ export class UserApiController {
     );
 
     return result;
+  }
+
+  // ---- Firmware (OTA) — used by the web app ----------------------------------
+
+  // Newest firmware for the user's device (beta list -> beta version). Without
+  // deviceId: the stable version.
+  @Get('firmware/newest')
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
+  getNewestFirmware(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Query('deviceId') deviceId?: string,
+  ) {
+    return {
+      version: deviceId
+        ? this.firmwareTargetFor(user.uid, deviceId)
+        : NEWEST_FIRMWARE_VERSION,
+    };
+  }
+
+  // Firmware the device runs (as reported by the ESP32 after each boot).
+  @Get('devices/:deviceId/firmware/version')
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
+  async getDeviceFirmware(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('deviceId') deviceId: string,
+  ) {
+    const device = await this.inverterDeviceService.findByUserIdAndDeviceId(
+      user.uid,
+      deviceId,
+    );
+    if (!device) {
+      throw new NotFoundException(`Device ${deviceId} not found`);
+    }
+    return {
+      firmwareVersion: this.firmwareCurrentFor(
+        user.uid,
+        deviceId,
+        device.firmwareVersion,
+      ),
+    };
+  }
+
+  // Trigger an OTA update (same non-retained MQTT trigger as the mobile app).
+  // Progress arrives on inverter/{uid}/{deviceId}/ota/status.
+  @Post('devices/:deviceId/firmware/update')
+  async updateDeviceFirmware(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('deviceId') deviceId: string,
+  ) {
+    const device = await this.inverterDeviceService.findByUserIdAndDeviceId(
+      user.uid,
+      deviceId,
+    );
+    if (!device) {
+      throw new NotFoundException(`Device ${deviceId} not found`);
+    }
+    if (isLegacyDevice(deviceId)) {
+      throw new BadRequestException(
+        'Thiết bị này không hỗ trợ cập nhật firmware từ xa',
+      );
+    }
+    const targetVersion = this.firmwareTargetFor(user.uid, deviceId);
+    const currentVersion = this.firmwareCurrentFor(
+      user.uid,
+      deviceId,
+      device.firmwareVersion,
+    );
+    if (compareFirmwareVersions(currentVersion, targetVersion) >= 0) {
+      throw new BadRequestException(
+        `Thiết bị đã ở phiên bản mới nhất (${currentVersion})`,
+      );
+    }
+    if (!this.mqttService.isConnected()) {
+      throw new HttpException(
+        'Máy chủ MQTT đang mất kết nối, vui lòng thử lại sau',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+    const key = `${user.uid}/${deviceId}`;
+    const now = Date.now();
+    const last = this.firmwareUpdateAt.get(key) ?? 0;
+    if (now - last < FIRMWARE_UPDATE_COOLDOWN_MS) {
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.TOO_MANY_REQUESTS,
+          message: 'Đã gửi lệnh cập nhật, vui lòng chờ thiết bị cập nhật xong',
+          retryAfterSeconds: Math.ceil(
+            (FIRMWARE_UPDATE_COOLDOWN_MS - (now - last)) / 1000,
+          ),
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    if (this.firmwareUpdateAt.size > 1000) this.firmwareUpdateAt.clear();
+    this.firmwareUpdateAt.set(key, now);
+
+    await this.mqttService.publish(
+      `inverter/${user.uid}/${deviceId}/firmware/update`,
+      {
+        action: 'start_update',
+        userId: user.uid,
+        deviceId,
+        timestamp: new Date().toISOString(),
+        currentVersion,
+        targetVersion,
+        source: 'web',
+      },
+    );
+    return { success: true, currentVersion, targetVersion };
   }
 
   // Remote reboot of the device's ESP32 (mobile app + web). Rate-limited to

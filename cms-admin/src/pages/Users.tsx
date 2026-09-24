@@ -12,15 +12,17 @@ import {
   ToggleRight,
 } from 'lucide-react';
 
+// Users are listed from their devices; MQTT credentials (Home Assistant
+// access) are optional, so the credential fields may be null.
 interface User {
   _id: string;
   userId: string;
-  mqttUsername: string;
-  isActive: boolean;
-  allowedDevices: string[];
-  lastUsedAt: string;
-  createdAt: string;
-  updatedAt: string;
+  hasMqttAccount: boolean;
+  mqttUsername: string | null;
+  isActive: boolean | null;
+  lastUsedAt: string | null;
+  createdAt: string | null;
+  lastDeviceUpdate?: string | null;
   deviceCount?: number;
 }
 
@@ -68,7 +70,7 @@ const Users: React.FC = () => {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setPage(1);
-    setSubmittedSearch(search);
+    setSubmittedSearch(search.trim());
   };
 
   const viewUser = async (userId: string) => {
@@ -107,7 +109,7 @@ const Users: React.FC = () => {
     <div className="page users-page">
       <header className="page-header">
         <h1>Users</h1>
-        <p>Manage MQTT credentials and user access</p>
+        <p>Users (from their devices) and their MQTT / Home Assistant access</p>
       </header>
 
       {/* Search Bar */}
@@ -137,28 +139,36 @@ const Users: React.FC = () => {
                 <thead>
                   <tr>
                     <th>User ID</th>
-                    <th>MQTT Username</th>
                     <th>Devices</th>
-                    <th>Status</th>
-                    <th>Last Used</th>
+                    <th>Last Activity</th>
+                    <th>MQTT Username</th>
+                    <th>MQTT Status</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {users?.data.map((user) => (
                     <tr
-                      key={user._id}
+                      key={user.userId}
                       className={selectedUser?.userId === user.userId ? 'selected' : ''}
                     >
                       <td className="monospace">{user.userId}</td>
-                      <td className="monospace">{user.mqttUsername}</td>
                       <td>{user.deviceCount || 0}</td>
                       <td>
-                        <span className={`status-badge ${user.isActive ? 'active' : 'inactive'}`}>
-                          {user.isActive ? 'Active' : 'Inactive'}
-                        </span>
+                        {user.lastDeviceUpdate
+                          ? new Date(user.lastDeviceUpdate).toLocaleString()
+                          : '—'}
                       </td>
-                      <td>{user.lastUsedAt ? new Date(user.lastUsedAt).toLocaleString() : 'Never'}</td>
+                      <td className="monospace">{user.mqttUsername ?? '—'}</td>
+                      <td>
+                        {user.hasMqttAccount ? (
+                          <span className={`status-badge ${user.isActive ? 'active' : 'inactive'}`}>
+                            {user.isActive ? 'Active' : 'Inactive'}
+                          </span>
+                        ) : (
+                          <span className="muted">No account</span>
+                        )}
+                      </td>
                       <td className="actions">
                         {deleteConfirm === user.userId ? (
                           <>
@@ -186,17 +196,19 @@ const Users: React.FC = () => {
                             >
                               <Eye size={16} />
                             </button>
-                            <button
-                              className="btn-icon"
-                              onClick={() => toggleUserStatus(user.userId, user.isActive)}
-                              title={user.isActive ? 'Deactivate' : 'Activate'}
-                            >
-                              {user.isActive ? (
-                                <ToggleRight size={16} className="text-green" />
-                              ) : (
-                                <ToggleLeft size={16} />
-                              )}
-                            </button>
+                            {user.hasMqttAccount && (
+                              <button
+                                className="btn-icon"
+                                onClick={() => toggleUserStatus(user.userId, !!user.isActive)}
+                                title={user.isActive ? 'Deactivate MQTT' : 'Activate MQTT'}
+                              >
+                                {user.isActive ? (
+                                  <ToggleRight size={16} className="text-green" />
+                                ) : (
+                                  <ToggleLeft size={16} />
+                                )}
+                              </button>
+                            )}
                             <button
                               className="btn-icon danger"
                               onClick={() => setDeleteConfirm(user.userId)}
@@ -261,18 +273,24 @@ const Users: React.FC = () => {
               </div>
               <div className="detail-item">
                 <label>MQTT Username</label>
-                <span className="monospace">{selectedUser.mqttUsername}</span>
+                <span className="monospace">{selectedUser.mqttUsername ?? '—'}</span>
               </div>
               <div className="detail-item">
-                <label>Status</label>
-                <span className={`status-badge ${selectedUser.isActive ? 'active' : 'inactive'}`}>
-                  {selectedUser.isActive ? 'Active' : 'Inactive'}
-                </span>
+                <label>MQTT Status</label>
+                {selectedUser.hasMqttAccount ? (
+                  <span className={`status-badge ${selectedUser.isActive ? 'active' : 'inactive'}`}>
+                    {selectedUser.isActive ? 'Active' : 'Inactive'}
+                  </span>
+                ) : (
+                  <span className="muted">No MQTT account</span>
+                )}
               </div>
-              <div className="detail-item">
-                <label>Created At</label>
-                <span>{new Date(selectedUser.createdAt).toLocaleString()}</span>
-              </div>
+              {selectedUser.createdAt && (
+                <div className="detail-item">
+                  <label>MQTT Created At</label>
+                  <span>{new Date(selectedUser.createdAt).toLocaleString()}</span>
+                </div>
+              )}
               <div className="detail-item">
                 <label>Last Used</label>
                 <span>

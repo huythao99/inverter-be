@@ -283,7 +283,13 @@ export class CmsService implements OnModuleInit {
     // Group by device for the per-device leaderboard.
     const deviceMap = new Map<
       string,
-      { deviceId: string; userId: string; totalA: Decimal; totalA2: Decimal; lastUpdated: Date }
+      {
+        deviceId: string;
+        userId: string;
+        totalA: Decimal;
+        totalA2: Decimal;
+        lastUpdated: Date;
+      }
     >();
 
     for (const v of values) {
@@ -580,44 +586,89 @@ export class CmsService implements OnModuleInit {
     const { page = 1, limit = 20, userId, search, isActive } = query;
     const skip = (page - 1) * limit;
 
-    const filter: any = {};
-    if (userId) filter.userId = userId;
-    if (isActive !== undefined) filter.isActive = isActive;
-    if (search) {
-      filter.$or = [
-        { userId: { $regex: search, $options: 'i' } },
-        { mqttUsername: { $regex: search, $options: 'i' } },
-      ];
+    // Users = distinct userIds of the inverter devices. MQTT credentials only
+    // exist for users who opened the Home Assistant page, so listing/searching
+    // the credential collection (as before) missed almost every user.
+    const and: Record<string, unknown>[] = [{ userId: { $nin: [null, ''] } }];
+    if (userId?.trim()) and.push({ userId: userId.trim() });
+
+    const term = search?.trim();
+    if (term) {
+      const re = { $regex: this.escapeRegex(term), $options: 'i' };
+      // Also match by MQTT username (maps to the owning userId).
+      const byMqtt = await this.mqttCredentialModel
+        .find({ mqttUsername: re }, { userId: 1 })
+        .lean()
+        .exec();
+      and.push({
+        $or: [
+          { userId: re },
+          ...(byMqtt.length
+            ? [{ userId: { $in: byMqtt.map((c) => c.userId) } }]
+            : []),
+        ],
+      });
+    }
+    if (isActive !== undefined) {
+      const creds = await this.mqttCredentialModel
+        .find({ isActive }, { userId: 1 })
+        .lean()
+        .exec();
+      and.push({ userId: { $in: creds.map((c) => c.userId) } });
     }
 
-    const [credentials, total] = await Promise.all([
-      this.mqttCredentialModel
-        .find(filter)
-        .sort({ updatedAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean()
-        .exec(),
-      this.mqttCredentialModel.countDocuments(filter).exec(),
-    ]);
-
-    // Enrich with device count
-    const userIds = credentials.map((c) => c.userId);
-    const deviceCounts = await this.inverterDeviceModel
-      .aggregate([
-        { $match: { userId: { $in: userIds } } },
-        { $group: { _id: '$userId', count: { $sum: 1 } } },
+    const [res] = await this.inverterDeviceModel
+      .aggregate<{
+        data: {
+          _id: string;
+          deviceCount: number;
+          lastDeviceUpdate?: Date;
+          firstSeen?: Date;
+        }[];
+        total: { n: number }[];
+      }>([
+        { $match: { $and: and } },
+        {
+          $group: {
+            _id: '$userId',
+            deviceCount: { $sum: 1 },
+            lastDeviceUpdate: { $max: '$updatedAt' },
+            firstSeen: { $min: '$createdAt' },
+          },
+        },
+        { $sort: { lastDeviceUpdate: -1, _id: 1 } },
+        {
+          $facet: {
+            data: [{ $skip: skip }, { $limit: limit }],
+            total: [{ $count: 'n' }],
+          },
+        },
       ])
       .exec();
 
-    const deviceCountMap = new Map(
-      deviceCounts.map((d: any) => [d._id, d.count]),
-    );
+    const rows = res?.data ?? [];
+    const total = res?.total?.[0]?.n ?? 0;
 
-    const data = credentials.map((cred) => ({
-      ...cred,
-      deviceCount: deviceCountMap.get(cred.userId) || 0,
-    }));
+    const credentials = await this.mqttCredentialModel
+      .find({ userId: { $in: rows.map((r) => r._id) } })
+      .lean()
+      .exec();
+    const credByUser = new Map(credentials.map((c) => [c.userId, c]));
+
+    const data = rows.map((r) => {
+      const cred = credByUser.get(r._id);
+      return {
+        _id: r._id,
+        userId: r._id,
+        deviceCount: r.deviceCount,
+        lastDeviceUpdate: r.lastDeviceUpdate ?? null,
+        hasMqttAccount: !!cred,
+        mqttUsername: cred?.mqttUsername ?? null,
+        isActive: cred?.isActive ?? null,
+        lastUsedAt: cred?.lastUsedAt ?? null,
+        createdAt: cred?.createdAt ?? r.firstSeen ?? null,
+      };
+    });
 
     return {
       data,
@@ -627,23 +678,29 @@ export class CmsService implements OnModuleInit {
     };
   }
 
-  async getUserById(userId: string): Promise<any> {
-    const credential = await this.mqttCredentialModel
-      .findOne({ userId })
-      .lean()
-      .exec();
+  private escapeRegex(s: string): string {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
 
-    if (!credential) {
+  async getUserById(userId: string): Promise<any> {
+    const [credential, devices] = await Promise.all([
+      this.mqttCredentialModel.findOne({ userId }).lean().exec(),
+      this.inverterDeviceModel.find({ userId }).lean().exec(),
+    ]);
+
+    // A user exists if they own a device or have MQTT credentials.
+    if (!credential && devices.length === 0) {
       throw new NotFoundException(`User with ID ${userId} not found`);
     }
 
-    const devices = await this.inverterDeviceModel
-      .find({ userId })
-      .lean()
-      .exec();
-
     return {
-      ...credential,
+      _id: credential?._id ?? userId,
+      userId,
+      hasMqttAccount: !!credential,
+      mqttUsername: credential?.mqttUsername ?? null,
+      isActive: credential?.isActive ?? null,
+      lastUsedAt: credential?.lastUsedAt ?? null,
+      createdAt: credential?.createdAt ?? null,
       devices,
     };
   }
@@ -675,12 +732,15 @@ export class CmsService implements OnModuleInit {
       .findOneAndDelete({ userId })
       .exec();
 
-    if (!credential) {
+    // Also delete user's devices (users without MQTT credentials are listed
+    // from their devices, so they must be deletable too).
+    const removed = await this.inverterDeviceModel
+      .deleteMany({ userId })
+      .exec();
+
+    if (!credential && removed.deletedCount === 0) {
       throw new NotFoundException(`User with ID ${userId} not found`);
     }
-
-    // Also delete user's devices
-    await this.inverterDeviceModel.deleteMany({ userId }).exec();
 
     // Soft delete daily totals
     await this.dailyTotalsModel

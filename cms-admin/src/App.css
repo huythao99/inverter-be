@@ -1684,3 +1684,163 @@ body {
   gap: 8px;
   margin-top: 8px;
 }
+
+.muted {
+  color: var(--text-light);
+  font-size: 13px;
+}
+
+/* ===== Compact mobile layout (phones) =====
+ * Kept last so it overrides the desktop sizes above. Everything is scaled
+ * down one step, EXCEPT form fields: iOS Safari zooms the whole page when an
+ * input with font-size < 16px gets focus (and stays zoomed), which is what
+ * made the CMS look "too big" on phones. */
+@media (max-width: 768px) {
+  body {
+    font-size: 14px;
+  }
+
+  .main-content {
+    padding: 12px;
+    padding-top: 56px;
+  }
+
+  .mobile-menu-btn {
+    top: 10px;
+    left: 10px;
+    padding: 6px;
+  }
+
+  .sidebar {
+    width: 240px;
+  }
+
+  .page-header {
+    margin-bottom: 16px;
+  }
+
+  .page-header h1,
+  .page-header-actions h1 {
+    font-size: 20px;
+  }
+
+  .page-header p {
+    font-size: 13px;
+  }
+
+  /* No iOS focus-zoom: inputs must be >= 16px */
+  input,
+  select,
+  textarea,
+  .form-group input,
+  .search-input-wrapper input {
+    font-size: 16px;
+  }
+
+  .search-input-wrapper {
+    padding: 0 12px;
+    gap: 8px;
+  }
+
+  .search-input-wrapper input {
+    padding: 9px 0;
+  }
+
+  .search-bar {
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .btn {
+    padding: 9px 14px;
+    font-size: 13px;
+  }
+
+  .btn-icon {
+    padding: 6px;
+  }
+
+  .stats-grid {
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+
+  .stat-card {
+    padding: 12px;
+    gap: 10px;
+    border-radius: 10px;
+  }
+
+  .stat-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+  }
+
+  .stat-icon svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .stat-value {
+    font-size: 18px;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 8px 10px;
+    font-size: 12.5px;
+  }
+
+  /* Tabs scroll sideways instead of wrapping onto several lines */
+  .tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 4px;
+    margin-bottom: 12px;
+  }
+
+  .tab {
+    padding: 8px 12px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  .bulk-bar {
+    padding: 8px 10px;
+    gap: 8px;
+    font-size: 13px;
+  }
+
+  .bulk-bar-actions {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .bulk-bar-actions .btn {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .bulk-panel {
+    padding: 12px;
+  }
+
+  .modal {
+    padding: 16px;
+    border-radius: 10px;
+  }
+
+  .modal-notes {
+    font-size: 13px;
+  }
+
+  .detail-header {
+    padding: 12px 14px;
+  }
+
+  .detail-content {
+    padding: 14px;
+  }
+}
