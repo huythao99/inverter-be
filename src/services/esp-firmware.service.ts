@@ -17,7 +17,9 @@ import {
 } from '../models/esp-firmware.schema';
 import { SpacesService } from './spaces.service';
 import {
+  ESP_PRODUCTS,
   EspFirmwareChannel,
+  EspProduct,
   FIRMWARE_BASE_URL,
   activeEspFirmware,
   compareFirmwareVersions,
@@ -34,8 +36,8 @@ const ESP_APP_DESC_MAGIC = 0xabcd5432;
 const ESP_APP_DESC_OFFSET = 32;
 
 /**
- * ESP32 inverter firmware builds uploaded from the CMS (DO Spaces) and which
- * one is active per channel. The active builds are mirrored into memory
+ * ESP32 firmware builds (inverter / charger / hybrid) uploaded from the CMS
+ * (DO Spaces) and which one is active per product + channel. The active builds are mirrored into memory
  * (firmware.service setActiveEspFirmware) so version checks stay synchronous.
  */
 @Injectable()
@@ -43,7 +45,7 @@ export class EspFirmwareService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(EspFirmwareService.name);
   private refreshTimer: NodeJS.Timeout | null = null;
 
-  /** Public base URL of uploaded builds ({baseUrl}/{version}/firmware.bin). */
+  /** Public base URL ({baseUrl}/{product}/{version}/firmware.bin). */
   readonly baseUrl: string;
   /** Bucket folder behind baseUrl (nginx /firmware/esp32/ -> firmware/esp32/). */
   readonly spacesPrefix: string;
@@ -66,6 +68,7 @@ export class EspFirmwareService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit() {
+    await this.migrate();
     await this.refreshActive();
     // Other instances / manual DB edits: re-read now and then.
     this.refreshTimer = setInterval(() => {
@@ -79,33 +82,73 @@ export class EspFirmwareService implements OnModuleInit, OnModuleDestroy {
     if (this.refreshTimer) clearInterval(this.refreshTimer);
   }
 
-  /** Mirror the active build of each channel into memory. */
+  /**
+   * Builds uploaded before the product field existed are inverter builds, and
+   * the old unique index on version alone would block the same version for
+   * another product.
+   */
+  private async migrate(): Promise<void> {
+    await this.model
+      .updateMany(
+        { product: { $exists: false } },
+        { $set: { product: 'inverter' } },
+      )
+      .exec();
+    try {
+      await this.model.collection.dropIndex('version_1');
+    } catch {
+      // not there (fresh install)
+    }
+  }
+
+  /** Mirror the active build of each product + channel into memory. */
   async refreshActive(): Promise<void> {
     const docs = await this.model
       .find({ channels: { $in: CHANNELS } })
       .lean()
       .exec();
-    for (const ch of CHANNELS) {
-      const fw = docs.find((d) => d.channels?.includes(ch));
-      setActiveEspFirmware(
-        ch,
-        fw ? { version: fw.version, url: fw.url } : null,
-      );
+    for (const product of ESP_PRODUCTS) {
+      for (const ch of CHANNELS) {
+        const fw = docs.find(
+          (d) =>
+            (d.product ?? 'inverter') === product && d.channels?.includes(ch),
+        );
+        setActiveEspFirmware(
+          product,
+          ch,
+          fw ? { version: fw.version, url: fw.url } : null,
+        );
+      }
     }
   }
 
-  list() {
-    return this.model.find().sort({ createdAt: -1 }).lean().exec();
+  list(product?: EspProduct) {
+    return this.model
+      .find(product ? { product } : {})
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
   }
 
   config() {
+    const activeByProduct = Object.fromEntries(
+      ESP_PRODUCTS.map((p) => [
+        p,
+        {
+          stable: activeEspFirmware('stable', p),
+          beta: activeEspFirmware('beta', p),
+        },
+      ]),
+    ) as Record<
+      EspProduct,
+      Record<EspFirmwareChannel, ReturnType<typeof activeEspFirmware>>
+    >;
     return {
       baseUrl: this.baseUrl,
-      pathTemplate: `${this.baseUrl}/{version}/firmware.bin`,
+      pathTemplate: `${this.baseUrl}/{product}/{version}/firmware.bin`,
       uploadEnabled: this.spaces.enabled,
       maxBytes: this.maxBytes,
-      stable: activeEspFirmware('stable'),
-      beta: activeEspFirmware('beta'),
+      active: activeByProduct,
     };
   }
 
@@ -114,22 +157,33 @@ export class EspFirmwareService implements OnModuleInit, OnModuleDestroy {
    * it active on a channel right away.
    */
   async upload(
-    dto: { version: string; notes?: string; activate?: EspFirmwareChannel },
+    dto: {
+      product: EspProduct;
+      version: string;
+      notes?: string;
+      activate?: EspFirmwareChannel;
+    },
     bin: Buffer,
   ) {
     this.spaces.assertEnabled();
+    const product = dto.product;
+    if (!ESP_PRODUCTS.includes(product)) {
+      throw new BadRequestException(
+        `product must be one of ${ESP_PRODUCTS.join(', ')}`,
+      );
+    }
     const version = dto.version?.trim();
     if (!version || !VERSION_RE.test(version)) {
       throw new BadRequestException('Version must look like 1.0.15');
     }
-    this.checkImage(bin, version);
+    this.checkImage(bin, version, product);
 
-    if (await this.model.exists({ version })) {
+    if (await this.model.exists({ product, version })) {
       throw new ConflictException(
-        `v${version} is already uploaded - bump the version instead of replacing it`,
+        `${product} v${version} is already uploaded - bump the version instead of replacing it`,
       );
     }
-    const key = `${this.spacesPrefix}/${version}/firmware.bin`;
+    const key = `${this.spacesPrefix}/${product}/${version}/firmware.bin`;
     if (await this.spaces.exists(key)) {
       throw new ConflictException(
         `${key} already exists on Spaces - bump the version instead of replacing it`,
@@ -137,10 +191,11 @@ export class EspFirmwareService implements OnModuleInit, OnModuleDestroy {
     }
     await this.spaces.putPublic(key, bin, 'application/octet-stream');
 
-    const url = `${this.baseUrl}/${version}/firmware.bin`;
+    const url = `${this.baseUrl}/${product}/${version}/firmware.bin`;
     let created: EspFirmwareDocument;
     try {
       created = await this.model.create({
+        product,
         version,
         url,
         key,
@@ -152,11 +207,15 @@ export class EspFirmwareService implements OnModuleInit, OnModuleDestroy {
       });
     } catch (err) {
       if ((err as { code?: number }).code === 11000) {
-        throw new ConflictException(`v${version} is already uploaded`);
+        throw new ConflictException(
+          `${product} v${version} is already uploaded`,
+        );
       }
       throw err;
     }
-    this.logger.log(`Uploaded ESP32 firmware v${version} (${bin.length} B)`);
+    this.logger.log(
+      `Uploaded ESP32 ${product} firmware v${version} (${bin.length} B)`,
+    );
 
     const saved = created.toObject() as EspFirmware;
     const warning = await this.checkServed(url, bin.length);
@@ -176,16 +235,20 @@ export class EspFirmwareService implements OnModuleInit, OnModuleDestroy {
     return { ...saved, warning };
   }
 
-  /** Make a build the active one of a channel (the previous one is released). */
+  /**
+   * Make a build the active one of its product's channel (the previous one of
+   * the same product is released).
+   */
   async activate(id: string, channel: EspFirmwareChannel) {
     if (!CHANNELS.includes(channel)) {
       throw new BadRequestException('channel must be stable or beta');
     }
     const fw = await this.model.findById(id).exec();
     if (!fw) throw new NotFoundException('ESP32 firmware not found');
+    const product = fw.product ?? 'inverter';
     await this.model
       .updateMany(
-        { channels: channel, _id: { $ne: fw._id } },
+        { product, channels: channel, _id: { $ne: fw._id } },
         { $pull: { channels: channel } },
       )
       .exec();
@@ -194,7 +257,7 @@ export class EspFirmwareService implements OnModuleInit, OnModuleDestroy {
       .exec();
     await this.refreshActive();
     this.logger.log(
-      `ESP32 firmware v${fw.version} is now active on ${channel}`,
+      `ESP32 ${product} firmware v${fw.version} is now active on ${channel}`,
     );
     return this.model.findById(id).lean().exec();
   }
@@ -213,7 +276,7 @@ export class EspFirmwareService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** ESP32 app image + the version string the firmware reports. */
-  private checkImage(bin: Buffer, version: string) {
+  private checkImage(bin: Buffer, version: string, product: EspProduct) {
     if (!bin?.length) throw new BadRequestException('firmware.bin is empty');
     if (bin.length > this.maxBytes) {
       throw new BadRequestException(
@@ -237,10 +300,10 @@ export class EspFirmwareService implements OnModuleInit, OnModuleDestroy {
         `The file does not contain the version string "${version}" - check currentFirmwareVersion in shared_state.cpp`,
       );
     }
-    const stable = activeEspFirmware('stable');
+    const stable = activeEspFirmware('stable', product);
     if (compareFirmwareVersions(version, stable.version) <= 0) {
       this.logger.warn(
-        `Uploading v${version}, not newer than stable ${stable.version}`,
+        `Uploading ${product} v${version}, not newer than stable ${stable.version}`,
       );
     }
   }

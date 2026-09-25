@@ -181,9 +181,11 @@ export const uploadStmFirmware = (
 
 // ---- ESP32 firmware (builds uploaded to DO Spaces) ----
 export type EspChannel = 'stable' | 'beta';
+export type EspProduct = 'inverter' | 'charger' | 'hybrid';
 
 export interface EspFirmware {
   _id: string;
+  product: EspProduct;
   version: string;
   url: string;
   key: string;
@@ -206,19 +208,26 @@ export interface EspFirmwareConfig {
   pathTemplate: string;
   uploadEnabled: boolean;
   maxBytes: number;
-  stable: ActiveEspFirmware;
-  beta: ActiveEspFirmware;
+  active: Record<EspProduct, Record<EspChannel, ActiveEspFirmware>>;
 }
 
-export const getEspFirmwares = () => api.get<EspFirmware[]>('/esp-firmwares');
+export const getEspFirmwares = (product?: EspProduct) =>
+  api.get<EspFirmware[]>('/esp-firmwares', { params: product ? { product } : undefined });
 
 export const getEspFirmwareConfig = () => api.get<EspFirmwareConfig>('/esp-firmwares/config');
 
 export const uploadEspFirmware = (
-  body: { version: string; notes?: string; activate?: EspChannel; bin: File },
+  body: {
+    product: EspProduct;
+    version: string;
+    notes?: string;
+    activate?: EspChannel;
+    bin: File;
+  },
   onProgress?: (pct: number) => void,
 ) => {
   const fd = new FormData();
+  fd.append('product', body.product);
   fd.append('version', body.version);
   if (body.notes) fd.append('notes', body.notes);
   if (body.activate) fd.append('activate', body.activate);
@@ -246,6 +255,10 @@ export const registerStmFirmware = (body: {
 
 export const setStmFirmwareEnabled = (id: string, enabled: boolean) =>
   api.patch<StmFirmware>(`/stm-firmwares/${id}`, { enabled });
+
+// beta -> stable releases the image to every device with that chip/voltage.
+export const setStmFirmwareChannel = (id: string, channel: StmChannel) =>
+  api.patch<StmFirmware>(`/stm-firmwares/${id}`, { channel });
 
 export const deleteStmFirmware = (id: string) => api.delete(`/stm-firmwares/${id}`);
 
@@ -415,7 +428,8 @@ export const updateCharger = (
 export const deleteCharger = (id: string) =>
   api.delete(`/charger/devices/${id}`);
 
-export const triggerChargerFirmwareUpdate = (id: string, targetVersion: string) =>
-  api.post(`/charger/devices/${id}/firmware-update`, { targetVersion });
+// targetVersion omitted -> the backend uses the build active for chargers.
+export const triggerChargerFirmwareUpdate = (id: string, targetVersion?: string) =>
+  api.post(`/charger/devices/${id}/firmware-update`, targetVersion ? { targetVersion } : {});
 
 export default api;

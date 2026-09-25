@@ -104,7 +104,7 @@ const Chargers: React.FC = () => {
   const handleFirmwareUpdate = async (id: string) => {
     setIsUpdatingFirmware(true);
     try {
-      await triggerChargerFirmwareUpdate(id, '1.0.0');
+      await triggerChargerFirmwareUpdate(id);
       setFirmwareUpdateConfirm(null);
       alert('Charger firmware update triggered successfully');
     } catch (err) {

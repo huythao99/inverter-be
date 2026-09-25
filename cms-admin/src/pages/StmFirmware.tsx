@@ -5,6 +5,7 @@ import {
   registerStmFirmware,
   uploadStmFirmware,
   setStmFirmwareEnabled,
+  setStmFirmwareChannel,
   deleteStmFirmware,
 } from '../services/api';
 import type { StmChannel, StmFirmware as StmFirmwareItem, StmProduct } from '../services/api';
@@ -165,6 +166,24 @@ const StmFirmware: React.FC = () => {
     }
   };
 
+  const changeChannel = async (item: StmFirmwareItem, channel: StmChannel) => {
+    const chip = item.major === 3 ? 'F303' : item.major === 2 ? 'G431' : `gen ${item.major}`;
+    const text =
+      channel === 'stable'
+        ? `Set v${item.version} as STABLE?\n\nEvery ${chip} ${item.voltageCode * 12}V board (not only the beta list) will be offered it if it is the newest enabled image.`
+        : `Move v${item.version} back to BETA?\n\nOnly devices on the beta list will be offered it.`;
+    if (!window.confirm(text)) return;
+    try {
+      await setStmFirmwareChannel(item._id, channel);
+      setNotice(`v${item.version} is now ${channel}`);
+      fetchItems();
+    } catch (err) {
+      const message = (err as { response?: { data?: { message?: string } } })?.response?.data
+        ?.message;
+      alert(message || 'Failed to change channel');
+    }
+  };
+
   const handleDelete = async (id: string) => {
     try {
       await deleteStmFirmware(id);
@@ -184,7 +203,9 @@ const StmFirmware: React.FC = () => {
             Images for the STM32 power board, flashed through the ESP32. Version format is
             major.voltage.patch — major = chip (3 = F303, 2 = G431), 2nd number = voltage
             (1 = 12V, 2 = 24V, 3 = 36V, 4 = 48V). Each device gets the newest enabled image
-            with the same major and voltage as the version its STM32 reports.
+            with the same major and voltage as the version its STM32 reports — stable images
+            for everyone, beta images too for devices on the beta list. Test a new image as
+            beta, then "Set stable" to release it.
           </p>
         </div>
         <button className="btn btn-primary" onClick={() => setShowForm(!showForm)}>
@@ -437,6 +458,23 @@ const StmFirmware: React.FC = () => {
                     </span>
                   </td>
                   <td className="actions">
+                    {it.channel === 'beta' ? (
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={() => changeChannel(it, 'stable')}
+                        title="Release to every device"
+                      >
+                        Set stable
+                      </button>
+                    ) : (
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => changeChannel(it, 'beta')}
+                        title="Only the beta list"
+                      >
+                        Set beta
+                      </button>
+                    )}
                     <button
                       className="btn-icon"
                       onClick={() => toggleEnabled(it)}

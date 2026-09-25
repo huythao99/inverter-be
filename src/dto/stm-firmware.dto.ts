@@ -39,9 +39,16 @@ export class RegisterStmFirmwareDto {
   notes?: string;
 }
 
+// PATCH /api/cms/stm-firmwares/:id - enable/disable and/or move to another
+// channel (beta -> stable = release it to every device).
 export class SetStmFirmwareEnabledDto {
+  @IsOptional()
   @IsBoolean()
-  enabled: boolean;
+  enabled?: boolean;
+
+  @IsOptional()
+  @IsIn(['stable', 'beta'])
+  channel?: 'stable' | 'beta';
 }
 
 export class StmUpdateDto {

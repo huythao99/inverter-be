@@ -6,10 +6,22 @@ import {
   getEspFirmwares,
   uploadEspFirmware,
 } from '../services/api';
-import type { EspChannel, EspFirmware as EspFirmwareItem, EspFirmwareConfig } from '../services/api';
+import type {
+  EspChannel,
+  EspFirmware as EspFirmwareItem,
+  EspFirmwareConfig,
+  EspProduct,
+} from '../services/api';
 import { Check, Loader2, Plus, Trash2, Upload, X } from 'lucide-react';
 
 const emptyForm = { version: '', notes: '', activate: '' as '' | EspChannel };
+
+const PRODUCTS: { key: EspProduct; label: string; defaultFile: string }[] = [
+  { key: 'inverter', label: 'Inverter (hoà lưới)', defaultFile: 'firmware.bin / firmware-beta.bin' },
+  { key: 'charger', label: 'Charger (bộ sạc)', defaultFile: 'firmware-charger.bin' },
+  { key: 'hybrid', label: 'Hybrid', defaultFile: '— (no firmware yet)' },
+];
+const productLabel = (p: EspProduct) => PRODUCTS.find((x) => x.key === p)?.label ?? p;
 
 const errorText = (err: unknown, fallback: string) => {
   const message = (err as { response?: { data?: { message?: string | string[] } } })?.response
@@ -18,15 +30,16 @@ const errorText = (err: unknown, fallback: string) => {
 };
 
 /**
- * ESP32 inverter firmware builds. Uploading stores firmware.bin on DO Spaces
- * ({baseUrl}/{version}/firmware.bin); "Set stable" / "Set beta" picks which
- * build devices download (beta-list devices get the beta build). Until a
- * build is active on a channel, the old fixed firmware.bin / firmware-beta.bin
- * is used.
+ * ESP32 firmware builds per product (inverter / charger / hybrid). Uploading
+ * stores firmware.bin on DO Spaces ({baseUrl}/{product}/{version}/
+ * firmware.bin); "Set stable" / "Set beta" picks which build devices of that
+ * product download (beta-list devices get the beta build). Until a build is
+ * active on a channel, the old fixed file of the product is used.
  */
 const EspFirmware: React.FC = () => {
   const [items, setItems] = useState<EspFirmwareItem[]>([]);
   const [config, setConfig] = useState<EspFirmwareConfig | null>(null);
+  const [product, setProduct] = useState<EspProduct>('inverter');
   const [isLoading, setIsLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -41,7 +54,10 @@ const EspFirmware: React.FC = () => {
   const fetchAll = async () => {
     setIsLoading(true);
     try {
-      const [list, cfg] = await Promise.all([getEspFirmwares(), getEspFirmwareConfig()]);
+      const [list, cfg] = await Promise.all([
+        getEspFirmwares(product),
+        getEspFirmwareConfig(),
+      ]);
       setItems(list.data);
       setConfig(cfg.data);
     } catch (err) {
@@ -53,7 +69,8 @@ const EspFirmware: React.FC = () => {
 
   useEffect(() => {
     fetchAll();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [product]);
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,7 +89,7 @@ const EspFirmware: React.FC = () => {
     if (
       form.activate === 'stable' &&
       !window.confirm(
-        `Make v${form.version.trim()} the STABLE firmware right after the upload?\n\nEvery device will be offered it.`,
+        `Make ${productLabel(product)} v${form.version.trim()} the STABLE firmware right after the upload?\n\nEvery ${product} device will be offered it.`,
       )
     ) {
       return;
@@ -84,6 +101,7 @@ const EspFirmware: React.FC = () => {
     try {
       const res = await uploadEspFirmware(
         {
+          product,
           version: form.version.trim(),
           notes: form.notes.trim() || undefined,
           activate: form.activate || undefined,
@@ -109,13 +127,13 @@ const EspFirmware: React.FC = () => {
   };
 
   const handleActivate = async (it: EspFirmwareItem, channel: EspChannel) => {
-    const current = config?.[channel].version;
+    const current = config?.active[it.product ?? 'inverter']?.[channel].version;
     if (
       !window.confirm(
-        `Set v${it.version} as ${channel.toUpperCase()}?\n\nCurrently ${channel}: v${current ?? '?'}.` +
+        `Set ${productLabel(it.product ?? 'inverter')} v${it.version} as ${channel.toUpperCase()}?\n\nCurrently ${channel}: v${current ?? '?'}.` +
           (channel === 'stable'
-            ? '\nAll devices (except the beta list) will be offered this build.'
-            : '\nDevices on the beta list will be offered this build.'),
+            ? `\nAll ${it.product ?? 'inverter'} devices (except the beta list) will be offered this build.`
+            : `\n${it.product ?? 'inverter'} devices on the beta list will be offered this build.`),
       )
     ) {
       return;
@@ -143,13 +161,15 @@ const EspFirmware: React.FC = () => {
   };
 
   const activeCard = (channel: EspChannel) => {
-    const a = config?.[channel];
+    const a = config?.active[product]?.[channel];
     return (
       <div className="esp-active-card">
         <span className="muted">{channel === 'stable' ? 'Stable (all devices)' : 'Beta (beta list)'}</span>
         <strong>{a ? `v${a.version}` : '—'}</strong>
         <span className="muted">
-          {a?.source === 'default' ? 'fixed file (not uploaded here)' : 'uploaded build'}
+          {a?.source === 'default'
+            ? `fixed file: ${PRODUCTS.find((x) => x.key === product)?.defaultFile}`
+            : 'uploaded build'}
         </span>
       </div>
     );
@@ -161,10 +181,10 @@ const EspFirmware: React.FC = () => {
         <div>
           <h1>ESP32 Firmware</h1>
           <p>
-            Builds of the ESP32 inverter firmware. Upload{' '}
+            ESP32 firmware builds per device type. Upload{' '}
             <code>.pio/build/esp32dev/firmware.bin</code>, then set it as beta to test on the
-            beta list and as stable to release it. Devices download the build active on their
-            channel.
+            beta list and as stable to release it. Each device downloads the build active for
+            its type and channel.
           </p>
         </div>
         <button
@@ -184,6 +204,21 @@ const EspFirmware: React.FC = () => {
         </p>
       )}
 
+      <div className="tabs">
+        {PRODUCTS.map((p) => (
+          <button
+            key={p.key}
+            className={`tab ${product === p.key ? 'active' : ''}`}
+            onClick={() => {
+              setProduct(p.key);
+              setDeleteConfirm(null);
+            }}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+
       <div className="esp-active-row">
         {activeCard('stable')}
         {activeCard('beta')}
@@ -192,13 +227,26 @@ const EspFirmware: React.FC = () => {
       {showForm && (
         <div className="form-card">
           <div className="form-card-header">
-            <h3>Upload ESP32 firmware</h3>
+            <h3>Upload ESP32 firmware — {productLabel(product)}</h3>
             <button className="btn-icon" onClick={() => setShowForm(false)}>
               <X size={18} />
             </button>
           </div>
           <form onSubmit={handleUpload} className="blacklist-form">
             <div className="form-row">
+              <div className="form-group">
+                <label>Device type</label>
+                <select
+                  value={product}
+                  onChange={(e) => setProduct(e.target.value as EspProduct)}
+                >
+                  {PRODUCTS.map((p) => (
+                    <option key={p.key} value={p.key}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="form-group">
                 <label>
                   firmware.bin <span className="required">*</span>
@@ -248,8 +296,8 @@ const EspFirmware: React.FC = () => {
               Version must equal <code>currentFirmwareVersion</code> of the build (the backend
               checks the file contains it). Stored at{' '}
               <code>
-                {config?.baseUrl ?? '…/firmware/esp32'}/{form.version.trim() || '<version>'}
-                /firmware.bin
+                {config?.baseUrl ?? '…/firmware/esp32'}/{product}/
+                {form.version.trim() || '<version>'}/firmware.bin
               </code>
               ; an existing version is never overwritten.
             </p>
@@ -382,8 +430,8 @@ const EspFirmware: React.FC = () => {
               {items.length === 0 && (
                 <tr>
                   <td colSpan={6} className="empty-state">
-                    No build uploaded yet — devices use the fixed firmware.bin /
-                    firmware-beta.bin
+                    No {product} build uploaded yet — devices use the fixed file (
+                    {PRODUCTS.find((x) => x.key === product)?.defaultFile})
                   </td>
                 </tr>
               )}

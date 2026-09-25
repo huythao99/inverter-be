@@ -188,7 +188,7 @@ const ChargerDetail: React.FC = () => {
     if (!confirmed) return;
     setIsUpdatingFirmware(true);
     try {
-      await triggerChargerFirmwareUpdate(data.device._id, '1.0.0');
+      await triggerChargerFirmwareUpdate(data.device._id);
       alert('Firmware update triggered. The charger will begin updating.');
     } catch (err: any) {
       alert(err.response?.data?.message || 'Failed to trigger firmware update');

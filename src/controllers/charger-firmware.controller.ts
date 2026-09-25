@@ -26,9 +26,10 @@ export class ChargerFirmwareController {
     return this.chargerFirmwareService.getFirmwareUrl(deviceId);
   }
 
+  // deviceId optional: chargers on the beta list get the beta version.
   @Get('newest')
-  getNewestFirmwareVersion() {
-    return this.chargerFirmwareService.getNewestFirmwareVersion();
+  getNewestFirmwareVersion(@Query('deviceId') deviceId?: string) {
+    return this.chargerFirmwareService.getNewestFirmwareVersion(deviceId);
   }
 
   @Get('version')

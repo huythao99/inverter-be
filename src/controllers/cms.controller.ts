@@ -166,8 +166,14 @@ export class CmsController {
   // ---- ESP32 firmware (builds uploaded to DO Spaces) ----
   @Get('esp-firmwares')
   @UseGuards(AdminGuard)
-  listEspFirmwares() {
-    return this.espFirmwareService.list();
+  listEspFirmwares(
+    @Query('product') product?: 'inverter' | 'charger' | 'hybrid',
+  ) {
+    return this.espFirmwareService.list(
+      product === 'inverter' || product === 'charger' || product === 'hybrid'
+        ? product
+        : undefined,
+    );
   }
 
   @Get('esp-firmwares/config')
@@ -266,7 +272,7 @@ export class CmsController {
     @Param('id') id: string,
     @Body() dto: SetStmFirmwareEnabledDto,
   ) {
-    return this.stmFirmwareService.setEnabled(id, dto.enabled);
+    return this.stmFirmwareService.update(id, dto);
   }
 
   @Delete('stm-firmwares/:id')

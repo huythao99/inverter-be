@@ -451,13 +451,35 @@ export class StmFirmwareService {
     throw new BadRequestException('app.json is not a valid JSON object');
   }
 
-  async setEnabled(id: string, enabled: boolean) {
-    const fw = await this.stmFirmwareModel
-      .findByIdAndUpdate(id, { enabled }, { new: true })
-      .lean()
-      .exec();
-    if (!fw) throw new NotFoundException('STM32 firmware not found');
-    return fw;
+  /** Enable/disable an image and/or move it to another channel. */
+  async update(
+    id: string,
+    changes: { enabled?: boolean; channel?: StmChannel },
+  ) {
+    const $set: { enabled?: boolean; channel?: StmChannel } = {};
+    if (typeof changes.enabled === 'boolean') $set.enabled = changes.enabled;
+    if (changes.channel) $set.channel = changes.channel;
+    if (Object.keys($set).length === 0) {
+      throw new BadRequestException('Nothing to change (enabled / channel)');
+    }
+    try {
+      const fw = await this.stmFirmwareModel
+        .findByIdAndUpdate(id, { $set }, { new: true })
+        .lean()
+        .exec();
+      if (!fw) throw new NotFoundException('STM32 firmware not found');
+      this.logger.log(
+        `STM32 ${fw.product} v${fw.version}: channel=${fw.channel} enabled=${fw.enabled}`,
+      );
+      return fw;
+    } catch (err) {
+      if ((err as { code?: number }).code === 11000) {
+        throw new ConflictException(
+          `This version is already registered on the ${changes.channel} channel`,
+        );
+      }
+      throw err;
+    }
   }
 
   async remove(id: string) {

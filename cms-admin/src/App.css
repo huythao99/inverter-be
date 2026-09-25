@@ -1983,7 +1983,8 @@ body {
 .esp-active-card strong {
   font-size: 20px;
 }
-.esp-firmware-page .actions {
+.esp-firmware-page .actions,
+.stm-firmware-page .actions {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;

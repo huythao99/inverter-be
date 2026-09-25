@@ -13,7 +13,14 @@ export const FIRMWARE_BASE_URL = 'https://giabao-inverter.com/firmware';
 export const DEFAULT_FIRMWARE_VERSION = '1.0.14';
 export const DEFAULT_BETA_FIRMWARE_VERSION = '1.0.14';
 
+/** Same for the charger ESP32 (fixed firmware-charger.bin). */
+export const DEFAULT_CHARGER_FIRMWARE_VERSION = '1.0.0';
+
 export type EspFirmwareChannel = 'stable' | 'beta';
+
+/** Which device the ESP32 build is for. */
+export type EspProduct = 'inverter' | 'charger' | 'hybrid';
+export const ESP_PRODUCTS: EspProduct[] = ['inverter', 'charger', 'hybrid'];
 
 export interface ActiveEspFirmware {
   version: string;
@@ -21,51 +28,69 @@ export interface ActiveEspFirmware {
   source: 'cms' | 'default';
 }
 
-const DEFAULT_ACTIVE: Record<EspFirmwareChannel, ActiveEspFirmware> = {
-  stable: {
-    version: DEFAULT_FIRMWARE_VERSION,
-    url: `${FIRMWARE_BASE_URL}/firmware.bin`,
-    source: 'default',
+const fixed = (version: string, file: string): ActiveEspFirmware => ({
+  version,
+  url: `${FIRMWARE_BASE_URL}/${file}`,
+  source: 'default',
+});
+
+const DEFAULT_ACTIVE: Record<
+  EspProduct,
+  Record<EspFirmwareChannel, ActiveEspFirmware>
+> = {
+  inverter: {
+    stable: fixed(DEFAULT_FIRMWARE_VERSION, 'firmware.bin'),
+    beta: fixed(DEFAULT_BETA_FIRMWARE_VERSION, 'firmware-beta.bin'),
   },
-  beta: {
-    version: DEFAULT_BETA_FIRMWARE_VERSION,
-    url: `${FIRMWARE_BASE_URL}/firmware-beta.bin`,
-    source: 'default',
+  charger: {
+    stable: fixed(DEFAULT_CHARGER_FIRMWARE_VERSION, 'firmware-charger.bin'),
+    beta: fixed(DEFAULT_CHARGER_FIRMWARE_VERSION, 'firmware-charger.bin'),
+  },
+  // No hybrid firmware exists yet: "0.0.0" = nothing to offer.
+  hybrid: {
+    stable: fixed('0.0.0', 'firmware-hybrid.bin'),
+    beta: fixed('0.0.0', 'firmware-hybrid.bin'),
   },
 };
 
-// Active build per channel. Kept in memory (sync reads everywhere) and set by
-// EspFirmwareService from the esp_firmwares collection at startup, after
-// every change and periodically.
-const active: Record<EspFirmwareChannel, ActiveEspFirmware> = {
-  stable: { ...DEFAULT_ACTIVE.stable },
-  beta: { ...DEFAULT_ACTIVE.beta },
+// Active build per product + channel. Kept in memory (sync reads everywhere)
+// and set by EspFirmwareService from the esp_firmwares collection at startup,
+// after every change and periodically.
+const active: Record<
+  EspProduct,
+  Record<EspFirmwareChannel, ActiveEspFirmware>
+> = {
+  inverter: { ...DEFAULT_ACTIVE.inverter },
+  charger: { ...DEFAULT_ACTIVE.charger },
+  hybrid: { ...DEFAULT_ACTIVE.hybrid },
 };
 
 export function activeEspFirmware(
   channel: EspFirmwareChannel,
+  product: EspProduct = 'inverter',
 ): ActiveEspFirmware {
-  return { ...active[channel] };
+  return { ...active[product][channel] };
 }
 
-/** null -> back to the default file of that channel. */
+/** null -> back to the default file of that product + channel. */
 export function setActiveEspFirmware(
+  product: EspProduct,
   channel: EspFirmwareChannel,
   fw: { version: string; url: string } | null,
 ): void {
-  active[channel] = fw
+  active[product][channel] = fw
     ? { version: fw.version, url: fw.url, source: 'cms' }
-    : { ...DEFAULT_ACTIVE[channel] };
+    : { ...DEFAULT_ACTIVE[product][channel] };
 }
 
 /** Newest STABLE ESP32 inverter firmware version. */
 export function newestFirmwareVersion(): string {
-  return active.stable.version;
+  return active.inverter.stable.version;
 }
 
-/** Newest BETA version, served to the devices on the CMS beta list. */
+/** Newest BETA inverter version, served to the devices on the CMS beta list. */
 export function newestBetaFirmwareVersion(): string {
-  return active.beta.version;
+  return active.inverter.beta.version;
 }
 
 /**
@@ -108,7 +133,7 @@ export class FirmwareService {
     )
       ? 'beta'
       : 'stable';
-    return { url: active[channel].url };
+    return { url: active.inverter[channel].url };
   }
 
   async getDeviceFirmwareVersion(

@@ -2,6 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { MqttService } from './mqtt.service';
 import { ChargerDeviceService } from './charger-device.service';
+import { BetaFirmwareDeviceService } from './beta-firmware-device.service';
+import { activeEspFirmware } from './firmware.service';
 
 export interface ChargerOtaStatusPayload {
   userId: string;
@@ -14,21 +16,28 @@ export interface ChargerOtaStatusPayload {
 
 @Injectable()
 export class ChargerFirmwareService {
-  private readonly FIRMWARE_BASE_URL = 'https://giabao-inverter.com/firmware';
-  private readonly NEWEST_VERSION = '1.0.0';
-
   constructor(
     private readonly mqttService: MqttService,
     private readonly chargerDeviceService: ChargerDeviceService,
+    private readonly betaFirmwareDeviceService: BetaFirmwareDeviceService,
   ) {}
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // Build active for chargers in the CMS (ESP32 Firmware -> Charger), or the
+  // fixed firmware-charger.bin until one is set. Devices on the beta list get
+  // the beta build.
   getFirmwareUrl(deviceId: string): { url: string } {
-    return { url: `${this.FIRMWARE_BASE_URL}/firmware-charger.bin` };
+    const channel = this.betaFirmwareDeviceService.isBeta(deviceId)
+      ? 'beta'
+      : 'stable';
+    return { url: activeEspFirmware(channel, 'charger').url };
   }
 
-  getNewestFirmwareVersion(): { version: string } {
-    return { version: this.NEWEST_VERSION };
+  getNewestFirmwareVersion(deviceId?: string): { version: string } {
+    const channel =
+      deviceId && this.betaFirmwareDeviceService.isBeta(deviceId)
+        ? 'beta'
+        : 'stable';
+    return { version: activeEspFirmware(channel, 'charger').version };
   }
 
   async getDeviceFirmwareVersion(

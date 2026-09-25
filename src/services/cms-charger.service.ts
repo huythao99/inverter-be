@@ -195,7 +195,10 @@ export class CmsChargerService {
     return this.chargerFirmwareService.triggerFirmwareUpdate(
       device.userId,
       device.deviceId,
-      targetVersion,
+      // Informational for the device; default to the build it will download.
+      targetVersion ||
+        this.chargerFirmwareService.getNewestFirmwareVersion(device.deviceId)
+          .version,
     );
   }
 }
