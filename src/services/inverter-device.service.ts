@@ -90,6 +90,15 @@ export class InverterDeviceService {
     return this.inverterDeviceModel.findOne({ userId, deviceId }).exec();
   }
 
+  /** userIds of every account that has this deviceId (owner + shares). */
+  async findUserIdsByDeviceId(deviceId: string): Promise<string[]> {
+    const rows = await this.inverterDeviceModel
+      .find({ deviceId }, { userId: 1 })
+      .lean()
+      .exec();
+    return rows.map((r) => r.userId).filter(Boolean);
+  }
+
   async findOne(_id: string): Promise<InverterDevice | null> {
     return this.inverterDeviceModel.findById(_id).exec();
   }

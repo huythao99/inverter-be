@@ -514,14 +514,8 @@ export class FirmwareBulkUpdateService
             } else {
               await this.mqttService.publish(
                 `inverter/${userId}/${deviceId}/firmware/update`,
-                {
-                  action: 'start_update',
-                  userId,
-                  deviceId,
-                  force: true,
-                  bulkJobId: jobId,
-                  timestamp: new Date().toISOString(),
-                },
+                // Only { ts } - see UserApiController firmware/update.
+                { ts: Date.now() },
               );
             }
             await this.redis

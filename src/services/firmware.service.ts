@@ -126,14 +126,36 @@ export class FirmwareService {
 
   // Beta devices are managed from the CMS (matched by deviceId, optionally
   // scoped to a userId) instead of being hard-coded here.
-  getFirmwareUrl(deviceId: string, userId?: string): { url: string } {
-    const channel: EspFirmwareChannel = this.betaFirmwareDeviceService.isBeta(
+  /**
+   * Download URL for the ESP32 (GET /api/firmware). The ESP32 sends only its
+   * deviceId, so when no userId is given the beta list is checked against
+   * every account that has the device - otherwise a device listed as beta for
+   * its user would get the stable file while the app offers the beta version.
+   */
+  async getFirmwareUrl(
+    deviceId: string,
+    userId?: string,
+  ): Promise<{ url: string }> {
+    const channel: EspFirmwareChannel = (await this.isBetaDevice(
       deviceId,
       userId,
-    )
+    ))
       ? 'beta'
       : 'stable';
     return { url: active.inverter[channel].url };
+  }
+
+  private async isBetaDevice(
+    deviceId: string,
+    userId?: string,
+  ): Promise<boolean> {
+    if (this.betaFirmwareDeviceService.isBeta(deviceId, userId)) return true;
+    if (userId) return false;
+    const userIds =
+      await this.inverterDeviceService.findUserIdsByDeviceId(deviceId);
+    return userIds.some((uid) =>
+      this.betaFirmwareDeviceService.isBeta(deviceId, uid),
+    );
   }
 
   async getDeviceFirmwareVersion(

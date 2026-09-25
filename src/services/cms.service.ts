@@ -547,6 +547,7 @@ export class CmsService implements OnModuleInit {
     userId: string;
     deviceId: string;
     statusTopic: string;
+    targetVersion: string;
   }> {
     const device = await this.inverterDeviceModel.findById(id).exec();
     if (!device) {
@@ -555,14 +556,10 @@ export class CmsService implements OnModuleInit {
 
     const topic = `inverter/${device.userId}/${device.deviceId}/firmware/update`;
     const statusTopic = `inverter/${device.userId}/${device.deviceId}/ota/status`;
-    const payload = {
-      action: 'start_update',
-      userId: device.userId,
-      deviceId: device.deviceId,
-      timestamp: new Date().toISOString(),
-      currentVersion: device.firmwareVersion || '1.0.0',
-      targetVersion,
-    };
+    // Only { ts }: the ESP32 reacts to the topic and uses ts to ignore a stale
+    // command. Keep it short - PubSubClient (256 B buffer on old firmware)
+    // silently drops a longer packet. targetVersion is only returned to the CMS.
+    const payload = { ts: Date.now() };
 
     await this.mqttService.publish(topic, payload);
 
@@ -572,6 +569,7 @@ export class CmsService implements OnModuleInit {
       userId: device.userId,
       deviceId: device.deviceId,
       statusTopic,
+      targetVersion,
     };
   }
 

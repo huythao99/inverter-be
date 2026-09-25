@@ -75,6 +75,17 @@ interface RealtimeData {
   timestamp: string;
 }
 
+// ESP32 ota/status -> label (progress % is per phase, from the device).
+const OTA_LABEL: Record<string, string> = {
+  starting: 'Starting...',
+  started: 'Starting...',
+  downloading: 'Downloading firmware...',
+  installing: 'Installing firmware...',
+  progress: 'Updating...',
+  success: 'Update successful! Device is rebooting',
+  failed: 'Update failed',
+};
+
 interface OtaStatus {
   status: 'installing' | 'success' | 'failed' | string;
   progress?: number;
@@ -107,6 +118,9 @@ const DeviceDetail: React.FC = () => {
   const [isUpdatingFirmware, setIsUpdatingFirmware] = useState(false);
   const [isRestarting, setIsRestarting] = useState(false);
   const [otaStatus, setOtaStatus] = useState<OtaStatus | null>(null);
+  const [otaNotice, setOtaNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  // No ota/status within this long after the command -> device didn't answer.
+  const otaTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [stmOta, setStmOta] = useState<StmOtaLive | null>(null);
 
   // Real-time state
@@ -211,6 +225,11 @@ const DeviceDetail: React.FC = () => {
               timestamp: new Date().toISOString(),
             };
             setOtaStatus(newOtaStatus);
+            setOtaNotice(null);
+            if (otaTimeoutRef.current) {
+              clearTimeout(otaTimeoutRef.current);
+              otaTimeoutRef.current = null;
+            }
 
             // If update completed or failed, stop showing updating state
             if (
@@ -303,19 +322,44 @@ const DeviceDetail: React.FC = () => {
 
     if (!confirmed) return;
 
+    // Stays "updating" until the device reports success/failed on ota/status
+    // (see the MQTT handler above) or doesn't answer at all.
     setIsUpdatingFirmware(true);
+    setOtaStatus(null);
+    setOtaNotice(null);
     try {
-      await triggerFirmwareUpdate(data.device._id);
-      alert(
-        'Firmware update triggered successfully! The device will begin updating.',
-      );
+      const res = await triggerFirmwareUpdate(data.device._id);
+      const target = (res.data as { targetVersion?: string })?.targetVersion;
+      setOtaNotice({
+        ok: true,
+        text: `Update command sent${target ? ` (target ${target})` : ''}, waiting for the device...`,
+      });
+      if (otaTimeoutRef.current) clearTimeout(otaTimeoutRef.current);
+      otaTimeoutRef.current = setTimeout(() => {
+        otaTimeoutRef.current = null;
+        setIsUpdatingFirmware(false);
+        setOtaNotice({
+          ok: false,
+          text: 'No answer from the device within 45 s (offline, or old firmware still busy).',
+        });
+      }, 45000);
     } catch (err: any) {
       console.error('Failed to trigger firmware update', err);
-      alert(err.response?.data?.message || 'Failed to trigger firmware update');
-    } finally {
       setIsUpdatingFirmware(false);
+      setOtaNotice({
+        ok: false,
+        text: err.response?.data?.message || 'Failed to trigger firmware update',
+      });
     }
   };
+
+  // Don't leave the timeout running after leaving the page.
+  useEffect(
+    () => () => {
+      if (otaTimeoutRef.current) clearTimeout(otaTimeoutRef.current);
+    },
+    [],
+  );
 
   const handleRestart = async () => {
     if (!data?.device?._id) return;
@@ -421,7 +465,14 @@ const DeviceDetail: React.FC = () => {
             </button>
           </div>
           {/* OTA Progress Display */}
-          {otaStatus && isUpdatingFirmware && (
+          {otaNotice && (
+            <div className="info-item" style={{ gridColumn: '1 / -1' }}>
+              <span style={{ color: otaNotice.ok ? '#2563eb' : '#dc2626' }}>
+                {otaNotice.text}
+              </span>
+            </div>
+          )}
+          {otaStatus && (
             <div
               className="info-item ota-progress-container"
               style={{ gridColumn: '1 / -1' }}
@@ -429,20 +480,20 @@ const DeviceDetail: React.FC = () => {
               <div className="ota-progress">
                 <div className="ota-progress-header">
                   <span className="ota-status">
-                    {otaStatus.status === 'installing' &&
-                      'Installing firmware...'}
-                    {otaStatus.status === 'success' && 'Update successful!'}
+                    {OTA_LABEL[otaStatus.status] ?? otaStatus.status}
                     {otaStatus.status === 'failed' &&
-                      `Update failed: ${otaStatus.message || 'Unknown error'}`}
+                      `: ${otaStatus.message || 'Unknown error'}`}
                   </span>
                   <span className="ota-percentage">
-                    {otaStatus.progress ?? 0}%
+                    {otaStatus.status === 'success' ? 100 : (otaStatus.progress ?? 0)}%
                   </span>
                 </div>
                 <div className="ota-progress-bar">
                   <div
                     className={`ota-progress-fill ${otaStatus.status === 'failed' ? 'error' : otaStatus.status === 'success' ? 'success' : ''}`}
-                    style={{ width: `${otaStatus.progress ?? 0}%` }}
+                    style={{
+                      width: `${otaStatus.status === 'success' ? 100 : (otaStatus.progress ?? 0)}%`,
+                    }}
                   />
                 </div>
               </div>

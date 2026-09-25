@@ -705,15 +705,10 @@ export class UserApiController {
 
     await this.mqttService.publish(
       `inverter/${user.uid}/${deviceId}/firmware/update`,
-      {
-        action: 'start_update',
-        userId: user.uid,
-        deviceId,
-        timestamp: new Date().toISOString(),
-        currentVersion,
-        targetVersion,
-        source: 'web',
-      },
+      // Only { ts }: the ESP32 reacts to the topic and uses ts to ignore a
+      // stale command. Keep it short - PubSubClient (256 B buffer on old
+      // firmware) silently drops a longer packet.
+      { ts: now },
     );
     return { success: true, currentVersion, targetVersion };
   }
