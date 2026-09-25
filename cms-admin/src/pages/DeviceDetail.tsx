@@ -8,6 +8,8 @@ import {
   restartDevice,
 } from '../services/api';
 import VirtualList from '../components/VirtualList';
+import StmFirmwareCard from '../components/StmFirmwareCard';
+import type { StmOtaLive } from '../components/StmFirmwareCard';
 import {
   ArrowLeft,
   Cpu,
@@ -105,6 +107,7 @@ const DeviceDetail: React.FC = () => {
   const [isUpdatingFirmware, setIsUpdatingFirmware] = useState(false);
   const [isRestarting, setIsRestarting] = useState(false);
   const [otaStatus, setOtaStatus] = useState<OtaStatus | null>(null);
+  const [stmOta, setStmOta] = useState<StmOtaLive | null>(null);
 
   // Real-time state
   const [isConnected, setIsConnected] = useState(false);
@@ -153,8 +156,10 @@ const DeviceDetail: React.FC = () => {
       // Subscribe to device data topic
       const dataTopic = `inverter/${userId}/${deviceId}/data`;
       const otaTopic = `inverter/${userId}/${deviceId}/ota/status`;
+      const stmOtaTopic = `inverter/${userId}/${deviceId}/stm/ota/status`;
       client.subscribe(dataTopic, { qos: 0 });
       client.subscribe(otaTopic, { qos: 1 });
+      client.subscribe(stmOtaTopic, { qos: 1 });
     });
 
     client.on('disconnect', () => {
@@ -176,6 +181,24 @@ const DeviceDetail: React.FC = () => {
 
         // Clean control characters from the message
         const cleanedStr = messageStr.replace(/[\x00-\x1F\x7F]/g, '');
+
+        // STM32 FOTA status (must be checked before the ESP32 OTA topic,
+        // which has the same '/ota/status' suffix)
+        if (topic.endsWith('/stm/ota/status')) {
+          try {
+            const p = JSON.parse(cleanedStr);
+            if (typeof p.status === 'string') {
+              setStmOta({
+                status: p.status,
+                progress: typeof p.progress === 'number' ? p.progress : undefined,
+                message: typeof p.message === 'string' ? p.message : undefined,
+              });
+            }
+          } catch {
+            // Invalid STM OTA status JSON
+          }
+          return;
+        }
 
         // Handle OTA status messages
         if (topic.endsWith('/ota/status')) {
@@ -265,6 +288,7 @@ const DeviceDetail: React.FC = () => {
         const otaTopic = `inverter/${userId}/${deviceId}/ota/status`;
         client.unsubscribe(dataTopic);
         client.unsubscribe(otaTopic);
+        client.unsubscribe(`inverter/${userId}/${deviceId}/stm/ota/status`);
         client.end();
       }
     };
@@ -450,6 +474,9 @@ const DeviceDetail: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* STM32 power board firmware */}
+      {data?.device && <StmFirmwareCard deviceId={data.device._id} live={stmOta} />}
 
       {/* Tabs */}
       <div className="tabs">

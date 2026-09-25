@@ -62,6 +62,8 @@ const Devices: React.FC = () => {
   const [showBulkConfirm, setShowBulkConfirm] = useState(false);
   const [includeUpToDate, setIncludeUpToDate] = useState(false);
   const [includeBeta, setIncludeBeta] = useState(false);
+  // What the bulk job updates: the ESP32 (OTA) or the STM32 power board.
+  const [bulkTarget, setBulkTarget] = useState<'esp32' | 'stm32'>('esp32');
   const [isStartingBulk, setIsStartingBulk] = useState(false);
   const [bulkError, setBulkError] = useState('');
   const [bulkJob, setBulkJob] = useState<BulkFirmwareJob | null>(null);
@@ -166,8 +168,14 @@ const Devices: React.FC = () => {
     try {
       const res = await startBulkFirmwareUpdate(
         selectAllMatching
-          ? { all: true, search: appliedSearch || undefined, includeUpToDate, includeBeta }
-          : { ids: Array.from(selectedIds), includeUpToDate, includeBeta },
+          ? {
+              all: true,
+              search: appliedSearch || undefined,
+              includeUpToDate,
+              includeBeta,
+              target: bulkTarget,
+            }
+          : { ids: Array.from(selectedIds), includeUpToDate, includeBeta, target: bulkTarget },
       );
       setBulkJob(res.data);
       setShowBulkConfirm(false);
@@ -316,15 +324,47 @@ const Devices: React.FC = () => {
         <div className="modal-backdrop" onClick={() => !isStartingBulk && setShowBulkConfirm(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h3>Force firmware update</h3>
+            <div className="bulk-target">
+              <label className="modal-check">
+                <input
+                  type="radio"
+                  name="bulk-target"
+                  checked={bulkTarget === 'esp32'}
+                  onChange={() => setBulkTarget('esp32')}
+                  disabled={isStartingBulk}
+                />{' '}
+                ESP32 firmware
+              </label>
+              <label className="modal-check">
+                <input
+                  type="radio"
+                  name="bulk-target"
+                  checked={bulkTarget === 'stm32'}
+                  onChange={() => setBulkTarget('stm32')}
+                  disabled={isStartingBulk}
+                />{' '}
+                STM32 power board
+              </label>
+            </div>
             <p>
-              Send the firmware update command to <strong>{selectedCount}</strong>{' '}
+              Send the {bulkTarget === 'stm32' ? 'STM32' : 'firmware'} update command to{' '}
+              <strong>{selectedCount}</strong>{' '}
               device{selectedCount === 1 ? '' : 's'}
               {selectAllMatching && appliedSearch ? ` matching "${appliedSearch}"` : ''}?
             </p>
             <ul className="modal-notes">
+              {bulkTarget === 'stm32' ? (
+                <li>
+                  Each device flashes the newest STM32 image of its own voltage class.{' '}
+                  <strong>The inverter stops producing power for ~40 s.</strong> Devices whose
+                  STM32 has not reported its version, or whose ESP32 firmware is too old, are
+                  skipped.
+                </li>
+              ) : null}
               <li>
-                Each device downloads and flashes the newest firmware, then reboots
-                (offline ~1 minute).{' '}
+                {bulkTarget === 'stm32'
+                  ? ''
+                  : 'Each device downloads and flashes the newest firmware, then reboots (offline ~1 minute). '}
                 {includeUpToDate
                   ? 'Devices already on the newest version are re-flashed too.'
                   : 'Devices that already report the newest version are skipped.'}
@@ -610,7 +650,9 @@ const BulkJobPanel: React.FC<{
     <div className="bulk-panel">
       <div className="bulk-panel-header">
         <div>
-          <strong>Bulk firmware update</strong>{' '}
+          <strong>
+            Bulk {job.target === 'stm32' ? 'STM32' : 'ESP32'} firmware update
+          </strong>{' '}
           <span className="muted">
             started {new Date(job.createdAt).toLocaleString()} ·{' '}
             {job.status === 'sending' ? 'sending commands…' : 'all commands sent'}
@@ -647,6 +689,12 @@ const BulkJobPanel: React.FC<{
         )}
         {(job.skippedLegacy ?? 0) > 0 && (
           <span>Skipped (legacy &lt; 436) <strong>{job.skippedLegacy}</strong></span>
+        )}
+        {(job.skippedUnsupported ?? 0) > 0 && (
+          <span>Skipped (ESP32 too old) <strong>{job.skippedUnsupported}</strong></span>
+        )}
+        {(job.skippedNoFirmware ?? 0) > 0 && (
+          <span>Skipped (no STM32 image) <strong>{job.skippedNoFirmware}</strong></span>
         )}
         <span>Waiting to send <strong>{counts.queued}</strong></span>
         <span>Sent, no reply <strong>{counts.sent}</strong></span>

@@ -22,6 +22,12 @@ import { MqttService } from './mqtt.service';
 import { BetaFirmwareDeviceService } from './beta-firmware-device.service';
 import { BulkFirmwareUpdateDto } from '../dto/bulk-firmware-update.dto';
 import {
+  StmFirmwareService,
+  StmTarget,
+  parseStmVersion,
+  voltageLabel,
+} from './stm-firmware.service';
+import {
   NEWEST_FIRMWARE_VERSION,
   NEWEST_BETA_FIRMWARE_VERSION,
   compareFirmwareVersions,
@@ -36,7 +42,9 @@ type DeviceState =
   | 'failed'
   | 'skipped_uptodate' // not sent: already on the target version
   | 'skipped_beta' // not sent: on the beta list
-  | 'skipped_legacy'; // not sent: legacy device (number < 436), no OTA
+  | 'skipped_legacy' // not sent: legacy device (number < 436), no OTA
+  | 'skipped_unsupported' // STM32 job: ESP32 firmware too old for STM32 FOTA
+  | 'skipped_nofw'; // STM32 job: STM32 version unknown / no image for its voltage
 
 const DEVICE_STATES: DeviceState[] = [
   'queued',
@@ -47,7 +55,11 @@ const DEVICE_STATES: DeviceState[] = [
   'skipped_uptodate',
   'skipped_beta',
   'skipped_legacy',
+  'skipped_unsupported',
+  'skipped_nofw',
 ];
+
+export type BulkTarget = 'esp32' | 'stm32';
 
 /** Last known details of one device in a job (stored as JSON in Redis). */
 interface DeviceInfo {
@@ -78,6 +90,8 @@ export interface BulkJobDevicesPage {
 
 export interface BulkJobStatus {
   jobId: string;
+  /** esp32 = ESP32 OTA, stm32 = STM32 FOTA through the ESP32. */
+  target: BulkTarget;
   status: 'sending' | 'sent';
   createdAt: string;
   sendingFinishedAt: string | null;
@@ -90,6 +104,10 @@ export interface BulkJobStatus {
   skippedBeta: number;
   /** Selected legacy devices (number < 436) left out: they never get OTA. */
   skippedLegacy: number;
+  /** STM32 jobs: ESP32 firmware too old for STM32 FOTA. */
+  skippedUnsupported: number;
+  /** STM32 jobs: version not reported yet / no image for its voltage. */
+  skippedNoFirmware: number;
   counts: Record<DeviceState, number>;
   /** Devices that failed or have not answered yet (capped list). */
   failed: string[];
@@ -129,6 +147,7 @@ export class FirmwareBulkUpdateService
     private redisConfig: RedisConfig,
     private mqttService: MqttService,
     private betaFirmwareDeviceService: BetaFirmwareDeviceService,
+    private stmFirmwareService: StmFirmwareService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -161,8 +180,10 @@ export class FirmwareBulkUpdateService
   private info(i: DeviceInfo): string {
     return JSON.stringify({ ...i, at: i.at ?? new Date().toISOString() });
   }
-  private activeKey(device: string) {
-    return `${this.KEY}:active:${device}`;
+  private activeKey(device: string, target: BulkTarget = 'esp32') {
+    return target === 'stm32'
+      ? `${this.KEY}:active_stm:${device}`
+      : `${this.KEY}:active:${device}`;
   }
   private get latestKey() {
     return `${this.KEY}:latest`;
@@ -211,7 +232,13 @@ export class FirmwareBulkUpdateService
     }
 
     const devices = await this.inverterDeviceModel
-      .find(filter, { userId: 1, deviceId: 1, firmwareVersion: 1 })
+      .find(filter, {
+        userId: 1,
+        deviceId: 1,
+        firmwareVersion: 1,
+        stmFwVersion: 1,
+        stmFwCrc: 1,
+      })
       .sort({ updatedAt: -1 })
       .limit(this.MAX_DEVICES + 1)
       .lean()
@@ -223,6 +250,10 @@ export class FirmwareBulkUpdateService
       throw new BadRequestException(
         `Too many devices (> ${this.MAX_DEVICES}), narrow the filter`,
       );
+    }
+
+    if (dto.target === 'stm32') {
+      return this.startStm(dto, devices);
     }
 
     // Skip devices already on the newest firmware. The version is the one the
@@ -277,6 +308,7 @@ export class FirmwareBulkUpdateService
       skipped: String(skipped),
       skippedBeta: String(skippedBeta),
       skippedLegacy: String(skippedLegacy),
+      target: 'esp32',
       sendingFinishedAt: '',
     });
     // Every selected device gets a row (skipped ones too) so the CMS can list
@@ -325,25 +357,173 @@ export class FirmwareBulkUpdateService
     return this.getStatus(jobId);
   }
 
+  /**
+   * STM32 FOTA job. Every device gets the image of its own voltage class
+   * (2nd number of the version its STM32 reports), so there is no single target version.
+   */
+  private async startStm(
+    dto: BulkFirmwareUpdateDto,
+    devices: Array<{
+      userId: string;
+      deviceId: string;
+      firmwareVersion?: string | null;
+      stmFwVersion?: string | null;
+      stmFwCrc?: string | null;
+    }>,
+  ): Promise<BulkJobStatus> {
+    const targetCache = new Map<string, StmTarget | null>();
+    const counts = { unsupported: 0, beta: 0, nofw: 0, uptodate: 0 };
+    const rows: { target: string; state: DeviceState; info: string }[] = [];
+    const targets: string[] = [];
+    const createdAt = new Date().toISOString();
+
+    for (const d of devices) {
+      const key = `${d.userId}/${d.deviceId}`;
+      const beta = this.betaFirmwareDeviceService.isBeta(d.deviceId, d.userId);
+      let state: DeviceState = 'queued';
+      let note: string | undefined;
+      let tgt: StmTarget | null = null;
+
+      if (!this.stmFirmwareService.espSupportsStmFota(d.firmwareVersion)) {
+        state = 'skipped_unsupported';
+        counts.unsupported++;
+        note = `ESP32 ${d.firmwareVersion ?? '?'} < ${this.stmFirmwareService.minEspVersion}`;
+      } else if (beta && !dto.includeBeta) {
+        state = 'skipped_beta';
+        counts.beta++;
+      } else if (!parseStmVersion(d.stmFwVersion)) {
+        state = 'skipped_nofw';
+        counts.nofw++;
+        note = 'STM32 version not reported yet';
+      } else {
+        const cur = parseStmVersion(d.stmFwVersion)!;
+        const code = cur.voltageCode;
+        const cacheKey = `${cur.major}.${code}/${beta ? 'b' : 's'}`;
+        if (!targetCache.has(cacheKey)) {
+          targetCache.set(
+            cacheKey,
+            await this.stmFirmwareService.findTarget(
+              'inverter',
+              cur.major,
+              code,
+              beta,
+            ),
+          );
+        }
+        tgt = targetCache.get(cacheKey) ?? null;
+        if (!tgt) {
+          state = 'skipped_nofw';
+          counts.nofw++;
+          note = `No STM32 image for ${cur.major}.${code}.x (${voltageLabel(code)})`;
+        } else if (
+          !dto.includeUpToDate &&
+          this.stmFirmwareService.isUpToDate(
+            d as unknown as InverterDevice,
+            tgt,
+          )
+        ) {
+          state = 'skipped_uptodate';
+          counts.uptodate++;
+        }
+      }
+      if (state === 'queued') targets.push(key);
+      rows.push({
+        target: key,
+        state,
+        info: this.info({
+          version: d.stmFwVersion ?? d.stmFwCrc ?? undefined,
+          message:
+            note ?? (tgt ? `${d.stmFwVersion} -> ${tgt.version}` : undefined),
+          at: createdAt,
+        }),
+      });
+    }
+
+    if (targets.length === 0) {
+      const reasons: string[] = [];
+      if (counts.uptodate)
+        reasons.push(`${counts.uptodate} already up to date`);
+      if (counts.nofw)
+        reasons.push(`${counts.nofw} without STM32 version/image`);
+      if (counts.unsupported) {
+        reasons.push(`${counts.unsupported} with ESP32 firmware too old`);
+      }
+      if (counts.beta) reasons.push(`${counts.beta} on the beta list`);
+      throw new BadRequestException(`Nothing to update: ${reasons.join(', ')}`);
+    }
+
+    const jobId = randomUUID();
+    const pipeline = this.redis.pipeline();
+    pipeline.hset(this.jobKey(jobId), {
+      status: 'sending',
+      createdAt,
+      total: String(targets.length),
+      target: 'stm32',
+      targetVersion: 'STM32 (per voltage)',
+      skipped: String(counts.uptodate),
+      skippedBeta: String(counts.beta),
+      skippedLegacy: '0',
+      skippedUnsupported: String(counts.unsupported),
+      skippedNoFirmware: String(counts.nofw),
+      sendingFinishedAt: '',
+    });
+    for (let i = 0; i < rows.length; i += 500) {
+      const states: Record<string, string> = {};
+      const infos: Record<string, string> = {};
+      for (const r of rows.slice(i, i + 500)) {
+        states[r.target] = r.state;
+        infos[r.target] = r.info;
+      }
+      pipeline.hset(this.devKey(jobId), states);
+      pipeline.hset(this.infoKey(jobId), infos);
+    }
+    pipeline.expire(this.jobKey(jobId), this.JOB_TTL_SECONDS);
+    pipeline.expire(this.devKey(jobId), this.JOB_TTL_SECONDS);
+    pipeline.expire(this.infoKey(jobId), this.JOB_TTL_SECONDS);
+    pipeline.set(this.latestKey, jobId, 'EX', this.JOB_TTL_SECONDS);
+    await pipeline.exec();
+
+    this.logger.log(
+      `Bulk STM32 update ${jobId}: ${targets.length} device(s), skipped: ${JSON.stringify(counts)}`,
+    );
+    void this.runBatches(jobId, targets, 'stm32');
+    return this.getStatus(jobId);
+  }
+
   /** Publish triggers batch by batch (runs in the background). */
-  private async runBatches(jobId: string, targets: string[]): Promise<void> {
+  private async runBatches(
+    jobId: string,
+    targets: string[],
+    kind: BulkTarget = 'esp32',
+  ): Promise<void> {
     try {
       for (let i = 0; i < targets.length; i += this.BATCH_SIZE) {
         const batch = targets.slice(i, i + this.BATCH_SIZE);
         for (const target of batch) {
           const [userId, deviceId] = target.split('/');
           try {
-            await this.mqttService.publish(
-              `inverter/${userId}/${deviceId}/firmware/update`,
-              {
-                action: 'start_update',
-                userId,
-                deviceId,
+            if (kind === 'stm32') {
+              // Re-validates against the current device state and records
+              // stmOta on the device (force: the job already skipped
+              // up-to-date devices unless includeUpToDate was set).
+              await this.stmFirmwareService.trigger(userId, deviceId, {
                 force: true,
-                bulkJobId: jobId,
-                timestamp: new Date().toISOString(),
-              },
-            );
+                source: 'bulk',
+                skipCooldown: true,
+              });
+            } else {
+              await this.mqttService.publish(
+                `inverter/${userId}/${deviceId}/firmware/update`,
+                {
+                  action: 'start_update',
+                  userId,
+                  deviceId,
+                  force: true,
+                  bulkJobId: jobId,
+                  timestamp: new Date().toISOString(),
+                },
+              );
+            }
             await this.redis
               .pipeline()
               .hset(this.devKey(jobId), target, 'sent')
@@ -354,18 +534,25 @@ export class FirmwareBulkUpdateService
                   message: 'Update command sent, waiting for the device',
                 }),
               )
-              .set(this.activeKey(target), jobId, 'EX', this.ACTIVE_TTL_SECONDS)
+              .set(
+                this.activeKey(target, kind),
+                jobId,
+                'EX',
+                this.ACTIVE_TTL_SECONDS,
+              )
               .exec();
-          } catch {
+          } catch (err) {
+            const reason =
+              kind === 'stm32' && err instanceof Error
+                ? err.message.slice(0, 200)
+                : 'Could not publish the MQTT command';
             await this.redis
               .pipeline()
               .hset(this.devKey(jobId), target, 'failed')
               .hset(
                 this.infoKey(jobId),
                 target,
-                await this.mergeInfo(jobId, target, {
-                  message: 'Could not publish the MQTT command',
-                }),
+                await this.mergeInfo(jobId, target, { message: reason }),
               )
               .exec()
               .catch(() => undefined);
@@ -410,10 +597,35 @@ export class FirmwareBulkUpdateService
     progress?: number;
     message?: string;
   }): Promise<void> {
+    return this.applyStatus('esp32', payload);
+  }
+
+  /** Same for STM32 FOTA reports (inverter/{uid}/{id}/stm/ota/status). */
+  @OnEvent('stm.ota.status.received')
+  async handleStmOtaStatus(payload: {
+    userId: string;
+    deviceId: string;
+    status?: string;
+    progress?: number;
+    message?: string;
+  }): Promise<void> {
+    return this.applyStatus('stm32', payload);
+  }
+
+  private async applyStatus(
+    kind: BulkTarget,
+    payload: {
+      userId: string;
+      deviceId: string;
+      status?: string;
+      progress?: number;
+      message?: string;
+    },
+  ): Promise<void> {
     if (this.redis?.status !== 'ready' || !payload.status) return;
     const target = `${payload.userId}/${payload.deviceId}`;
     try {
-      const jobId = await this.redis.get(this.activeKey(target));
+      const jobId = await this.redis.get(this.activeKey(target, kind));
       if (!jobId) return;
 
       let next: DeviceState;
@@ -422,6 +634,7 @@ export class FirmwareBulkUpdateService
           next = 'success';
           break;
         case 'failed':
+        case 'rescue_needed': // STM32 left in its bootloader
           next = 'failed';
           break;
         default:
@@ -445,7 +658,7 @@ export class FirmwareBulkUpdateService
         .hset(this.infoKey(jobId), target, info)
         .exec();
       if (next === 'success' || next === 'failed') {
-        await this.redis.del(this.activeKey(target));
+        await this.redis.del(this.activeKey(target, kind));
       }
     } catch {
       // Progress tracking is best-effort.
@@ -483,6 +696,7 @@ export class FirmwareBulkUpdateService
 
     return {
       jobId,
+      target: job.target === 'stm32' ? 'stm32' : 'esp32',
       status: job.status === 'sending' ? 'sending' : 'sent',
       createdAt: job.createdAt,
       sendingFinishedAt: job.sendingFinishedAt || null,
@@ -491,6 +705,8 @@ export class FirmwareBulkUpdateService
       skipped: Number(job.skipped) || 0,
       skippedBeta: Number(job.skippedBeta) || 0,
       skippedLegacy: Number(job.skippedLegacy) || 0,
+      skippedUnsupported: Number(job.skippedUnsupported) || 0,
+      skippedNoFirmware: Number(job.skippedNoFirmware) || 0,
       counts,
       failed,
       noResponse,
@@ -528,6 +744,8 @@ export class FirmwareBulkUpdateService
       skipped_uptodate: 5,
       skipped_beta: 6,
       skipped_legacy: 7,
+      skipped_unsupported: 8,
+      skipped_nofw: 9,
     };
     const rows: BulkJobDeviceRow[] = [];
     for (const [target, st] of Object.entries(states)) {

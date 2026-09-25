@@ -126,6 +126,8 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     const topics = [
       'inverter/+/+/data',
       'inverter/+/+/ota/status', // OTA firmware update status
+      'inverter/+/+/stm/ota/status', // STM32 FOTA status (via the ESP32)
+      'inverter/+/+/stm/info', // STM32 version report (a.b.c, b = voltage)
       'devices/inverter/+/+',
       'charger/+/+/data', // Charger telemetry/cfg/info
       'charger/+/+/status', // Charger heartbeat
@@ -162,6 +164,14 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     const wifiSsid = isInverter ? topicParts[2] : topicParts[3];
 
     if (this.blacklistDeviceService.isBlacklisted(wifiSsid, currentUid)) return;
+
+    // STM32 (power board) FOTA through the ESP32 — no rate limiting:
+    //   inverter/{uid}/{id}/stm/ota/status  { status, progress?, message? }
+    //   inverter/{uid}/{id}/stm/info        { version: "a.b.c", crc32? }
+    if (isInverter && topicParts[3] === 'stm') {
+      this.handleStmMessage(currentUid, wifiSsid, topicParts, message);
+      return;
+    }
 
     // Handle OTA status messages (no rate limiting for OTA updates)
     // Topic format: inverter/{userId}/{deviceId}/ota/status
@@ -379,6 +389,32 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  private handleStmMessage(
+    userId: string,
+    deviceId: string,
+    topicParts: string[],
+    message: Buffer,
+  ) {
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(message.toString()) as Record<string, unknown>;
+    } catch {
+      return; // invalid JSON
+    }
+    if (topicParts[4] === 'ota' && topicParts[5] === 'status') {
+      this.eventEmitter.emit('stm.ota.status.received', {
+        userId,
+        deviceId,
+        status: typeof data.status === 'string' ? data.status : undefined,
+        progress: typeof data.progress === 'number' ? data.progress : undefined,
+        message: typeof data.message === 'string' ? data.message : undefined,
+        timestamp: new Date().toISOString(),
+      });
+    } else if (topicParts[4] === 'info') {
+      this.eventEmitter.emit('stm.info.received', { userId, deviceId, data });
+    }
+  }
+
   // Handle OTA status messages from devices
   // Topic format: inverter/{userId}/{deviceId}/ota/status
   // Expected payload: { status: 'installing' | 'success' | 'failed', progress?: number, message?: string }
@@ -496,7 +532,11 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     await this.publish(topic, payload);
   }
 
-  async emitShareValue(userId: string, deviceId: string, value: number): Promise<void> {
+  async emitShareValue(
+    userId: string,
+    deviceId: string,
+    value: number,
+  ): Promise<void> {
     await this.publish(`inverter/${userId}/${deviceId}/share`, { value });
   }
 
@@ -551,7 +591,9 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   // per-device topic ({inverter|charger}/{uid}/{deviceId}/blacklist), retained
   // so a device that reconnects later still learns its current status.
   @OnEvent(BLACKLIST_CHANGED_EVENT)
-  async handleBlacklistChanged(payload: BlacklistChangedPayload): Promise<void> {
+  async handleBlacklistChanged(
+    payload: BlacklistChangedPayload,
+  ): Promise<void> {
     // Minimal payload: lock=true (blacklisted) / lock=false (unblacklisted).
     await this.publishWithRetain(payload.topic, { lock: payload.lock }, true);
   }

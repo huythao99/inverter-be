@@ -27,6 +27,30 @@ export class InverterDevice {
   @Prop({ type: Boolean, default: false })
   autoCalculate: boolean;
 
+  // ---- STM32 (power board) firmware, as reported by the STM32 itself ------
+  // Reported via PATCH /api/stm-firmware/info/:userId/:deviceId or the MQTT
+  // topic inverter/{uid}/{deviceId}/stm/info. Null until first report.
+  // Version is "major.voltage.patch" (2nd number = voltage class).
+  @Prop({ type: String, default: null })
+  stmFwVersion: string | null;
+
+  @Prop({ type: String, default: null })
+  stmFwCrc: string | null; // "0xXXXXXXXX"
+
+  @Prop({ type: Date, default: null })
+  stmInfoAt: Date | null;
+
+  // Last STM32 FOTA state (trigger + stm/ota/status reports).
+  @Prop({ type: Object, default: null })
+  stmOta: {
+    status: string;
+    progress?: number;
+    message?: string;
+    targetVersion?: string;
+    source?: string;
+    at: Date;
+  } | null;
+
   @Prop({ default: Date.now })
   updatedAt: Date;
 }

@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -20,6 +21,12 @@ import { BetaFirmwareDeviceService } from '../services/beta-firmware-device.serv
 import { DeviceRestartService } from '../services/device-restart.service';
 import { FirmwareBulkUpdateService } from '../services/firmware-bulk-update.service';
 import { BulkFirmwareUpdateDto } from '../dto/bulk-firmware-update.dto';
+import { StmFirmwareService } from '../services/stm-firmware.service';
+import {
+  RegisterStmFirmwareDto,
+  SetStmFirmwareEnabledDto,
+  StmUpdateDto,
+} from '../dto/stm-firmware.dto';
 import { AdminLoginDto } from '../dto/admin-login.dto';
 import {
   DeviceQueryDto,
@@ -37,6 +44,7 @@ export class CmsController {
     private readonly betaFirmwareDeviceService: BetaFirmwareDeviceService,
     private readonly deviceRestartService: DeviceRestartService,
     private readonly firmwareBulkUpdateService: FirmwareBulkUpdateService,
+    private readonly stmFirmwareService: StmFirmwareService,
   ) {}
 
   // ==================== Authentication ====================
@@ -124,6 +132,54 @@ export class CmsController {
     @Body('targetVersion') targetVersion: string,
   ) {
     return this.cmsService.triggerFirmwareUpdate(id, targetVersion);
+  }
+
+  // ---- STM32 firmware (static images registered from the CMS) ----
+  @Get('stm-firmwares')
+  @UseGuards(AdminGuard)
+  listStmFirmwares(@Query('product') product?: 'inverter' | 'charger') {
+    return this.stmFirmwareService.list(
+      product === 'inverter' || product === 'charger' ? product : undefined,
+    );
+  }
+
+  @Post('stm-firmwares')
+  @UseGuards(AdminGuard)
+  registerStmFirmware(@Body() dto: RegisterStmFirmwareDto) {
+    return this.stmFirmwareService.register(dto);
+  }
+
+  @Patch('stm-firmwares/:id')
+  @UseGuards(AdminGuard)
+  setStmFirmwareEnabled(
+    @Param('id') id: string,
+    @Body() dto: SetStmFirmwareEnabledDto,
+  ) {
+    return this.stmFirmwareService.setEnabled(id, dto.enabled);
+  }
+
+  @Delete('stm-firmwares/:id')
+  @UseGuards(AdminGuard)
+  deleteStmFirmware(@Param('id') id: string) {
+    return this.stmFirmwareService.remove(id);
+  }
+
+  // STM32 info + update target of one device (by device _id)
+  @Get('devices/:id/stm')
+  @UseGuards(AdminGuard)
+  getDeviceStm(@Param('id') id: string) {
+    return this.stmFirmwareService.describeById(id);
+  }
+
+  @Post('devices/:id/stm-update')
+  @UseGuards(AdminGuard)
+  @HttpCode(HttpStatus.OK)
+  async triggerStmUpdate(@Param('id') id: string, @Body() dto: StmUpdateDto) {
+    const d = await this.stmFirmwareService.describeById(id);
+    return this.stmFirmwareService.trigger(d.userId, d.deviceId, {
+      force: dto.force,
+      source: 'cms',
+    });
   }
 
   // ---- Bulk (forced) firmware update ----

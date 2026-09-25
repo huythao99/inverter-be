@@ -1690,6 +1690,84 @@ body {
   font-size: 13px;
 }
 
+/* ===== STM32 firmware ===== */
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.form-group select {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  background: white;
+}
+
+.stm-card {
+  background: var(--bg-card);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 16px 20px;
+  margin-bottom: 20px;
+}
+
+.stm-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.stm-card-header h3 {
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.stm-grid label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-light);
+}
+
+.stm-grid span {
+  font-weight: 500;
+}
+
+.stm-note {
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.stm-note.warn {
+  color: #b45309;
+}
+
+.stm-note.error {
+  color: var(--danger);
+}
+
+.stm-progress {
+  margin-top: 12px;
+}
+
+.bulk-target {
+  display: flex;
+  gap: 16px;
+  margin: 8px 0 4px;
+}
+
 /* ===== Compact mobile layout (phones) =====
  * Kept last so it overrides the desktop sizes above. Everything is scaled
  * down one step, EXCEPT form fields: iOS Safari zooms the whole page when an

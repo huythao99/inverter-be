@@ -16,6 +16,8 @@ const STATE_LABEL: Record<BulkDeviceState, string> = {
   skipped_uptodate: 'Skipped (up to date)',
   skipped_beta: 'Skipped (beta)',
   skipped_legacy: 'Skipped (legacy < 436)',
+  skipped_unsupported: 'Skipped (ESP32 too old)',
+  skipped_nofw: 'Skipped (no STM32 version / image)',
 };
 
 const FILTERS: (BulkDeviceState | 'all')[] = [
@@ -28,6 +30,8 @@ const FILTERS: (BulkDeviceState | 'all')[] = [
   'skipped_uptodate',
   'skipped_beta',
   'skipped_legacy',
+  'skipped_unsupported',
+  'skipped_nofw',
 ];
 
 const PAGE_SIZE = 50;

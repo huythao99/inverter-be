@@ -35,6 +35,7 @@ import {
 import { BlacklistDeviceService } from '../services/blacklist-device.service';
 import { DeviceRestartService } from '../services/device-restart.service';
 import { MqttService } from '../services/mqtt.service';
+import { StmFirmwareService } from '../services/stm-firmware.service';
 import { BetaFirmwareDeviceService } from '../services/beta-firmware-device.service';
 import {
   NEWEST_FIRMWARE_VERSION,
@@ -61,6 +62,7 @@ export class UserApiController {
     private readonly deviceRestartService: DeviceRestartService,
     private readonly mqttService: MqttService,
     private readonly betaFirmwareDeviceService: BetaFirmwareDeviceService,
+    private readonly stmFirmwareService: StmFirmwareService,
   ) {}
 
   private readonly firmwareUpdateAt = new Map<string, number>();
@@ -714,6 +716,30 @@ export class UserApiController {
       },
     );
     return { success: true, currentVersion, targetVersion };
+  }
+
+  // ---- STM32 (power board) firmware — web + mobile app ----------------------
+
+  // Reported STM32 version (a.b.c, b = voltage class) + available update.
+  @Get('devices/:deviceId/stm')
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
+  getDeviceStm(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('deviceId') deviceId: string,
+  ) {
+    return this.stmFirmwareService.describeByUserDevice(user.uid, deviceId);
+  }
+
+  // Trigger the STM32 update. The device stops producing power for ~40 s.
+  @Post('devices/:deviceId/stm/update')
+  updateDeviceStm(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('deviceId') deviceId: string,
+    @Headers('x-client') client?: string,
+  ) {
+    return this.stmFirmwareService.trigger(user.uid, deviceId, {
+      source: client === 'mobile' ? 'app' : 'web',
+    });
   }
 
   // Remote reboot of the device's ESP32 (mobile app + web). Rate-limited to

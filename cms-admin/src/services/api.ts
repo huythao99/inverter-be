@@ -73,10 +73,98 @@ export const triggerFirmwareUpdate = (id: string, targetVersion: string) =>
 // Remote ESP32 reboot via MQTT cmd/restart (1 request per device per minute).
 export const restartDevice = (id: string) => api.post(`/devices/${id}/restart`);
 
+// ---- STM32 firmware (FOTA through the ESP32) ----
+export type StmProduct = 'inverter' | 'charger';
+export type StmChannel = 'stable' | 'beta';
+
+export interface StmFirmware {
+  _id: string;
+  product: StmProduct;
+  channel: StmChannel;
+  // "major.voltage.patch": 2nd number = voltage class (1=12V, 2=24V, 3=36V, 4=48V)
+  version: string;
+  major: number; // 3 = F303, 2 = G431
+  voltageCode: number;
+  url: string;
+  size: number;
+  crc32: string;
+  appBase: string | null;
+  built: string | null;
+  notes: string;
+  enabled: boolean;
+  createdAt: string;
+}
+
+export interface StmTarget {
+  id: string;
+  channel: StmChannel;
+  version: string;
+  major: number;
+  chip: string | null;
+  voltageCode: number;
+  voltage: string | null;
+  url: string;
+  size: number;
+  crc32: string;
+}
+
+export interface DeviceStmInfo {
+  userId?: string;
+  deviceId?: string;
+  version: string | null;
+  major: number | null;
+  chip: string | null;
+  voltageCode: number | null;
+  voltage: string | null;
+  crc32: string | null;
+  reportedAt: string | null;
+  supported: boolean;
+  minEspVersion: string;
+  target: StmTarget | null;
+  updateAvailable: boolean;
+  reason: null | 'esp_firmware_too_old' | 'version_unknown' | 'no_firmware';
+  lastOta: {
+    status: string;
+    progress?: number | null;
+    message?: string | null;
+    targetVersion?: string;
+    source?: string;
+    at: string;
+  } | null;
+}
+
+export const getStmFirmwares = (product?: StmProduct) =>
+  api.get<StmFirmware[]>('/stm-firmwares', { params: product ? { product } : undefined });
+
+export const registerStmFirmware = (body: {
+  product: StmProduct;
+  channel: StmChannel;
+  version: string;
+  binUrl: string;
+  manifestUrl?: string;
+  notes?: string;
+}) => api.post<StmFirmware>('/stm-firmwares', body);
+
+export const setStmFirmwareEnabled = (id: string, enabled: boolean) =>
+  api.patch<StmFirmware>(`/stm-firmwares/${id}`, { enabled });
+
+export const deleteStmFirmware = (id: string) => api.delete(`/stm-firmwares/${id}`);
+
+export const getDeviceStm = (id: string) => api.get<DeviceStmInfo>(`/devices/${id}/stm`);
+
+export const triggerStmUpdate = (id: string, force = false) =>
+  api.post<{ success: boolean; targetVersion: string; crc32: string }>(
+    `/devices/${id}/stm-update`,
+    { force },
+  );
+
 // Bulk (forced) firmware update: selected device _ids, or every device
 // matching `search` when `all` is true. Triggers are sent in batches.
+export type BulkTarget = 'esp32' | 'stm32';
+
 export interface BulkFirmwareJob {
   jobId: string;
+  target?: BulkTarget;
   status: 'sending' | 'sent';
   createdAt: string;
   sendingFinishedAt: string | null;
@@ -85,6 +173,8 @@ export interface BulkFirmwareJob {
   skipped?: number;
   skippedBeta?: number;
   skippedLegacy?: number;
+  skippedUnsupported?: number;
+  skippedNoFirmware?: number;
   counts: {
     queued: number;
     sent: number;
@@ -94,6 +184,8 @@ export interface BulkFirmwareJob {
     skipped_uptodate?: number;
     skipped_beta?: number;
     skipped_legacy?: number;
+    skipped_unsupported?: number;
+    skipped_nofw?: number;
   };
   failed: string[];
   noResponse: string[];
@@ -105,6 +197,7 @@ export const startBulkFirmwareUpdate = (body: {
   search?: string;
   includeUpToDate?: boolean;
   includeBeta?: boolean;
+  target?: BulkTarget;
 }) => api.post<BulkFirmwareJob>('/firmware-bulk-updates', body);
 
 export const getLatestBulkFirmwareUpdate = () =>
@@ -121,7 +214,9 @@ export type BulkDeviceState =
   | 'failed'
   | 'skipped_uptodate'
   | 'skipped_beta'
-  | 'skipped_legacy';
+  | 'skipped_legacy'
+  | 'skipped_unsupported'
+  | 'skipped_nofw';
 
 export interface BulkJobDeviceRow {
   userId: string;

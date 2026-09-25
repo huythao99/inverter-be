@@ -54,6 +54,9 @@ export class InverterDataService implements OnModuleDestroy {
   // Devices already flagged autoCalculate in the DB this process, so we don't
   // hit MongoDB on every 12-number message.
   private autoCalcMarked = new Set<string>();
+  // Last STM32 firmware version seen per device (13th telemetry field), so the
+  // device row is only written when it changes.
+  private lastStmVersion = new Map<string, string>();
 
   // Last accepted odometer reading per device (kWh), for the plausibility
   // check on 12-number frames.
@@ -441,6 +444,11 @@ export class InverterDataService implements OnModuleDestroy {
     // (this day's reading - previous day's reading). Any device sending this
     // format is an autoCalculate device; flag it in the DB (once) so reads can
     // rely on the stored flag instead of the device name.
+    // STM32 firmware >= 2.0.0 appends its version "x.y.z" as the 13th field.
+    if (parts.length >= 13) {
+      this.recordStmVersion(payload.currentUid, payload.wifiSsid, parts[12]);
+    }
+
     if (parts.length >= 12) {
       this.markDeviceAutoCalculate(payload.currentUid, payload.wifiSsid);
 
@@ -509,7 +517,8 @@ export class InverterDataService implements OnModuleDestroy {
     const last = this.lastOdometer.get(deviceKey);
     if (last) {
       const hours = Math.max(now - last.at, 0) / 3600000;
-      const allowed = this.MAX_DEVICE_KW * hours + this.ODOMETER_JUMP_MARGIN_KWH;
+      const allowed =
+        this.MAX_DEVICE_KW * hours + this.ODOMETER_JUMP_MARGIN_KWH;
       if (totalA - last.totalA > allowed || totalA2 - last.totalA2 > allowed) {
         return false;
       }
@@ -523,6 +532,33 @@ export class InverterDataService implements OnModuleDestroy {
 
   // Flag a device as autoCalculate in the DB the first time it reports the
   // 12-number format. Cached in-memory so we only write once per process.
+  /**
+   * Store the STM32 firmware version the board reports in telemetry (field 13,
+   * "major.voltage.patch") on the device row; only written when it changes.
+   * This is what STM32 FOTA uses to pick the image (see StmFirmwareService).
+   */
+  private recordStmVersion(
+    userId: string,
+    deviceId: string,
+    raw: string,
+  ): void {
+    const version = raw.trim();
+    if (!/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(version)) return;
+    const key = `${userId}:${deviceId}`;
+    if (this.lastStmVersion.get(key) === version) return;
+    if (this.lastStmVersion.size > this.MAX_MEMORY_ENTRIES) {
+      this.lastStmVersion.clear();
+    }
+    this.lastStmVersion.set(key, version);
+    this.inverterDeviceModel
+      .updateOne(
+        { userId, deviceId, stmFwVersion: { $ne: version } },
+        { $set: { stmFwVersion: version, stmInfoAt: new Date() } },
+      )
+      .exec()
+      .catch(() => this.lastStmVersion.delete(key));
+  }
+
   private markDeviceAutoCalculate(userId: string, deviceId: string): void {
     const key = `${userId}:${deviceId}`;
     if (this.autoCalcMarked.has(key)) return;

@@ -2,6 +2,7 @@ import {
   ArrayMaxSize,
   IsArray,
   IsBoolean,
+  IsIn,
   IsMongoId,
   IsOptional,
   IsString,
@@ -45,4 +46,12 @@ export class BulkFirmwareUpdateDto {
   @IsOptional()
   @IsBoolean()
   includeBeta?: boolean;
+
+  /**
+   * What to update: the ESP32 (default) or the STM32 power board (FOTA
+   * through the ESP32; each device gets the image of its own voltage class).
+   */
+  @IsOptional()
+  @IsIn(['esp32', 'stm32'])
+  target?: 'esp32' | 'stm32';
 }
