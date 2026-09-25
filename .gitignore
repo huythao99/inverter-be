@@ -58,3 +58,7 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 # Firebase service account keys (sensitive!)
 *firebase-adminsdk*.json
 serviceAccount*.json
+
+# deploy workflow (VPS)
+.last_deploy_sha
+dist.prev

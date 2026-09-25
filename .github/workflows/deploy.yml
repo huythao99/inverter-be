@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+
+# Never run two deploys on the VPS at the same time.
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -16,48 +22,90 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
+          command_timeout: 20m
           script: |
-            set -e
-
+            set -euo pipefail
             cd /var/www/inverter-be
 
-            echo "Pull latest code..."
-            BEFORE=$(git rev-parse HEAD)
-            git pull origin main
-            AFTER=$(git rev-parse HEAD)
+            STEP="start"
+            # Any failing command -> say which step failed + the app log, and
+            # put the previous build back so the running app is never broken.
+            on_error() {
+              code=$?
+              echo "::error::Deploy FAILED at step: $STEP (exit $code)"
+              if [ -d dist.prev ] && [ ! -f dist/main.js ]; then
+                echo "Restoring previous backend build (dist.prev -> dist)"
+                rm -rf dist && mv dist.prev dist
+              fi
+              echo "----- pm2 logs nestjs (last 80 lines) -----"
+              pm2 logs nestjs --lines 80 --nostream --raw 2>&1 | tail -n 80 || true
+              exit $code
+            }
+            trap on_error ERR
 
-            echo "Check for cms-admin changes..."
-            if git diff --name-only "$BEFORE" "$AFTER" -- cms-admin | grep -q .; then
+            STEP="git pull"
+            # Diff against the last SUCCESSFUL deploy, not the previous pull:
+            # after a failed deploy the next one must still rebuild the CMS.
+            LAST_OK=$(cat .last_deploy_sha 2>/dev/null || git rev-parse HEAD)
+            git pull --ff-only origin main
+            AFTER=$(git rev-parse HEAD)
+            echo "Deploying $LAST_OK -> $AFTER"
+            if ! git cat-file -e "$LAST_OK" 2>/dev/null || \
+               git diff --name-only "$LAST_OK" "$AFTER" -- cms-admin | grep -q .; then
               CMS_CHANGED=1
             else
               CMS_CHANGED=0
             fi
 
-            echo "Install dependencies..."
+            STEP="npm ci (backend)"
             npm ci
 
-            echo "Build..."
+            STEP="build (backend)"
+            # nest build empties dist/ first: keep the last good build aside.
+            rm -rf dist.prev
+            [ -d dist ] && cp -a dist dist.prev
             npm run build
+            test -f dist/main.js
 
             if [ "$CMS_CHANGED" -eq 1 ]; then
-              echo "CMS Admin changed, building..."
-              cd cms-admin
-              npm ci
-              npm run build
-              cd ..
+              STEP="build (cms-admin)"
+              (cd cms-admin && npm ci && npm run build)
             else
-              echo "No cms-admin changes, skipping build."
+              echo "No cms-admin changes, skipping CMS build."
             fi
 
-            echo "Restart PM2..."
-            pm2 restart nestjs
+            STEP="pm2 restart"
+            pm2 restart nestjs --update-env
+
+            STEP="health check"
+            # The API must answer within ~60 s after the restart.
+            ok=0
+            for i in $(seq 1 30); do
+              if curl -fsS -m 3 http://127.0.0.1:3000/api/mqtt-auth/health >/dev/null; then
+                ok=1; break
+              fi
+              sleep 2
+            done
+            if [ "$ok" -ne 1 ]; then
+              echo "::error::Backend did not answer /api/mqtt-auth/health after restart"
+              false
+            fi
+            echo "API is up."
+            # MQTT link to the broker (commands to devices, data ingestion).
+            sleep 5
+            if pm2 logs nestjs --lines 200 --nostream --raw 2>&1 | grep -q "MQTT connected\|MQTT reconnected"; then
+              echo "MQTT connected."
+            else
+              echo "::warning::No 'MQTT connected' in the recent log - check the broker / MQTT_* env"
+            fi
 
             if [ "$CMS_CHANGED" -eq 1 ]; then
-              echo "Reload Nginx..."
+              STEP="nginx reload"
               sudo nginx -t
               sudo systemctl restart nginx
-            else
-              echo "No cms-admin changes, skipping Nginx restart."
             fi
 
-            echo "Deploy completed!"
+            rm -rf dist.prev
+            echo "$AFTER" > .last_deploy_sha
+            trap - ERR
+            echo "Deploy completed: $AFTER"
