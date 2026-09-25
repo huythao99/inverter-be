@@ -81,14 +81,10 @@ export class ChargerFirmwareService {
     const statusTopic = `charger/${userId}/${deviceId}/ota/status`;
     await this.mqttService.publishWithRetain(
       topic,
-      {
-        action: 'start_update',
-        userId,
-        deviceId,
-        currentVersion: device.firmwareVersion || '1.0.0',
-        targetVersion,
-        timestamp: new Date().toISOString(),
-      },
+      // Keep it short: the device only needs the send time (it ignores a
+      // trigger older than 10 min and an empty clear) and fetches the URL
+      // itself from /api/charger-firmware. Older firmware ignores the payload.
+      { ts: Date.now(), ...(targetVersion ? { targetVersion } : {}) },
       true,
     );
 

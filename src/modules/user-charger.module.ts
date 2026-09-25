@@ -6,6 +6,7 @@ import { ChargerDeviceModule } from './charger-device.module';
 import { ChargerSettingModule } from './charger-setting.module';
 import { ChargerDataModule } from './charger-data.module';
 import { ChargerFirmwareModule } from './charger-firmware.module';
+import { MqttAuthModule } from './mqtt-auth.module';
 
 // End-user charger API (/api/user/chargers). Firebase auth strategy is
 // registered by UserApiModule; PassportModule sets the default strategy.
@@ -17,6 +18,7 @@ import { ChargerFirmwareModule } from './charger-firmware.module';
     ChargerSettingModule,
     ChargerDataModule,
     ChargerFirmwareModule,
+    MqttAuthModule,
   ],
   controllers: [UserChargerController],
 })

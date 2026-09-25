@@ -3,6 +3,7 @@ import {
   Get,
   Patch,
   Delete,
+  Post,
   Param,
   Body,
   UseGuards,
@@ -18,6 +19,8 @@ import { ChargerDeviceService } from '../services/charger-device.service';
 import { ChargerSettingService } from '../services/charger-setting.service';
 import { ChargerDataService } from '../services/charger-data.service';
 import { ChargerFirmwareService } from '../services/charger-firmware.service';
+import { ChargerProvisionService } from '../services/charger-provision.service';
+import { MqttAuthService } from '../services/mqtt-auth.service';
 import { UpdateUserChargerSettingDto } from '../dto/update-user-charger-setting.dto';
 import {
   decodeChargerValue,
@@ -34,6 +37,8 @@ export class UserChargerController {
     private readonly chargerSettingService: ChargerSettingService,
     private readonly chargerDataService: ChargerDataService,
     private readonly chargerFirmwareService: ChargerFirmwareService,
+    private readonly chargerProvisionService: ChargerProvisionService,
+    private readonly mqttAuthService: MqttAuthService,
   ) {}
 
   // Ensure the charger belongs to the authenticated user (throws if not).
@@ -67,6 +72,14 @@ export class UserChargerController {
     return { firmwareVersion: device.firmwareVersion ?? null };
   }
 
+  // One-time code the app passes to a charger during setup (with the home
+  // WiFi). The charger exchanges it for its own MQTT account and is added to
+  // this user (POST /api/charger-device/provision). Valid 30 min.
+  @Post('claim')
+  createClaim(@CurrentFirebaseUser() user: FirebaseUser) {
+    return this.chargerProvisionService.createClaim(user.uid);
+  }
+
   // Remove a charger from the user's account.
   @Delete(':deviceId')
   async deleteCharger(
@@ -78,6 +91,8 @@ export class UserChargerController {
       deviceId,
     );
     if (!device) throw new NotFoundException(`Charger ${deviceId} not found`);
+    // Cut the charger off the broker; it must be added again (new claim).
+    await this.mqttAuthService.revokeChargerCredentials(deviceId, user.uid);
     return device;
   }
 

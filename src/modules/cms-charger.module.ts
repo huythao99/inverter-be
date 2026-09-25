@@ -12,6 +12,7 @@ import {
   ChargerSettingSchema,
 } from '../models/charger-setting.schema';
 import { ChargerFirmwareModule } from './charger-firmware.module';
+import { MqttAuthModule } from './mqtt-auth.module';
 
 // Admin dashboard endpoints for chargers. Auth uses the AdminGuard
 // ('admin-jwt' passport strategy registered globally by CmsModule).
@@ -23,6 +24,7 @@ import { ChargerFirmwareModule } from './charger-firmware.module';
       { name: ChargerSetting.name, schema: ChargerSettingSchema },
     ]),
     ChargerFirmwareModule,
+    MqttAuthModule,
   ],
   controllers: [CmsChargerController],
   providers: [CmsChargerService],

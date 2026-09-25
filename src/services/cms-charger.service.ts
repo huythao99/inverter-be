@@ -13,6 +13,7 @@ import {
   ChargerSetting,
   ChargerSettingDocument,
 } from '../models/charger-setting.schema';
+import { MqttAuthService } from './mqtt-auth.service';
 import { ChargerFirmwareService } from './charger-firmware.service';
 import { DeviceQueryDto, UpdateDeviceDto } from '../dto/cms-query.dto';
 import { decodeChargerValue } from '../utils/charger-value.util';
@@ -30,6 +31,7 @@ export class CmsChargerService {
     @InjectModel(ChargerSetting.name)
     private chargerSettingModel: Model<ChargerSettingDocument>,
     private chargerFirmwareService: ChargerFirmwareService,
+    private mqttAuthService: MqttAuthService,
   ) {}
 
   async getDashboard(): Promise<{
@@ -137,6 +139,11 @@ export class CmsChargerService {
     if (!device) {
       throw new NotFoundException(`Charger with ID ${id} not found`);
     }
+    // Cut the charger off the broker (its account belongs to this owner).
+    await this.mqttAuthService.revokeChargerCredentials(
+      device.deviceId,
+      device.userId,
+    );
     return { message: `Charger ${device.deviceId} deleted successfully` };
   }
 

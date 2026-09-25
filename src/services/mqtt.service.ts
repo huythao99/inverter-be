@@ -1,4 +1,9 @@
-import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import * as mqtt from 'mqtt';
@@ -10,11 +15,15 @@ import {
 
 @Injectable()
 export class MqttService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(MqttService.name);
   private client: mqtt.MqttClient;
   private isInitialized = false;
   private messageHandlers = new Map<string, number>();
+  // Failed reconnects since the last successful connect (logging only: the
+  // client must NEVER give up - every command to the devices and all device
+  // data ingestion go through this connection).
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 10;
+  private lastDropLogAt = 0;
   // Backend processes at most one data frame per device every ~3s (DB writes,
   // 10-number energy accumulation, CMS). ESP32 firmware >= improve_read
   // publishes every 1s for the live view (apps read MQTT directly, so they
@@ -94,30 +103,34 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.client.on('connect', () => {
+      if (this.reconnectAttempts > 0) {
+        this.logger.log(
+          `MQTT reconnected as ${clientId} after ${this.reconnectAttempts} attempt(s)`,
+        );
+      } else {
+        this.logger.log(`MQTT connected as ${clientId}`);
+      }
       this.reconnectAttempts = 0;
       if (isPrimary) {
         this.subscribeToInverterTopics();
       }
     });
 
-    this.client.on('error', () => {
-      // MQTT error - silent
-    });
-
-    this.client.on('offline', () => {
-      // MQTT offline - silent
+    // Log the first failure and then every 12th (~1 min at 5 s): visible in
+    // `pm2 logs` without flooding it during a long broker outage.
+    this.client.on('error', (err) => {
+      if (this.reconnectAttempts % 12 === 0) {
+        this.logger.warn(`MQTT error: ${err.message}`);
+      }
     });
 
     this.client.on('reconnect', () => {
       this.reconnectAttempts++;
-      if (this.reconnectAttempts > this.maxReconnectAttempts) {
-        this.client.end();
-        return;
+      if (this.reconnectAttempts === 1 || this.reconnectAttempts % 12 === 0) {
+        this.logger.warn(
+          `MQTT disconnected, reconnecting (attempt ${this.reconnectAttempts})`,
+        );
       }
-    });
-
-    this.client.on('close', () => {
-      // Connection closed
     });
   }
 
@@ -599,11 +612,22 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   }
 
   // Generic publish method
+  // A publish while disconnected is dropped (a stale command replayed later
+  // could surprise the user); say so in the log instead of failing silently.
+  private logDropped(topic: string) {
+    const now = Date.now();
+    if (now - this.lastDropLogAt > 60000) {
+      this.lastDropLogAt = now;
+      this.logger.warn(`MQTT not connected: dropped publish to ${topic}`);
+    }
+  }
+
   async publish(
     topic: string,
     payload: Record<string, unknown>,
   ): Promise<void> {
     if (!this.client || !this.client.connected) {
+      this.logDropped(topic);
       return;
     }
     return new Promise((resolve, reject) => {
@@ -629,6 +653,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     retain: boolean = true,
   ): Promise<void> {
     if (!this.client || !this.client.connected) {
+      this.logDropped(topic);
       return;
     }
 

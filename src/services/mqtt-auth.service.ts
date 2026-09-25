@@ -143,6 +143,80 @@ export class MqttAuthService implements OnModuleInit {
     } catch {
       // index already gone (fresh install / already migrated)
     }
+    // {userId, kind} became partial (device accounts: many per user). An old
+    // full unique index would reject a user's second charger: rebuild it.
+    try {
+      const indexes = await this.mqttCredentialModel.collection.indexes();
+      const old = indexes.find((i) => i.name === 'userId_1_kind_1');
+      if (old && !old.partialFilterExpression) {
+        await this.mqttCredentialModel.collection.dropIndex('userId_1_kind_1');
+        await this.mqttCredentialModel.createIndexes();
+        this.logger.log('Rebuilt userId_1_kind_1 as a partial unique index');
+      }
+    } catch (err) {
+      this.logger.error(
+        `MQTT credential index migration failed: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /** Broker username of a charger's own account. */
+  static chargerUsername(deviceId: string): string {
+    return `chg_${deviceId}`;
+  }
+
+  /**
+   * Issue (or re-issue) the broker account of one charger, owned by userId.
+   * A new random password replaces any previous one, so the old owner / an
+   * earlier provisioning can no longer connect. The password is returned once
+   * (to the device) and only its hash is needed afterwards.
+   */
+  async issueChargerCredentials(
+    userId: string,
+    deviceId: string,
+  ): Promise<{ username: string; password: string }> {
+    const mqttUsername = MqttAuthService.chargerUsername(deviceId);
+    const password = this.generatePassword(32);
+    await this.mqttCredentialModel.findOneAndUpdate(
+      { mqttUsername },
+      {
+        userId,
+        kind: 'charger',
+        deviceId,
+        mqttUsername,
+        mqttPasswordHash: this.hashPassword(password),
+        // Never shown to anyone: store a random value, not the password.
+        mqttPasswordEncrypted: this.encryptPassword(
+          crypto.randomBytes(16).toString('hex'),
+        ),
+        isActive: true,
+        updatedAt: new Date(),
+      },
+      { upsert: true, new: true },
+    );
+    this.logger.log(`Issued MQTT account ${mqttUsername} for user ${userId}`);
+    return { username: mqttUsername, password };
+  }
+
+  /**
+   * Delete a charger's broker account (device removed). With userId, only if
+   * it still belongs to that user (a newer owner keeps theirs). Mosquitto
+   * caches auth results (go-auth cache), so the device is cut off within
+   * that cache time.
+   */
+  async revokeChargerCredentials(
+    deviceId: string,
+    userId?: string,
+  ): Promise<void> {
+    const filter: Record<string, string> = {
+      mqttUsername: MqttAuthService.chargerUsername(deviceId),
+      kind: 'charger',
+    };
+    if (userId) filter.userId = userId;
+    const res = await this.mqttCredentialModel.deleteOne(filter).exec();
+    if (res.deletedCount) {
+      this.logger.log(`Revoked MQTT account of charger ${deviceId}`);
+    }
   }
 
   /** Read-only broker account of a user's mobile app + web (kind 'app'). */
@@ -326,6 +400,18 @@ export class MqttAuthService implements OnModuleInit {
     const userId = credential.userId;
     const kind = credential.kind ?? 'ha';
 
+    // Charger device account: only its own topics, fixed direction.
+    if (kind === 'charger') {
+      if (!credential.deviceId) return false;
+      const base = `charger/${userId}/${credential.deviceId}/`;
+      const publishes = ['data', 'status', 'ota/status'];
+      const receives = ['firmware/update', 'cmd/settings', 'blacklist'];
+      const allowed = access === 'write' ? publishes : receives;
+      if (allowed.some((t) => topic === base + t)) return true;
+      this.logger.debug(`ACL denied: ${username} cannot ${access} ${topic}`);
+      return false;
+    }
+
     // App/web and CMS accounts only ever read (commands go through the API).
     if (kind === 'app' || kind === 'cms') {
       if (access === 'write') return false;
@@ -377,7 +463,7 @@ export class MqttAuthService implements OnModuleInit {
    */
   async addAllowedDevice(userId: string, deviceId: string): Promise<void> {
     await this.mqttCredentialModel.updateOne(
-      { userId },
+      { userId, kind: 'ha' },
       {
         $addToSet: { allowedDevices: deviceId },
         $set: { updatedAt: new Date() },
@@ -390,7 +476,7 @@ export class MqttAuthService implements OnModuleInit {
    */
   async removeAllowedDevice(userId: string, deviceId: string): Promise<void> {
     await this.mqttCredentialModel.updateOne(
-      { userId },
+      { userId, kind: 'ha' },
       {
         $pull: { allowedDevices: deviceId },
         $set: { updatedAt: new Date() },

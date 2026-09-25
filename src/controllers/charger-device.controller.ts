@@ -1,94 +1,37 @@
 import {
   Controller,
-  Get,
   Post,
   Body,
   Patch,
   Param,
-  Delete,
   HttpStatus,
   HttpCode,
   NotFoundException,
-  Header,
 } from '@nestjs/common';
 import { ChargerDeviceService } from '../services/charger-device.service';
-import { CreateChargerDeviceDto } from '../dto/create-charger-device.dto';
-import { UpdateChargerDeviceDto } from '../dto/update-charger-device.dto';
+import { ChargerProvisionService } from '../services/charger-provision.service';
+import { ProvisionChargerDto } from '../dto/provision-charger.dto';
 
+// Routes called by the charger FIRMWARE (no user session). Everything the
+// app/web needs lives under /api/user/chargers (Firebase auth).
 @Controller('api/charger-device')
 export class ChargerDeviceController {
-  constructor(private readonly chargerDeviceService: ChargerDeviceService) {}
+  constructor(
+    private readonly chargerDeviceService: ChargerDeviceService,
+    private readonly chargerProvisionService: ChargerProvisionService,
+  ) {}
 
-  // Device registration (firmware calls this on first online)
-  @Post('data')
-  @HttpCode(HttpStatus.CREATED)
-  async create(@Body() dto: CreateChargerDeviceDto) {
-    await this.chargerDeviceService.create(dto);
-  }
-
-  // List a user's chargers (app/web)
-  @Get('data/device/:userId')
-  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
-  findByUserId(@Param('userId') userId: string) {
-    return this.chargerDeviceService.findByUserId(userId);
-  }
-
-  @Get('data/:userId/:deviceId')
-  async findByUserIdAndDeviceId(
-    @Param('userId') userId: string,
-    @Param('deviceId') deviceId: string,
-  ) {
-    const device = await this.chargerDeviceService.findByUserIdAndDeviceId(
-      userId,
-      deviceId,
+  // Setup: exchange the one-time claim (from the app) for the charger's own
+  // MQTT account. Also registers the charger to the claim's owner.
+  // Replaces the old unauthenticated POST data registration.
+  @Post('provision')
+  @HttpCode(HttpStatus.OK)
+  provision(@Body() dto: ProvisionChargerDto) {
+    return this.chargerProvisionService.provision(
+      dto.deviceId,
+      dto.claim,
+      dto.firmwareVersion,
     );
-    if (!device) {
-      throw new NotFoundException(
-        `Charger ${deviceId} not found for user ${userId}`,
-      );
-    }
-    return device;
-  }
-
-  @Patch('data/:userId/:deviceId')
-  async updateByUserIdAndDeviceId(
-    @Param('userId') userId: string,
-    @Param('deviceId') deviceId: string,
-    @Body() dto: UpdateChargerDeviceDto,
-  ) {
-    const device = await this.chargerDeviceService.updateByUserIdAndDeviceId(
-      userId,
-      deviceId,
-      dto,
-    );
-    if (!device) {
-      throw new NotFoundException(
-        `Charger ${deviceId} not found for user ${userId}`,
-      );
-    }
-    return device;
-  }
-
-  @Patch('data/:userId/:deviceId/description')
-  async updateDescription(
-    @Param('userId') userId: string,
-    @Param('deviceId') deviceId: string,
-    @Body('description') description: string,
-  ) {
-    if (description === undefined || description === null) {
-      throw new NotFoundException('description is required');
-    }
-    const device = await this.chargerDeviceService.updateDescription(
-      userId,
-      deviceId,
-      description,
-    );
-    if (!device) {
-      throw new NotFoundException(
-        `Charger ${deviceId} not found for user ${userId}`,
-      );
-    }
-    return { message: 'Description updated successfully', device };
   }
 
   // Firmware version report (firmware calls after OTA reboot)
@@ -112,22 +55,5 @@ export class ChargerDeviceController {
       );
     }
     return { message: 'Firmware version updated successfully', device };
-  }
-
-  @Delete('data/:userId/:deviceId')
-  async removeByUserIdAndDeviceId(
-    @Param('userId') userId: string,
-    @Param('deviceId') deviceId: string,
-  ) {
-    const device = await this.chargerDeviceService.removeByUserIdAndDeviceId(
-      userId,
-      deviceId,
-    );
-    if (!device) {
-      throw new NotFoundException(
-        `Charger ${deviceId} not found for user ${userId}`,
-      );
-    }
-    return device;
   }
 }
