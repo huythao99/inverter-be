@@ -1,7 +1,10 @@
 # STM32 FOTA (power board, flashed through the ESP32)
 
-Backend / CMS / web / app side is implemented. The ESP32 side follows the
-contract below (to be implemented and confirmed).
+Backend / CMS / web / app side is implemented. The ESP32 side (firmware
+1.0.15, `esp32-inverter/src/stm_fota.cpp`) implements the contract below:
+image kept in LittleFS (`/stm_new.bin` -> `/stm_cur.bin`, previous one in
+`/stm_prev.bin`), up to 3 flash attempts, and a restore of the previous image
+when a failed attempt may have erased the STM32 app.
 
 ## Versioning
 
