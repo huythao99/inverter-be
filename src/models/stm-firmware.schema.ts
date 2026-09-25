@@ -8,7 +8,8 @@ export type StmChannel = 'stable' | 'beta';
 
 /**
  * An STM32 firmware image registered in the CMS. The file itself is hosted as
- * a static file (DigitalOcean) next to its app.json manifest; only metadata
+ * a static file on the firmware server ({STM_FIRMWARE_BASE_URL}/{product}/
+ * {version}/app.bin, next to its app.json); only metadata
  * (validated against the real file at registration) is stored here.
  */
 @Schema({ timestamps: true, collection: 'stm_firmwares' })

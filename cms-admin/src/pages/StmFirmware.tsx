@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
+  getStmFirmwareConfig,
   getStmFirmwares,
   registerStmFirmware,
   setStmFirmwareEnabled,
@@ -18,7 +19,7 @@ const emptyForm = {
 };
 
 /**
- * STM32 firmware images. Files are uploaded by hand to DigitalOcean (app.bin +
+ * STM32 firmware images. Files are uploaded by hand to the firmware server (app.bin +
  * app.json side by side); registering here downloads both and checks size,
  * CRC32 and the vector table before any device can be offered the image.
  */
@@ -31,6 +32,19 @@ const StmFirmware: React.FC = () => {
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [baseUrl, setBaseUrl] = useState('');
+
+  useEffect(() => {
+    getStmFirmwareConfig()
+      .then((res) => setBaseUrl(res.data.baseUrl))
+      .catch(() => undefined);
+  }, []);
+
+  // Where the backend will look when the app.bin URL is left empty.
+  const defaultBinUrl =
+    baseUrl && form.version.trim()
+      ? `${baseUrl}/${form.product}/${form.version.trim()}/app.bin`
+      : '';
 
   const fetchItems = async () => {
     setIsLoading(true);
@@ -51,8 +65,8 @@ const StmFirmware: React.FC = () => {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.version.trim() || !form.binUrl.trim()) {
-      setFormError('Version and app.bin URL are required');
+    if (!form.version.trim()) {
+      setFormError('Version is required');
       return;
     }
     setIsSubmitting(true);
@@ -62,7 +76,7 @@ const StmFirmware: React.FC = () => {
         product: form.product,
         channel: form.channel,
         version: form.version.trim(),
-        binUrl: form.binUrl.trim(),
+        binUrl: form.binUrl.trim() || undefined,
         manifestUrl: form.manifestUrl.trim() || undefined,
         notes: form.notes.trim() || undefined,
       });
@@ -162,14 +176,20 @@ const StmFirmware: React.FC = () => {
             </div>
             <div className="form-group">
               <label>
-                app.bin URL <span className="required">*</span>
+                app.bin URL{' '}
+                <span className="optional">(optional — default: standard path below)</span>
               </label>
               <input
                 type="url"
-                placeholder="https://<space>.digitaloceanspaces.com/stm/inverter/1.2.0/app.bin"
+                placeholder={defaultBinUrl || `${baseUrl || '<firmware server>/stm'}/{product}/{version}/app.bin`}
                 value={form.binUrl}
                 onChange={(e) => setForm({ ...form, binUrl: e.target.value })}
               />
+              <span className="muted">
+                Upload app.bin (+ app.json) to{' '}
+                <code>{baseUrl || '…/firmware/stm'}/{form.product}/{form.version.trim() || '<version>'}/</code>{' '}
+                — same server as the ESP32 firmware.
+              </span>
             </div>
             <div className="form-group">
               <label>

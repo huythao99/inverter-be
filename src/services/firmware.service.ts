@@ -2,6 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { InverterDeviceService } from './inverter-device.service';
 import { BetaFirmwareDeviceService } from './beta-firmware-device.service';
 
+/** Where all firmware files are served from (ESP32, charger, STM32). */
+export const FIRMWARE_BASE_URL = 'https://giabao-inverter.com/firmware';
+
 /** Newest STABLE ESP32 inverter firmware (firmware.bin). Bump on release. */
 export const NEWEST_FIRMWARE_VERSION = '1.0.14';
 
@@ -38,8 +41,6 @@ export function compareFirmwareVersions(a: string, b: string): number {
 
 @Injectable()
 export class FirmwareService {
-  private readonly FIRMWARE_BASE_URL = 'https://giabao-inverter.com/firmware';
-
   constructor(
     private readonly inverterDeviceService: InverterDeviceService,
     private readonly betaFirmwareDeviceService: BetaFirmwareDeviceService,
@@ -48,8 +49,8 @@ export class FirmwareService {
   // Beta devices are managed from the CMS (matched by deviceId, optionally
   // scoped to a userId) instead of being hard-coded here.
   getFirmwareUrl(deviceId: string, userId?: string): { url: string } {
-    const firmwareUrl = `${this.FIRMWARE_BASE_URL}/firmware.bin`;
-    const firmwareBetaUrl = `${this.FIRMWARE_BASE_URL}/firmware-beta.bin`;
+    const firmwareUrl = `${FIRMWARE_BASE_URL}/firmware.bin`;
+    const firmwareBetaUrl = `${FIRMWARE_BASE_URL}/firmware-beta.bin`;
     if (this.betaFirmwareDeviceService.isBeta(deviceId, userId)) {
       return { url: firmwareBetaUrl };
     }

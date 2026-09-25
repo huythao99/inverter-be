@@ -24,7 +24,7 @@ import {
 } from '../models/inverter-device.schema';
 import { MqttService } from './mqtt.service';
 import { BetaFirmwareDeviceService } from './beta-firmware-device.service';
-import { compareFirmwareVersions } from './firmware.service';
+import { FIRMWARE_BASE_URL, compareFirmwareVersions } from './firmware.service';
 
 // ---------------------------------------------------------------------------
 // Versions are "major.voltage.patch":
@@ -143,6 +143,13 @@ export class StmFirmwareService {
   private readonly logger = new Logger(StmFirmwareService.name);
   private readonly triggerAt = new Map<string, number>();
   readonly minEspVersion: string;
+  /**
+   * STM32 images live next to the ESP32 firmware, one folder per version:
+   *   {baseUrl}/{product}/{version}/app.bin (+ app.json)
+   * e.g. https://giabao-inverter.com/firmware/stm/inverter/3.4.1/app.bin
+   * (nginx on the firmware server proxies /firmware/stm/ to DO Spaces).
+   */
+  readonly baseUrl: string;
 
   constructor(
     @InjectModel(StmFirmware.name)
@@ -158,6 +165,14 @@ export class StmFirmwareService {
       'STM_FOTA_MIN_ESP_VERSION',
       '1.0.15',
     );
+    this.baseUrl = configService
+      .get<string>('STM_FIRMWARE_BASE_URL', `${FIRMWARE_BASE_URL}/stm`)
+      .replace(/\/+$/, '');
+  }
+
+  /** Conventional location of an image: {baseUrl}/{product}/{version}/app.bin */
+  defaultBinUrl(product: StmProduct, version: string): string {
+    return `${this.baseUrl}/${product}/${version}/app.bin`;
   }
 
   // ======================= Registry (CMS) ==================================
@@ -178,7 +193,7 @@ export class StmFirmwareService {
     product: StmProduct;
     channel: StmChannel;
     version: string;
-    binUrl: string;
+    binUrl?: string;
     manifestUrl?: string;
     notes?: string;
   }) {
@@ -188,7 +203,10 @@ export class StmFirmwareService {
         'Version must be "major.voltage.patch", e.g. 1.2.0 (2nd number: 1 = 12V, 2 = 24V, 3 = 36V, 4 = 48V)',
       );
     }
-    const binUrl = dto.binUrl.trim();
+    // Default: the conventional path under the firmware server (same scheme
+    // as the ESP32 firmware); an explicit URL overrides it.
+    const binUrl =
+      dto.binUrl?.trim() || this.defaultBinUrl(dto.product, parsed.version);
     const bin = await this.fetchBinary(binUrl);
     const crc = normalizeCrc32(zlib.crc32(bin) >>> 0)!;
 

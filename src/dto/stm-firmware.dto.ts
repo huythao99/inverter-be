@@ -20,10 +20,12 @@ export class RegisterStmFirmwareDto {
   @Matches(/^\d+(\.\d+){0,3}$/, { message: 'version must look like 1.2.0' })
   version: string;
 
-  // Public URL of app.bin (static file on DigitalOcean).
+  // Optional: defaults to {STM_FIRMWARE_BASE_URL}/{product}/{version}/app.bin
+  // (https://giabao-inverter.com/firmware/stm/... like the ESP32 firmware).
+  @IsOptional()
   @IsUrl({ require_protocol: true, protocols: ['https', 'http'] })
   @MaxLength(500)
-  binUrl: string;
+  binUrl?: string;
 
   // Defaults to app.json next to app.bin.
   @IsOptional()

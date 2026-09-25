@@ -143,6 +143,17 @@ export class CmsController {
     );
   }
 
+  // Where images are expected by default (shown in the CMS form).
+  @Get('stm-firmwares/config')
+  @UseGuards(AdminGuard)
+  getStmFirmwareConfig() {
+    return {
+      baseUrl: this.stmFirmwareService.baseUrl,
+      pathTemplate: `${this.stmFirmwareService.baseUrl}/{product}/{version}/app.bin`,
+      minEspVersion: this.stmFirmwareService.minEspVersion,
+    };
+  }
+
   @Post('stm-firmwares')
   @UseGuards(AdminGuard)
   registerStmFirmware(@Body() dto: RegisterStmFirmwareDto) {

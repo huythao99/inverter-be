@@ -136,11 +136,16 @@ export interface DeviceStmInfo {
 export const getStmFirmwares = (product?: StmProduct) =>
   api.get<StmFirmware[]>('/stm-firmwares', { params: product ? { product } : undefined });
 
+export const getStmFirmwareConfig = () =>
+  api.get<{ baseUrl: string; pathTemplate: string; minEspVersion: string }>(
+    '/stm-firmwares/config',
+  );
+
 export const registerStmFirmware = (body: {
   product: StmProduct;
   channel: StmChannel;
   version: string;
-  binUrl: string;
+  binUrl?: string;
   manifestUrl?: string;
   notes?: string;
 }) => api.post<StmFirmware>('/stm-firmwares', body);

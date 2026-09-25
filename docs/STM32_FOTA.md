@@ -24,17 +24,24 @@ fields) have no version, so they are not offered STM32 updates.
 
 ## Firmware images (static files)
 
-Upload `app.bin` (and optionally its `app.json`) to DigitalOcean, e.g.
+Same server/scheme as the ESP32 firmware (`https://giabao-inverter.com/firmware`),
+one folder per version (nginx on that server forwards `/firmware/stm/` to
+DigitalOcean Spaces `gticontrol.sgp1.digitaloceanspaces.com/firmware/stm/`,
+files there must be public-read):
 
-    https://<space>/stm/inverter/3.4.1/app.bin
+    {STM_FIRMWARE_BASE_URL}/{product}/{version}/app.bin   (+ app.json)
+    default base: https://giabao-inverter.com/firmware/stm
+    e.g.          https://giabao-inverter.com/firmware/stm/inverter/3.4.1/app.bin
 
-Then register it in **CMS → STM32 Firmware** (product, channel, version,
-app.bin URL). The backend downloads the file, computes size + CRC32 (zlib) and
-checks the vector table; if an `app.json` sits next to it (or an explicit
-manifest URL is given) its size/crc32 must match.
+Upload the files there, then register the version in **CMS → STM32 Firmware**
+(product, channel, version — the URL is derived; an explicit app.bin URL can
+still be given to override it). The backend downloads the file, computes size
++ CRC32 (zlib) and checks the vector table; if an `app.json` sits next to it
+its size/crc32 must match. Never overwrite a registered file in place — upload
+a new version instead (the stored CRC would no longer match).
 
-A device gets the newest **enabled** image of its voltage class: `stable` for
-everyone, `beta` additionally for devices on the CMS beta list.
+A device gets the newest **enabled** image with its own major + voltage:
+`stable` for everyone, `beta` additionally for devices on the CMS beta list.
 
 ## Device contract (ESP32)
 
