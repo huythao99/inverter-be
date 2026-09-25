@@ -127,7 +127,7 @@ const EspFirmware: React.FC = () => {
   };
 
   const handleActivate = async (it: EspFirmwareItem, channel: EspChannel) => {
-    const current = config?.active[it.product ?? 'inverter']?.[channel].version;
+    const current = config?.active?.[it.product ?? 'inverter']?.[channel].version;
     if (
       !window.confirm(
         `Set ${productLabel(it.product ?? 'inverter')} v${it.version} as ${channel.toUpperCase()}?\n\nCurrently ${channel}: v${current ?? '?'}.` +
@@ -161,7 +161,7 @@ const EspFirmware: React.FC = () => {
   };
 
   const activeCard = (channel: EspChannel) => {
-    const a = config?.active[product]?.[channel];
+    const a = config?.active?.[product]?.[channel];
     return (
       <div className="esp-active-card">
         <span className="muted">{channel === 'stable' ? 'Stable (all devices)' : 'Beta (beta list)'}</span>
