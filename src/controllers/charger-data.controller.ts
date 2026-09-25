@@ -1,15 +1,9 @@
-import { Controller, Get, Param, Delete, Query, Header } from '@nestjs/common';
+import { Controller, Get, Param, Header } from '@nestjs/common';
 import { ChargerDataService } from '../services/charger-data.service';
-import { QueryInverterDataDto } from '../dto/query-inverter-data.dto';
 
 @Controller('api/charger')
 export class ChargerDataController {
   constructor(private readonly chargerDataService: ChargerDataService) {}
-
-  @Get('data')
-  findAll(@Query() query: QueryInverterDataDto) {
-    return this.chargerDataService.findAll(query.page, query.limit);
-  }
 
   // Latest merged snapshot (telemetry + config + info + online/offline status).
   @Get('data/:userId/:deviceId/latest')
@@ -22,10 +16,5 @@ export class ChargerDataController {
       userId,
       deviceId,
     );
-  }
-
-  @Delete('data')
-  deleteAll() {
-    return this.chargerDataService.deleteAll();
   }
 }

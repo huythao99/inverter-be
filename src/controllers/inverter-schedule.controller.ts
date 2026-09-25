@@ -1,18 +1,8 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Patch,
-  Param,
-  Query,
-  Delete,
-} from '@nestjs/common';
+import { Controller, Get, Body, Patch, Param, Query } from '@nestjs/common';
 import { InverterScheduleService } from '../services/inverter-schedule.service';
 import { GridTieService } from '../services/grid-tie.service';
 import { ShareService } from '../services/share.service';
-import { CreateInverterScheduleDto } from '../dto/create-inverter-schedule.dto';
-import { UpdateInverterScheduleDto } from '../dto/update-inverter-schedule.dto';
+
 import { UpdateInverterScheduleValueDto } from '../dto/update-inverter-schedule-value.dto';
 import {
   GRID_TIE_OFF_VALUE,
@@ -28,16 +18,6 @@ export class InverterScheduleController {
     private readonly shareService: ShareService,
     private readonly blacklistDeviceService: BlacklistDeviceService,
   ) {}
-
-  @Post('data')
-  create(@Body() createInverterScheduleDto: CreateInverterScheduleDto) {
-    return this.inverterScheduleService.create(createInverterScheduleDto);
-  }
-
-  @Get('data')
-  findAll() {
-    return this.inverterScheduleService.findAll();
-  }
 
   @Get('data/:userId/:deviceId')
   async findByUserIdAndDeviceId(
@@ -117,32 +97,6 @@ export class InverterScheduleController {
     }
   }
 
-  @Get('data/:id')
-  findOne(@Param('id') id: string) {
-    return this.inverterScheduleService.findOne(id);
-  }
-
-  @Patch('data/:id')
-  update(
-    @Param('id') id: string,
-    @Body() updateInverterScheduleDto: UpdateInverterScheduleDto,
-  ) {
-    return this.inverterScheduleService.update(id, updateInverterScheduleDto);
-  }
-
-  @Patch('data/:userId/:deviceId')
-  updateByUserIdAndDeviceId(
-    @Param('userId') userId: string,
-    @Param('deviceId') deviceId: string,
-    @Body() updateInverterScheduleDto: UpdateInverterScheduleDto,
-  ) {
-    return this.inverterScheduleService.updateByUserIdAndDeviceId(
-      userId,
-      deviceId,
-      updateInverterScheduleDto,
-    );
-  }
-
   @Patch('data/:userId/:deviceId/schedule')
   updateScheduleByUserIdAndDeviceId(
     @Param('userId') userId: string,
@@ -160,15 +114,5 @@ export class InverterScheduleController {
       deviceId,
       schedule,
     );
-  }
-
-  @Delete('data/:id')
-  remove(@Param('id') id: string) {
-    return this.inverterScheduleService.remove(id);
-  }
-
-  @Delete('data')
-  deleteAll() {
-    return this.inverterScheduleService.deleteAll();
   }
 }

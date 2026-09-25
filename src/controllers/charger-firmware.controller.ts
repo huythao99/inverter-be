@@ -1,11 +1,8 @@
 import {
   Controller,
   Get,
-  Post,
   Query,
-  Param,
   Body,
-  HttpCode,
   HttpStatus,
   HttpException,
 } from '@nestjs/common';
@@ -46,21 +43,6 @@ export class ChargerFirmwareController {
     return this.chargerFirmwareService.getDeviceFirmwareVersion(
       userId,
       deviceId,
-    );
-  }
-
-  // App/web (or CMS): trigger an OTA update for a charger.
-  @Post('update/:userId/:deviceId')
-  @HttpCode(HttpStatus.OK)
-  triggerFirmwareUpdate(
-    @Param('userId') userId: string,
-    @Param('deviceId') deviceId: string,
-    @Body('targetVersion') targetVersion?: string,
-  ) {
-    return this.chargerFirmwareService.triggerFirmwareUpdate(
-      userId,
-      deviceId,
-      targetVersion,
     );
   }
 }

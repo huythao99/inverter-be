@@ -8,14 +8,12 @@ import {
   Delete,
   HttpStatus,
   HttpCode,
-  Query,
   NotFoundException,
   Header,
 } from '@nestjs/common';
 import { ChargerDeviceService } from '../services/charger-device.service';
 import { CreateChargerDeviceDto } from '../dto/create-charger-device.dto';
 import { UpdateChargerDeviceDto } from '../dto/update-charger-device.dto';
-import { QueryInverterDataDto } from '../dto/query-inverter-data.dto';
 
 @Controller('api/charger-device')
 export class ChargerDeviceController {
@@ -26,12 +24,6 @@ export class ChargerDeviceController {
   @HttpCode(HttpStatus.CREATED)
   async create(@Body() dto: CreateChargerDeviceDto) {
     await this.chargerDeviceService.create(dto);
-  }
-
-  @Get('data')
-  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
-  findAll(@Query() query: QueryInverterDataDto) {
-    return this.chargerDeviceService.findAll(query.page, query.limit);
   }
 
   // List a user's chargers (app/web)
@@ -54,15 +46,6 @@ export class ChargerDeviceController {
       throw new NotFoundException(
         `Charger ${deviceId} not found for user ${userId}`,
       );
-    }
-    return device;
-  }
-
-  @Get('data/:id')
-  async findOne(@Param('id') id: string) {
-    const device = await this.chargerDeviceService.findOne(id);
-    if (!device) {
-      throw new NotFoundException(`Charger with ID ${id} not found`);
     }
     return device;
   }
@@ -144,15 +127,6 @@ export class ChargerDeviceController {
       throw new NotFoundException(
         `Charger ${deviceId} not found for user ${userId}`,
       );
-    }
-    return device;
-  }
-
-  @Delete('data/:id')
-  async remove(@Param('id') id: string) {
-    const device = await this.chargerDeviceService.remove(id);
-    if (!device) {
-      throw new NotFoundException(`Charger with ID ${id} not found`);
     }
     return device;
   }

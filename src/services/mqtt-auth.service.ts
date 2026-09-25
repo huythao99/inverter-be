@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ConfigService } from '@nestjs/config';
 import { Model } from 'mongoose';
@@ -25,7 +25,7 @@ export interface HAMqttConfig {
 }
 
 @Injectable()
-export class MqttAuthService {
+export class MqttAuthService implements OnModuleInit {
   private readonly logger = new Logger(MqttAuthService.name);
   private readonly encryptionKey: string;
   private readonly mqttBroker: string;
@@ -130,13 +130,74 @@ export class MqttAuthService {
   }
 
   /**
+   * Credentials created before `kind` existed are Home Assistant ones; the old
+   * unique index on userId alone would block a second (app) credential.
+   */
+  async onModuleInit() {
+    try {
+      await this.mqttCredentialModel
+        .updateMany({ kind: { $exists: false } }, { $set: { kind: 'ha' } })
+        .exec();
+      await this.mqttCredentialModel.collection.dropIndex('userId_1');
+      this.logger.log('Dropped old unique index userId_1 on MQTT credentials');
+    } catch {
+      // index already gone (fresh install / already migrated)
+    }
+  }
+
+  /** Read-only broker account of a user's mobile app + web (kind 'app'). */
+  async getOrCreateClientCredentials(
+    userId: string,
+  ): Promise<{ username: string; password: string }> {
+    return this.getOrCreateKind(userId, 'app', `app_${userId}`);
+  }
+
+  /** Read-only broker account of the CMS live view (kind 'cms'). */
+  async getOrCreateCmsCredentials(): Promise<{
+    username: string;
+    password: string;
+  }> {
+    return this.getOrCreateKind('__cms__', 'cms', 'cms_viewer');
+  }
+
+  private async getOrCreateKind(
+    userId: string,
+    kind: 'app' | 'cms',
+    mqttUsername: string,
+  ): Promise<{ username: string; password: string }> {
+    const existing = await this.mqttCredentialModel
+      .findOne({ userId, kind, isActive: true })
+      .exec();
+    if (existing) {
+      const password = this.decryptPassword(existing.mqttPasswordEncrypted);
+      if (password) return { username: existing.mqttUsername, password };
+    }
+    const password = this.generatePassword(24);
+    const credential = await this.mqttCredentialModel.findOneAndUpdate(
+      { userId, kind },
+      {
+        userId,
+        kind,
+        mqttUsername,
+        mqttPasswordHash: this.hashPassword(password),
+        mqttPasswordEncrypted: this.encryptPassword(password),
+        isActive: true,
+        updatedAt: new Date(),
+      },
+      { upsert: true, new: true },
+    );
+    this.logger.log(`Generated MQTT ${kind} credentials for ${userId}`);
+    return { username: credential.mqttUsername, password };
+  }
+
+  /**
    * Generate or get existing credentials for a user
    */
   async getOrCreateCredentials(
     userId: string,
   ): Promise<MqttCredentialDocument> {
     const existingCredential = await this.mqttCredentialModel
-      .findOne({ userId, isActive: true })
+      .findOne({ userId, kind: 'ha', isActive: true })
       .exec();
 
     if (existingCredential) {
@@ -164,9 +225,10 @@ export class MqttAuthService {
       : mqttUsername;
 
     const credential = await this.mqttCredentialModel.findOneAndUpdate(
-      { userId },
+      { userId, kind: 'ha' },
       {
         userId,
+        kind: 'ha',
         mqttUsername: finalUsername,
         mqttPasswordHash: this.hashPassword(password),
         mqttPasswordEncrypted: this.encryptPassword(password),
@@ -185,7 +247,7 @@ export class MqttAuthService {
    */
   async regeneratePassword(userId: string): Promise<MqttCredentialDocument> {
     const credential = await this.mqttCredentialModel
-      .findOne({ userId })
+      .findOne({ userId, kind: 'ha' })
       .exec();
 
     if (!credential) {
@@ -262,6 +324,26 @@ export class MqttAuthService {
     }
 
     const userId = credential.userId;
+    const kind = credential.kind ?? 'ha';
+
+    // App/web and CMS accounts only ever read (commands go through the API).
+    if (kind === 'app' || kind === 'cms') {
+      if (access === 'write') return false;
+      const prefixes =
+        kind === 'cms'
+          ? ['inverter/', 'charger/', 'devices/']
+          : [
+              `inverter/${userId}/`,
+              `charger/${userId}/`,
+              `devices/inverter/${userId}/`,
+              `devices/charger/${userId}/`,
+            ];
+      // A topic filter must not widen the user part ("inverter/#" or
+      // "inverter/+/..."): only own-prefix topics pass for kind 'app'.
+      if (prefixes.some((p) => topic.startsWith(p))) return true;
+      this.logger.debug(`ACL denied: ${username} cannot ${access} ${topic}`);
+      return false;
+    }
 
     // Allow reading homeassistant discovery topics (everyone can read)
     if (topic.startsWith('homeassistant/') && access !== 'write') {
@@ -359,7 +441,7 @@ export class MqttAuthService {
    */
   async revokeAccess(userId: string): Promise<void> {
     await this.mqttCredentialModel.updateOne(
-      { userId },
+      { userId, kind: 'ha' },
       { isActive: false, updatedAt: new Date() },
     );
     this.logger.log(`Revoked MQTT access for user: ${userId}`);
@@ -369,7 +451,9 @@ export class MqttAuthService {
    * Get credential by userId
    */
   async getCredentialByUserId(userId: string): Promise<MqttCredential | null> {
-    return this.mqttCredentialModel.findOne({ userId, isActive: true }).exec();
+    return this.mqttCredentialModel
+      .findOne({ userId, kind: 'ha', isActive: true })
+      .exec();
   }
 
   /**

@@ -5,7 +5,6 @@ import {
   Patch,
   Param,
   Query,
-  Delete,
   UseInterceptors,
 } from '@nestjs/common';
 import { CacheTTL } from '@nestjs/cache-manager';
@@ -87,10 +86,5 @@ export class ChargerSettingController {
       vbat: dto.vbat,
       ibat: dto.ibat,
     };
-  }
-
-  @Delete('data')
-  deleteAll() {
-    return this.chargerSettingService.deleteAll();
   }
 }

@@ -404,6 +404,20 @@ export const getSettings = () => api.get('/settings');
 
 export const getMqttConfig = () => api.get('/mqtt-config');
 
+// Read-only broker account for the live views, issued after admin login
+// (nothing secret is baked into the CMS bundle). Fetched once per page load.
+let mqttAccountPromise: Promise<{ username: string; password: string }> | null = null;
+export const getMqttCredentials = () => {
+  mqttAccountPromise ??= api
+    .get<{ username: string; password: string }>('/mqtt-credentials')
+    .then((res) => res.data)
+    .catch((err) => {
+      mqttAccountPromise = null; // retry next time
+      throw err;
+    });
+  return mqttAccountPromise;
+};
+
 // ==================== Chargers (separate firmware type) ====================
 export const getChargerDashboard = () => api.get('/charger/dashboard');
 

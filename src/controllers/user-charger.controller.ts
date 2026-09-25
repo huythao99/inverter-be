@@ -2,9 +2,11 @@ import {
   Controller,
   Get,
   Patch,
+  Delete,
   Param,
   Body,
   UseGuards,
+  Query,
   NotFoundException,
   BadRequestException,
   Header,
@@ -15,6 +17,7 @@ import { FirebaseUser } from '../auth/strategies/firebase.strategy';
 import { ChargerDeviceService } from '../services/charger-device.service';
 import { ChargerSettingService } from '../services/charger-setting.service';
 import { ChargerDataService } from '../services/charger-data.service';
+import { ChargerFirmwareService } from '../services/charger-firmware.service';
 import { UpdateUserChargerSettingDto } from '../dto/update-user-charger-setting.dto';
 import {
   decodeChargerValue,
@@ -30,6 +33,7 @@ export class UserChargerController {
     private readonly chargerDeviceService: ChargerDeviceService,
     private readonly chargerSettingService: ChargerSettingService,
     private readonly chargerDataService: ChargerDataService,
+    private readonly chargerFirmwareService: ChargerFirmwareService,
   ) {}
 
   // Ensure the charger belongs to the authenticated user (throws if not).
@@ -41,6 +45,39 @@ export class UserChargerController {
     if (!device) {
       throw new NotFoundException(`Charger ${deviceId} not found`);
     }
+    return device;
+  }
+
+  // Newest charger firmware (beta list -> beta build). Declared before
+  // ':deviceId' routes for readability (different segment count anyway).
+  @Get('firmware/newest')
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
+  getNewestFirmware(@Query('deviceId') deviceId?: string) {
+    return this.chargerFirmwareService.getNewestFirmwareVersion(deviceId);
+  }
+
+  // Firmware the charger reports running.
+  @Get(':deviceId/firmware/version')
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
+  async getFirmwareVersion(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('deviceId') deviceId: string,
+  ) {
+    const device = await this.assertOwned(user.uid, deviceId);
+    return { firmwareVersion: device.firmwareVersion ?? null };
+  }
+
+  // Remove a charger from the user's account.
+  @Delete(':deviceId')
+  async deleteCharger(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('deviceId') deviceId: string,
+  ) {
+    const device = await this.chargerDeviceService.removeByUserIdAndDeviceId(
+      user.uid,
+      deviceId,
+    );
+    if (!device) throw new NotFoundException(`Charger ${deviceId} not found`);
     return device;
   }
 

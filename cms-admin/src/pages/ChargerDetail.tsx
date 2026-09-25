@@ -2,7 +2,11 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import mqtt from 'mqtt';
 import type { MqttClient } from 'mqtt';
-import { getChargerDetails, triggerChargerFirmwareUpdate } from '../services/api';
+import {
+  getChargerDetails,
+  getMqttCredentials,
+  triggerChargerFirmwareUpdate,
+} from '../services/api';
 import VirtualList from '../components/VirtualList';
 import {
   ArrowLeft,
@@ -17,9 +21,8 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 
-const MQTT_WS_URL = import.meta.env.VITE_MQTT_WS_URL || 'ws://localhost:9001';
-const MQTT_USERNAME = import.meta.env.VITE_MQTT_USERNAME || '';
-const MQTT_PASSWORD = import.meta.env.VITE_MQTT_PASSWORD || '';
+// wss://giabao-inverter.com/mqtt in production (nginx -> mosquitto 9001).
+const MQTT_WS_URL = import.meta.env.VITE_MQTT_WS_URL || 'wss://giabao-inverter.com/mqtt';
 
 interface ChargerDetailData {
   device: {
@@ -114,12 +117,20 @@ const ChargerDetail: React.FC = () => {
     fetchData();
   }, [userId, deviceId]);
 
+  // Broker account for the live view (issued by the backend after login).
+  const [mqttAccount, setMqttAccount] = useState<{ username: string; password: string } | null>(null);
   useEffect(() => {
-    if (!userId || !deviceId) return;
+    getMqttCredentials()
+      .then(setMqttAccount)
+      .catch((err) => console.error('Failed to get MQTT credentials', err));
+  }, []);
+
+  useEffect(() => {
+    if (!userId || !deviceId || !mqttAccount) return;
 
     const client = mqtt.connect(MQTT_WS_URL, {
-      username: MQTT_USERNAME,
-      password: MQTT_PASSWORD,
+      username: mqttAccount.username,
+      password: mqttAccount.password,
       clientId: `cms-charger-${Date.now()}`,
       reconnectPeriod: 5000,
       connectTimeout: 10000,
@@ -178,7 +189,7 @@ const ChargerDetail: React.FC = () => {
       client.unsubscribe(otaTopic);
       client.end();
     };
-  }, [userId, deviceId]);
+  }, [userId, deviceId, mqttAccount]);
 
   const handleFirmwareUpdate = async () => {
     if (!data?.device?._id) return;

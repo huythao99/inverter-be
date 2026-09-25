@@ -8,14 +8,11 @@ import {
   Delete,
   HttpStatus,
   HttpCode,
-  Query,
   NotFoundException,
   Header,
 } from '@nestjs/common';
 import { InverterDeviceService } from '../services/inverter-device.service';
 import { CreateInverterDeviceDto } from '../dto/create-inverter-device.dto';
-import { UpdateInverterDeviceDto } from '../dto/update-inverter-device.dto';
-import { QueryInverterDataDto } from '../dto/query-inverter-data.dto';
 
 @Controller('api/inverter-device')
 export class InverterDeviceController {
@@ -27,85 +24,10 @@ export class InverterDeviceController {
     await this.inverterDeviceService.create(createInverterDeviceDto);
   }
 
-  @Get('data')
-  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
-  findAll(@Query() query: QueryInverterDataDto) {
-    return this.inverterDeviceService.findAll(query.page, query.limit);
-  }
-
   @Get('data/device/:userId')
   @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
   findByUserId(@Param('userId') userId: string) {
     return this.inverterDeviceService.findByUserId(userId);
-  }
-
-  @Get('data/:userId/:deviceId')
-  async findByUserIdAndDeviceId(
-    @Param('userId') userId: string,
-    @Param('deviceId') deviceId: string,
-  ) {
-    const device = await this.inverterDeviceService.findByUserIdAndDeviceId(
-      userId,
-      deviceId,
-    );
-    if (!device) {
-      throw new NotFoundException(
-        `Device with ID ${deviceId} not found for user ${userId}`,
-      );
-    }
-    return device;
-  }
-
-  @Get('data/:id')
-  async findOne(@Param('id') id: string) {
-    const device = await this.inverterDeviceService.findOne(id);
-    if (!device) {
-      throw new NotFoundException(`Device with ID ${id} not found`);
-    }
-    return device;
-  }
-
-  @Patch('data/:id')
-  async update(
-    @Param('id') id: string,
-    @Body() updateInverterDeviceDto: UpdateInverterDeviceDto,
-  ) {
-    const device = await this.inverterDeviceService.update(
-      id,
-      updateInverterDeviceDto,
-    );
-    if (!device) {
-      throw new NotFoundException(`Device with ID ${id} not found`);
-    }
-    return device;
-  }
-
-  @Patch('data/:userId/:deviceId')
-  async updateByUserIdAndDeviceId(
-    @Param('userId') userId: string,
-    @Param('deviceId') deviceId: string,
-    @Body() updateInverterDeviceDto: UpdateInverterDeviceDto,
-  ) {
-    const device = await this.inverterDeviceService.updateByUserIdAndDeviceId(
-      userId,
-      deviceId,
-      updateInverterDeviceDto,
-    );
-    if (!device) {
-      throw new NotFoundException(
-        `Device with ID ${deviceId} not found for user ${userId}`,
-      );
-    }
-    return device;
-  }
-
-  @Delete('data/:id')
-  async remove(@Param('id') id: string) {
-    const device = await this.inverterDeviceService.remove(id);
-    if (!device) {
-      throw new NotFoundException(`Device with ID ${id} not found`);
-    }
-    return device;
   }
 
   @Delete('data/:userId/:deviceId')
@@ -123,11 +45,6 @@ export class InverterDeviceController {
       );
     }
     return device;
-  }
-
-  @Delete('data')
-  deleteAll() {
-    return this.inverterDeviceService.deleteAll();
   }
 
   @Patch('data/:userId/:deviceId/description')

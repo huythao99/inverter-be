@@ -12,6 +12,7 @@ import {
   Request,
   HttpCode,
   HttpStatus,
+  Header,
   UseInterceptors,
   UploadedFile,
   UploadedFiles,
@@ -42,6 +43,7 @@ import {
   UploadEspFirmwareDto,
 } from '../dto/esp-firmware.dto';
 import { SpacesService } from '../services/spaces.service';
+import { MqttAuthService } from '../services/mqtt-auth.service';
 import {
   newestBetaFirmwareVersion,
   newestFirmwareVersion,
@@ -69,6 +71,7 @@ export class CmsController {
     private readonly stmFirmwareService: StmFirmwareService,
     private readonly espFirmwareService: EspFirmwareService,
     private readonly spacesService: SpacesService,
+    private readonly mqttAuthService: MqttAuthService,
   ) {}
 
   // ==================== Authentication ====================
@@ -161,6 +164,15 @@ export class CmsController {
       id,
       targetVersion || newestFirmwareVersion(),
     );
+  }
+
+  // Read-only broker account of the CMS live view (all devices). Given only
+  // to a logged-in admin instead of being baked into the CMS bundle.
+  @Get('mqtt-credentials')
+  @UseGuards(AdminGuard)
+  @Header('Cache-Control', 'no-store')
+  getMqttCredentials() {
+    return this.mqttAuthService.getOrCreateCmsCredentials();
   }
 
   // ---- ESP32 firmware (builds uploaded to DO Spaces) ----

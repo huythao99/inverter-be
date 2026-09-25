@@ -1,3 +1,4 @@
+import { MqttAuthModule } from './mqtt-auth.module';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { JwtModule } from '@nestjs/jwt';
@@ -33,9 +34,9 @@ import { DailyTotalsModule } from './daily-totals.module';
 import { RedisConfig } from '../config/redis.config';
 import { FirmwareBulkUpdateService } from '../services/firmware-bulk-update.service';
 
-
 @Module({
   imports: [
+    MqttAuthModule,
     ConfigModule,
     DailyTotalsModule,
     PassportModule.register({ defaultStrategy: 'admin-jwt' }),

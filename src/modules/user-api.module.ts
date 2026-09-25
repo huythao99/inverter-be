@@ -9,6 +9,7 @@ import { DailyTotalsModule } from './daily-totals.module';
 import { InverterDeviceModule } from './inverter-device.module';
 import { InverterSettingModule } from './inverter-setting.module';
 import { InverterScheduleModule } from './inverter-schedule.module';
+import { MqttAuthModule } from './mqtt-auth.module';
 
 @Module({
   imports: [
@@ -19,12 +20,10 @@ import { InverterScheduleModule } from './inverter-schedule.module';
     InverterDeviceModule,
     InverterSettingModule,
     InverterScheduleModule,
+    MqttAuthModule,
   ],
   controllers: [UserApiController],
-  providers: [
-    FirebaseConfig,
-    FirebaseStrategy,
-  ],
+  providers: [FirebaseConfig, FirebaseStrategy],
   exports: [FirebaseConfig],
 })
 export class UserApiModule {}

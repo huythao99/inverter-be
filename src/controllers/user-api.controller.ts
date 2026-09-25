@@ -35,6 +35,7 @@ import {
 import { BlacklistDeviceService } from '../services/blacklist-device.service';
 import { DeviceRestartService } from '../services/device-restart.service';
 import { MqttService } from '../services/mqtt.service';
+import { MqttAuthService } from '../services/mqtt-auth.service';
 import { StmFirmwareService } from '../services/stm-firmware.service';
 import { BetaFirmwareDeviceService } from '../services/beta-firmware-device.service';
 import {
@@ -63,7 +64,18 @@ export class UserApiController {
     private readonly mqttService: MqttService,
     private readonly betaFirmwareDeviceService: BetaFirmwareDeviceService,
     private readonly stmFirmwareService: StmFirmwareService,
+    private readonly mqttAuthService: MqttAuthService,
   ) {}
+
+  /** The device, or 404 when it isn't one of this user's devices. */
+  private async ownedDevice(userId: string, deviceId: string) {
+    const device = await this.inverterDeviceService.findByUserIdAndDeviceId(
+      userId,
+      deviceId,
+    );
+    if (!device) throw new NotFoundException(`Device ${deviceId} not found`);
+    return device;
+  }
 
   private readonly firmwareUpdateAt = new Map<string, number>();
 
@@ -137,6 +149,20 @@ export class UserApiController {
       throw new NotFoundException(`Device ${deviceId} not found`);
     }
 
+    return device;
+  }
+
+  // Remove a device from the user's account (mobile + web).
+  @Delete('devices/:deviceId')
+  async deleteDevice(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('deviceId') deviceId: string,
+  ) {
+    const device = await this.inverterDeviceService.removeByUserIdAndDeviceId(
+      user.uid,
+      deviceId,
+    );
+    if (!device) throw new NotFoundException(`Device ${deviceId} not found`);
     return device;
   }
 
@@ -580,6 +606,42 @@ export class UserApiController {
     return result;
   }
 
+  // Totals of one day (summed), same shape as the old
+  // /api/daily-totals/by-day: { userId, deviceId, date, totalA, totalA2, count }
+  @Get('devices/:deviceId/day-totals')
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
+  async getDeviceDayTotals(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('deviceId') deviceId: string,
+    @Query('date') date?: string,
+  ) {
+    await this.ownedDevice(user.uid, deviceId);
+    const records = await this.dailyTotalsService.getDailyTotalsByDay(
+      user.uid,
+      deviceId,
+      date,
+    );
+    return {
+      userId: user.uid,
+      deviceId,
+      date: date || 'all',
+      totalA: records.reduce((sum, r) => sum + r.totalA, 0),
+      totalA2: records.reduce((sum, r) => sum + r.totalA2, 0),
+      count: records.length,
+    };
+  }
+
+  // Clear this month's totals of a device (mobile "reset month").
+  @Delete('devices/:deviceId/monthly-totals')
+  async clearDeviceMonthlyTotals(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('deviceId') deviceId: string,
+  ) {
+    await this.ownedDevice(user.uid, deviceId);
+    await this.dailyTotalsService.clearCurrentMonthTotals(user.uid, deviceId);
+    return { message: 'Current month totals cleared successfully' };
+  }
+
   // Get monthly chart data
   @Get('devices/:deviceId/chart-data')
   @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
@@ -735,6 +797,64 @@ export class UserApiController {
     return this.stmFirmwareService.trigger(user.uid, deviceId, {
       source: client === 'mobile' ? 'app' : 'web',
     });
+  }
+
+  // ---- Broker account of this user's app / web (read-only, own devices) ----
+  // Replaces the shared superuser account that used to be built into the app
+  // and the web bundle. Commands never go over MQTT from clients: they use
+  // this API, which publishes server-side.
+  @Get('mqtt-credentials')
+  @Header('Cache-Control', 'no-store')
+  async getMqttCredentials(@CurrentFirebaseUser() user: FirebaseUser) {
+    return this.mqttAuthService.getOrCreateClientCredentials(user.uid);
+  }
+
+  // ---- Home Assistant MQTT access (per-user broker credentials) ----
+
+  private async haConfig(userId: string) {
+    const devices = await this.inverterDeviceService.findByUserId(userId);
+    return this.mqttAuthService.getHAConfig(
+      userId,
+      devices.map((d) => ({ deviceId: d.deviceId, deviceName: d.deviceName })),
+    );
+  }
+
+  // MQTT config for Home Assistant (creates the credential on first use).
+  @Get('mqtt-config')
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
+  async getMqttConfig(@CurrentFirebaseUser() user: FirebaseUser) {
+    const config = await this.haConfig(user.uid);
+    if (!config) {
+      return { success: false, error: 'Failed to generate MQTT configuration' };
+    }
+    return {
+      success: true,
+      data: {
+        ...config,
+        setupInstructions: {
+          step1: 'Open Home Assistant',
+          step2: 'Go to Settings → Devices & Services',
+          step3: 'Click "Add Integration" and search for "MQTT"',
+          step4: 'Enter the broker, port, username, and password below',
+          step5: 'Your inverter devices will appear automatically!',
+        },
+      },
+    };
+  }
+
+  // New MQTT password for Home Assistant.
+  @Post('mqtt-config/regenerate')
+  async regenerateMqttPassword(@CurrentFirebaseUser() user: FirebaseUser) {
+    const credential = await this.mqttAuthService.regeneratePassword(user.uid);
+    if (!credential) {
+      return { success: false, error: 'Failed to regenerate password' };
+    }
+    return {
+      success: true,
+      message:
+        'Password regenerated successfully. Please update Home Assistant with the new credentials.',
+      data: await this.haConfig(user.uid),
+    };
   }
 
   // Remote reboot of the device's ESP32 (mobile app + web). Rate-limited to

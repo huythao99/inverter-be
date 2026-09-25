@@ -7,8 +7,15 @@ export type MqttCredentialDocument = MqttCredential & Document;
 export class MqttCredential {
   _id: Types.ObjectId;
 
-  @Prop({ required: true, unique: true, index: true })
+  // One credential per user AND kind (unique compound index below).
+  @Prop({ required: true, index: true })
   userId: string;
+
+  // ha  = Home Assistant (reads/writes the user's inverter_ha/... topics)
+  // app = mobile app + web of that user (read-only, its own devices)
+  // cms = CMS live view (read-only, all devices); userId = '__cms__'
+  @Prop({ type: String, enum: ['ha', 'app', 'cms'], default: 'ha' })
+  kind: 'ha' | 'app' | 'cms';
 
   @Prop({ required: true, unique: true, index: true })
   mqttUsername: string;
@@ -40,3 +47,4 @@ export const MqttCredentialSchema =
 
 // Index for fast lookups
 MqttCredentialSchema.index({ mqttUsername: 1, isActive: 1 });
+MqttCredentialSchema.index({ userId: 1, kind: 1 }, { unique: true });

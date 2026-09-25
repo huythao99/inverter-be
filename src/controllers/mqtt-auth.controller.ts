@@ -1,8 +1,8 @@
+import { LocalOnlyGuard } from '../auth/guards/local-only.guard';
 import {
   Controller,
   Get,
   Post,
-  Delete,
   Param,
   Body,
   HttpCode,
@@ -11,7 +11,6 @@ import {
   Logger,
   UseGuards,
 } from '@nestjs/common';
-import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { MqttAuthService } from '../services/mqtt-auth.service';
@@ -121,20 +120,6 @@ export class MqttAuthController {
   }
 
   /**
-   * Revoke MQTT access
-   * DELETE /api/mqtt-auth/revoke/:userId
-   */
-  @Delete('revoke/:userId')
-  async revokeAccess(@Param('userId') userId: string) {
-    await this.mqttAuthService.revokeAccess(userId);
-
-    return {
-      success: true,
-      message: 'MQTT access revoked successfully',
-    };
-  }
-
-  /**
    * Validate MQTT credentials (called by Mosquitto auth plugin)
    * POST /api/mqtt-auth/validate
    *
@@ -144,10 +129,12 @@ export class MqttAuthController {
    *
    * Response: HTTP 200 = allow, HTTP 403 = deny
    */
+  // Local mosquitto only (LocalOnlyGuard). No rate limit: every client of the
+  // broker (hundreds of devices + users after a broker restart) authenticates
+  // through here; go-auth caches the results.
   @Post('validate')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(ThrottlerGuard)
-  @Throttle({ default: { limit: 10, ttl: 60000 } }) // 10 attempts per minute
+  @UseGuards(LocalOnlyGuard)
   async validateCredentials(@Body() body: ValidateRequestDto) {
     const { username, password } = body;
 
@@ -181,6 +168,7 @@ export class MqttAuthController {
    */
   @Post('acl')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(LocalOnlyGuard)
   async checkAcl(@Body() body: AclRequestDto) {
     const { username, topic, acc } = body;
 
@@ -228,6 +216,7 @@ export class MqttAuthController {
    */
   @Post('superuser')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(LocalOnlyGuard)
   async checkSuperuser(@Body() body: { username: string }) {
     const { username } = body;
 
@@ -250,117 +239,6 @@ export class MqttAuthController {
     return {
       status: 'ok',
       timestamp: new Date().toISOString(),
-    };
-  }
-
-  /**
-   * Get credential status for a user (admin use)
-   * GET /api/mqtt-auth/status/:userId
-   */
-  @Get('status/:userId')
-  async getStatus(@Param('userId') userId: string) {
-    const credential = await this.mqttAuthService.getCredentialByUserId(userId);
-
-    if (!credential) {
-      return {
-        success: true,
-        data: {
-          hasCredentials: false,
-          isActive: false,
-        },
-      };
-    }
-
-    return {
-      success: true,
-      data: {
-        hasCredentials: true,
-        isActive: credential.isActive,
-        mqttUsername: credential.mqttUsername,
-        allowedDevices: credential.allowedDevices,
-        lastUsedAt: credential.lastUsedAt,
-        createdAt: credential.createdAt,
-      },
-    };
-  }
-
-  /**
-   * Generate Mosquitto password file content
-   * GET /api/mqtt-auth/files/passwd
-   *
-   * Download this and save to /etc/mosquitto/passwd
-   * Then run: mosquitto_passwd -U /etc/mosquitto/passwd
-   */
-  @Get('files/passwd')
-  async getPasswordFile() {
-    const content = await this.mqttAuthService.generatePasswordFileContent();
-    return {
-      success: true,
-      filename: 'passwd',
-      content,
-      instructions: [
-        '1. Save this content to /etc/mosquitto/passwd',
-        '2. Run: sudo mosquitto_passwd -U /etc/mosquitto/passwd',
-        '3. Run: sudo systemctl reload mosquitto',
-      ],
-    };
-  }
-
-  /**
-   * Generate Mosquitto ACL file content
-   * GET /api/mqtt-auth/files/acl
-   *
-   * Download this and save to /etc/mosquitto/acl.conf
-   */
-  @Get('files/acl')
-  async getAclFile() {
-    const content = await this.mqttAuthService.generateAclFileContent();
-    return {
-      success: true,
-      filename: 'acl.conf',
-      content,
-      instructions: [
-        '1. Save this content to /etc/mosquitto/acl.conf',
-        '2. Run: sudo systemctl reload mosquitto',
-      ],
-    };
-  }
-
-  /**
-   * Get all files needed for Mosquitto setup
-   * GET /api/mqtt-auth/files
-   */
-  @Get('files')
-  async getAllFiles() {
-    const [passwd, acl] = await Promise.all([
-      this.mqttAuthService.generatePasswordFileContent(),
-      this.mqttAuthService.generateAclFileContent(),
-    ]);
-
-    const credentials = await this.mqttAuthService.getAllCredentials();
-
-    return {
-      success: true,
-      data: {
-        passwd: {
-          filename: '/etc/mosquitto/passwd',
-          content: passwd,
-        },
-        acl: {
-          filename: '/etc/mosquitto/acl.conf',
-          content: acl,
-        },
-        usersCount: credentials.length,
-      },
-      instructions: [
-        '1. Save passwd content to /etc/mosquitto/passwd',
-        '2. Run: sudo mosquitto_passwd -U /etc/mosquitto/passwd',
-        '3. Save acl content to /etc/mosquitto/acl.conf',
-        '4. Add to mosquitto.conf:',
-        '   password_file /etc/mosquitto/passwd',
-        '   acl_file /etc/mosquitto/acl.conf',
-        '5. Run: sudo systemctl restart mosquitto',
-      ],
     };
   }
 }

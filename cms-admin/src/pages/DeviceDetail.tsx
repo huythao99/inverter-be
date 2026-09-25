@@ -6,6 +6,7 @@ import {
   getDeviceDetails,
   triggerFirmwareUpdate,
   restartDevice,
+  getMqttCredentials,
 } from '../services/api';
 import VirtualList from '../components/VirtualList';
 import StmFirmwareCard from '../components/StmFirmwareCard';
@@ -26,9 +27,8 @@ import {
 } from 'lucide-react';
 
 // MQTT WebSocket URL (broker must have WebSocket listener enabled on port 9001)
-const MQTT_WS_URL = import.meta.env.VITE_MQTT_WS_URL || 'ws://localhost:9001';
-const MQTT_USERNAME = import.meta.env.VITE_MQTT_USERNAME || '';
-const MQTT_PASSWORD = import.meta.env.VITE_MQTT_PASSWORD || '';
+// wss://giabao-inverter.com/mqtt in production (nginx -> mosquitto 9001).
+const MQTT_WS_URL = import.meta.env.VITE_MQTT_WS_URL || 'wss://giabao-inverter.com/mqtt';
 
 interface DeviceDetailData {
   device: {
@@ -149,14 +149,22 @@ const DeviceDetail: React.FC = () => {
     fetchData();
   }, [userId, deviceId]);
 
+  // Broker account for the live view (issued by the backend after login).
+  const [mqttAccount, setMqttAccount] = useState<{ username: string; password: string } | null>(null);
+  useEffect(() => {
+    getMqttCredentials()
+      .then(setMqttAccount)
+      .catch((err) => console.error('Failed to get MQTT credentials', err));
+  }, []);
+
   // MQTT connection
   useEffect(() => {
-    if (!userId || !deviceId) return;
+    if (!userId || !deviceId || !mqttAccount) return;
 
     // Connect to MQTT broker via WebSocket
     const client = mqtt.connect(MQTT_WS_URL, {
-      username: MQTT_USERNAME,
-      password: MQTT_PASSWORD,
+      username: mqttAccount.username,
+      password: mqttAccount.password,
       clientId: `cms-admin-${Date.now()}`,
       reconnectPeriod: 5000,
       connectTimeout: 10000,
@@ -311,7 +319,7 @@ const DeviceDetail: React.FC = () => {
         client.end();
       }
     };
-  }, [userId, deviceId]);
+  }, [userId, deviceId, mqttAccount]);
 
   const handleFirmwareUpdate = async () => {
     if (!data?.device?._id) return;
