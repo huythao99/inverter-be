@@ -50,3 +50,24 @@ export class StmUpdateDto {
   @IsBoolean()
   force?: boolean;
 }
+
+// multipart/form-data fields of POST /api/cms/stm-firmwares/upload
+// (files: "bin" = app.bin, "manifest" = app.json).
+export class UploadStmFirmwareDto {
+  @IsIn(['inverter', 'charger'])
+  product: 'inverter' | 'charger';
+
+  @IsIn(['stable', 'beta'])
+  channel: 'stable' | 'beta';
+
+  // Optional: taken from app.json (fw_version) or the image tail when empty.
+  @IsOptional()
+  @IsString()
+  @Matches(/^(\d+\.\d+\.\d+)?$/, { message: 'version must look like 3.4.1' })
+  version?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  notes?: string;
+}

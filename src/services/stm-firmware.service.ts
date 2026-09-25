@@ -23,6 +23,7 @@ import {
   InverterDeviceDocument,
 } from '../models/inverter-device.schema';
 import { MqttService } from './mqtt.service';
+import { SpacesService } from './spaces.service';
 import { BetaFirmwareDeviceService } from './beta-firmware-device.service';
 import { FIRMWARE_BASE_URL, compareFirmwareVersions } from './firmware.service';
 
@@ -72,6 +73,24 @@ export function chipLabel(major: number | null | undefined): string | null {
 /** 1 -> "12V", 2 -> "24V", 3 -> "36V", 4 -> "48V"... */
 export function voltageLabel(code: number | null | undefined): string | null {
   return code ? `${code * 12}V` : null;
+}
+
+/**
+ * Version in the 16-byte image tail written by the STM32 build
+ * ("GTIV", variant, family, product, 0xFF, fw_version 0x00MMmmpp, checksum).
+ * Null when the image has no (valid) tail or no version.
+ */
+export function stmImageTailVersion(bin: Buffer): string | null {
+  if (bin.length < 16) return null;
+  const t = bin.length - 16;
+  const w0 = bin.readUInt32LE(t);
+  const w1 = bin.readUInt32LE(t + 4);
+  const w2 = bin.readUInt32LE(t + 8);
+  const chk = bin.readUInt32LE(t + 12);
+  if (w0 !== 0x56495447) return null; // "GTIV"
+  if (chk !== ~(w0 + w1 + w2) >>> 0) return null;
+  if (w2 === 0xffffffff) return null;
+  return `${(w2 >>> 16) & 0xff}.${(w2 >>> 8) & 0xff}.${w2 & 0xff}`;
 }
 
 export function normalizeCrc32(raw: unknown): string | null {
@@ -151,6 +170,9 @@ export class StmFirmwareService {
    */
   readonly baseUrl: string;
 
+  /** Folder in the Spaces bucket behind baseUrl (CMS uploads go there). */
+  readonly spacesPrefix: string;
+
   constructor(
     @InjectModel(StmFirmware.name)
     private readonly stmFirmwareModel: Model<StmFirmwareDocument>,
@@ -158,6 +180,7 @@ export class StmFirmwareService {
     private readonly inverterDeviceModel: Model<InverterDeviceDocument>,
     private readonly mqttService: MqttService,
     private readonly betaFirmwareDeviceService: BetaFirmwareDeviceService,
+    private readonly spaces: SpacesService,
     configService: ConfigService,
   ) {
     // First ESP32 firmware that implements STM32 FOTA (set when released).
@@ -168,6 +191,10 @@ export class StmFirmwareService {
     this.baseUrl = configService
       .get<string>('STM_FIRMWARE_BASE_URL', `${FIRMWARE_BASE_URL}/stm`)
       .replace(/\/+$/, '');
+    // Bucket folder that {baseUrl} serves (nginx /firmware/stm/ -> firmware/stm/).
+    this.spacesPrefix = configService
+      .get<string>('STM_SPACES_PREFIX', 'firmware/stm')
+      .replace(/^\/+|\/+$/g, '');
   }
 
   /** Conventional location of an image: {baseUrl}/{product}/{version}/app.bin */
@@ -186,8 +213,9 @@ export class StmFirmwareService {
   }
 
   /**
-   * Register a static image. Downloads app.json + app.bin and verifies size,
-   * CRC32 and the vector table, so a broken upload can never be offered.
+   * Register a static image already on the firmware server. Downloads app.json
+   * + app.bin and verifies size, CRC32 and the vector table, so a broken
+   * upload can never be offered.
    */
   async register(dto: {
     product: StmProduct;
@@ -197,18 +225,12 @@ export class StmFirmwareService {
     manifestUrl?: string;
     notes?: string;
   }) {
-    const parsed = parseStmVersion(dto.version);
-    if (!parsed) {
-      throw new BadRequestException(
-        'Version must be "major.voltage.patch", e.g. 1.2.0 (2nd number: 1 = 12V, 2 = 24V, 3 = 36V, 4 = 48V)',
-      );
-    }
+    const parsed = this.requireVersion(dto.version);
     // Default: the conventional path under the firmware server (same scheme
     // as the ESP32 firmware); an explicit URL overrides it.
     const binUrl =
       dto.binUrl?.trim() || this.defaultBinUrl(dto.product, parsed.version);
     const bin = await this.fetchBinary(binUrl);
-    const crc = normalizeCrc32(zlib.crc32(bin) >>> 0)!;
 
     // app.json is optional: when present (explicit URL, or next to app.bin)
     // its size/crc32 must match the downloaded file.
@@ -218,6 +240,112 @@ export class StmFirmwareService {
       manifestUrl,
       !!dto.manifestUrl?.trim(),
     );
+    const checked = this.checkImage(bin, manifest, parsed);
+    return this.saveImage(dto, parsed, binUrl, bin.length, checked);
+  }
+
+  /**
+   * Upload app.bin (+ optional app.json) from the CMS to DO Spaces at the
+   * conventional path, then register it. The version comes from the form, or
+   * app.json's fw_version, or the image tail. Existing files are never
+   * overwritten (the stored CRC would no longer match what devices download).
+   */
+  async upload(
+    dto: {
+      product: StmProduct;
+      channel: StmChannel;
+      version?: string;
+      notes?: string;
+    },
+    bin: Buffer,
+    manifestBuf?: Buffer,
+  ) {
+    this.spaces.assertEnabled();
+    if (!bin?.length || bin.length > MAX_IMAGE_BYTES) {
+      throw new BadRequestException(
+        `app.bin is empty or too large (max ${MAX_IMAGE_BYTES / 1024} KB)`,
+      );
+    }
+    const manifest = manifestBuf ? this.parseManifest(manifestBuf) : null;
+    const tailVersion = stmImageTailVersion(bin);
+    const rawVersion =
+      dto.version?.trim() ||
+      (manifest && asText(manifest.fw_version)) ||
+      tailVersion;
+    if (!rawVersion) {
+      throw new BadRequestException(
+        'Version is required (not given, and app.json / the image carry none)',
+      );
+    }
+    const parsed = this.requireVersion(rawVersion);
+    const checked = this.checkImage(bin, manifest, parsed);
+
+    // One file per product + version, whatever the channel.
+    const existing = await this.stmFirmwareModel
+      .findOne({ product: dto.product, version: parsed.version })
+      .lean()
+      .exec();
+    if (existing) {
+      throw new ConflictException(
+        `v${parsed.version} (${dto.product}) is already registered - build a new version instead of replacing it`,
+      );
+    }
+    const dir = `${this.spacesPrefix}/${dto.product}/${parsed.version}`;
+    if (await this.spaces.exists(`${dir}/app.bin`)) {
+      throw new ConflictException(
+        `${dir}/app.bin already exists on Spaces - build a new version instead of replacing it`,
+      );
+    }
+    await this.spaces.putPublic(
+      `${dir}/app.bin`,
+      bin,
+      'application/octet-stream',
+    );
+    if (manifestBuf) {
+      await this.spaces.putPublic(
+        `${dir}/app.json`,
+        manifestBuf,
+        'application/json',
+      );
+    }
+
+    const url = this.defaultBinUrl(dto.product, parsed.version);
+    const saved = await this.saveImage(dto, parsed, url, bin.length, checked);
+    return { ...saved, warning: await this.checkServed(url, bin.length) };
+  }
+
+  /**
+   * After an upload: is the file really served at its public URL (nginx ->
+   * Spaces)? Returns a warning text instead of failing.
+   */
+  private async checkServed(url: string, size: number): Promise<string | null> {
+    try {
+      const buf = await this.fetchBinary(url);
+      return buf.length === size
+        ? null
+        : `Uploaded, but ${url} serves ${buf.length} B instead of ${size} B`;
+    } catch (err) {
+      return `Uploaded to Spaces, but ${url} is not reachable (${(err as Error).message}) - check the nginx /firmware/stm/ proxy`;
+    }
+  }
+
+  private requireVersion(raw: string): StmVersion {
+    const parsed = parseStmVersion(raw);
+    if (!parsed) {
+      throw new BadRequestException(
+        'Version must be "major.voltage.patch", e.g. 3.4.1 (2nd number: 1 = 12V, 2 = 24V, 3 = 36V, 4 = 48V)',
+      );
+    }
+    return parsed;
+  }
+
+  /** Size / CRC32 vs app.json, image tail version, vector table. */
+  private checkImage(
+    bin: Buffer,
+    manifest: Record<string, unknown> | null,
+    parsed: StmVersion,
+  ): { crc: string; appBase: string | null; built: string | null } {
+    const crc = normalizeCrc32(zlib.crc32(bin) >>> 0)!;
     if (manifest) {
       if (manifest.size !== undefined && Number(manifest.size) !== bin.length) {
         throw new BadRequestException(
@@ -230,10 +358,25 @@ export class StmFirmwareService {
           `CRC32 mismatch: app.json ${expected}, app.bin ${crc}`,
         );
       }
+      const manifestVersion = parseStmVersion(manifest.fw_version);
+      if (manifestVersion && manifestVersion.version !== parsed.version) {
+        throw new BadRequestException(
+          `Version mismatch: app.json says ${manifestVersion.version}, registering ${parsed.version}`,
+        );
+      }
+    }
+
+    // The version the STM32 build wrote into the image tail must match too
+    // (the ESP32 refuses the image otherwise).
+    const tail = stmImageTailVersion(bin);
+    if (tail && tail !== parsed.version) {
+      throw new BadRequestException(
+        `Version mismatch: the image itself says ${tail}, registering ${parsed.version}`,
+      );
     }
 
     // Vector table sanity: initial SP in SRAM, reset handler inside the image.
-    const appBaseStr =
+    const appBase =
       manifest && typeof manifest.app_base === 'string'
         ? manifest.app_base
         : null;
@@ -242,14 +385,28 @@ export class StmFirmwareService {
         'app.bin does not look like an STM32 image (bad stack pointer)',
       );
     }
-    const base = appBaseStr ? parseInt(appBaseStr, 16) : NaN;
+    const base = appBase ? parseInt(appBase, 16) : NaN;
     const reset = bin.readUInt32LE(4) & ~1;
     if (Number.isFinite(base) && (reset < base || reset >= base + bin.length)) {
       throw new BadRequestException(
         'app.bin reset vector is outside the image (wrong app_base?)',
       );
     }
+    return {
+      crc,
+      appBase,
+      built:
+        manifest && typeof manifest.built === 'string' ? manifest.built : null,
+    };
+  }
 
+  private async saveImage(
+    dto: { product: StmProduct; channel: StmChannel; notes?: string },
+    parsed: StmVersion,
+    url: string,
+    size: number,
+    checked: { crc: string; appBase: string | null; built: string | null },
+  ) {
     try {
       const created = await this.stmFirmwareModel.create({
         product: dto.product,
@@ -257,19 +414,16 @@ export class StmFirmwareService {
         version: parsed.version,
         major: parsed.major,
         voltageCode: parsed.voltageCode,
-        url: binUrl,
-        size: bin.length,
-        crc32: crc,
-        appBase: appBaseStr,
-        built:
-          manifest && typeof manifest.built === 'string'
-            ? manifest.built
-            : null,
+        url,
+        size,
+        crc32: checked.crc,
+        appBase: checked.appBase,
+        built: checked.built,
         notes: dto.notes?.trim() ?? '',
         enabled: true,
       });
       this.logger.log(
-        `Registered STM32 ${dto.product}/${dto.channel} v${parsed.version} (${chipLabel(parsed.major)} ${voltageLabel(parsed.voltageCode)}) ${crc}`,
+        `Registered STM32 ${dto.product}/${dto.channel} v${parsed.version} (${chipLabel(parsed.major)} ${voltageLabel(parsed.voltageCode)}) ${checked.crc}`,
       );
       return created.toObject();
     } catch (err) {
@@ -280,6 +434,21 @@ export class StmFirmwareService {
       }
       throw err;
     }
+  }
+
+  private parseManifest(buf: Buffer): Record<string, unknown> {
+    try {
+      // PowerShell writes a UTF-8 BOM.
+      const obj: unknown = JSON.parse(
+        buf.toString('utf8').replace(/^\uFEFF/, ''),
+      );
+      if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+        return obj as Record<string, unknown>;
+      }
+    } catch {
+      // fall through
+    }
+    throw new BadRequestException('app.json is not a valid JSON object');
   }
 
   async setEnabled(id: string, enabled: boolean) {

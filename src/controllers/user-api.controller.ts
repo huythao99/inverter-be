@@ -38,8 +38,8 @@ import { MqttService } from '../services/mqtt.service';
 import { StmFirmwareService } from '../services/stm-firmware.service';
 import { BetaFirmwareDeviceService } from '../services/beta-firmware-device.service';
 import {
-  NEWEST_FIRMWARE_VERSION,
-  NEWEST_BETA_FIRMWARE_VERSION,
+  newestFirmwareVersion,
+  newestBetaFirmwareVersion,
   compareFirmwareVersions,
   isLegacyDevice,
 } from '../services/firmware.service';
@@ -70,8 +70,8 @@ export class UserApiController {
   /** Version this user's device should run (beta list -> beta build). */
   private firmwareTargetFor(userId: string, deviceId: string): string {
     return this.betaFirmwareDeviceService.isBeta(deviceId, userId)
-      ? NEWEST_BETA_FIRMWARE_VERSION
-      : NEWEST_FIRMWARE_VERSION;
+      ? newestBetaFirmwareVersion()
+      : newestFirmwareVersion();
   }
 
   /** Firmware the device reports running. Legacy (< 436) = always up to date. */
@@ -622,7 +622,7 @@ export class UserApiController {
     return {
       version: deviceId
         ? this.firmwareTargetFor(user.uid, deviceId)
-        : NEWEST_FIRMWARE_VERSION,
+        : newestFirmwareVersion(),
     };
   }
 

@@ -67,8 +67,9 @@ export const deleteDevice = (id: string) => api.delete(`/devices/${id}`);
 export const getDeviceDetails = (userId: string, deviceId: string) =>
   api.get(`/devices/${userId}/${deviceId}/details`);
 
-export const triggerFirmwareUpdate = (id: string, targetVersion: string) =>
-  api.post(`/devices/${id}/firmware-update`, { targetVersion });
+// targetVersion omitted -> the backend uses the active stable build.
+export const triggerFirmwareUpdate = (id: string, targetVersion?: string) =>
+  api.post(`/devices/${id}/firmware-update`, targetVersion ? { targetVersion } : {});
 
 // Remote ESP32 reboot via MQTT cmd/restart (1 request per device per minute).
 export const restartDevice = (id: string) => api.post(`/devices/${id}/restart`);
@@ -137,9 +138,102 @@ export const getStmFirmwares = (product?: StmProduct) =>
   api.get<StmFirmware[]>('/stm-firmwares', { params: product ? { product } : undefined });
 
 export const getStmFirmwareConfig = () =>
-  api.get<{ baseUrl: string; pathTemplate: string; minEspVersion: string }>(
-    '/stm-firmwares/config',
+  api.get<{
+    baseUrl: string;
+    pathTemplate: string;
+    minEspVersion: string;
+    uploadEnabled: boolean;
+  }>('/stm-firmwares/config');
+
+// multipart: axios must not turn the FormData into JSON (instance default).
+const multipart = (onProgress?: (pct: number) => void) => ({
+  headers: { 'Content-Type': 'multipart/form-data' },
+  onUploadProgress: (e: { loaded: number; total?: number }) => {
+    if (onProgress && e.total) onProgress(Math.round((e.loaded * 100) / e.total));
+  },
+});
+
+// Upload app.bin (+ app.json) to DO Spaces and register it.
+export const uploadStmFirmware = (
+  body: {
+    product: StmProduct;
+    channel: StmChannel;
+    version?: string;
+    notes?: string;
+    bin: File;
+    manifest?: File;
+  },
+  onProgress?: (pct: number) => void,
+) => {
+  const fd = new FormData();
+  fd.append('product', body.product);
+  fd.append('channel', body.channel);
+  if (body.version) fd.append('version', body.version);
+  if (body.notes) fd.append('notes', body.notes);
+  fd.append('bin', body.bin);
+  if (body.manifest) fd.append('manifest', body.manifest);
+  return api.post<StmFirmware & { warning?: string | null }>(
+    '/stm-firmwares/upload',
+    fd,
+    multipart(onProgress),
   );
+};
+
+// ---- ESP32 firmware (builds uploaded to DO Spaces) ----
+export type EspChannel = 'stable' | 'beta';
+
+export interface EspFirmware {
+  _id: string;
+  version: string;
+  url: string;
+  key: string;
+  size: number;
+  sha256: string;
+  md5: string;
+  channels: EspChannel[];
+  notes: string;
+  createdAt: string;
+}
+
+export interface ActiveEspFirmware {
+  version: string;
+  url: string;
+  source: 'cms' | 'default';
+}
+
+export interface EspFirmwareConfig {
+  baseUrl: string;
+  pathTemplate: string;
+  uploadEnabled: boolean;
+  maxBytes: number;
+  stable: ActiveEspFirmware;
+  beta: ActiveEspFirmware;
+}
+
+export const getEspFirmwares = () => api.get<EspFirmware[]>('/esp-firmwares');
+
+export const getEspFirmwareConfig = () => api.get<EspFirmwareConfig>('/esp-firmwares/config');
+
+export const uploadEspFirmware = (
+  body: { version: string; notes?: string; activate?: EspChannel; bin: File },
+  onProgress?: (pct: number) => void,
+) => {
+  const fd = new FormData();
+  fd.append('version', body.version);
+  if (body.notes) fd.append('notes', body.notes);
+  if (body.activate) fd.append('activate', body.activate);
+  fd.append('bin', body.bin);
+  return api.post<EspFirmware & { warning?: string | null }>(
+    '/esp-firmwares/upload',
+    fd,
+    multipart(onProgress),
+  );
+};
+
+export const activateEspFirmware = (id: string, channel: EspChannel) =>
+  api.post<EspFirmware>(`/esp-firmwares/${id}/activate`, { channel });
+
+export const deleteEspFirmware = (id: string) => api.delete(`/esp-firmwares/${id}`);
 
 export const registerStmFirmware = (body: {
   product: StmProduct;

@@ -12,7 +12,15 @@ import {
   Request,
   HttpCode,
   HttpStatus,
+  UseInterceptors,
+  UploadedFile,
+  UploadedFiles,
+  BadRequestException,
 } from '@nestjs/common';
+import {
+  FileFieldsInterceptor,
+  FileInterceptor,
+} from '@nestjs/platform-express';
 import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import { AdminGuard } from '../auth/guards/admin.guard';
 import { CmsService } from '../services/cms.service';
@@ -26,7 +34,21 @@ import {
   RegisterStmFirmwareDto,
   SetStmFirmwareEnabledDto,
   StmUpdateDto,
+  UploadStmFirmwareDto,
 } from '../dto/stm-firmware.dto';
+import { EspFirmwareService } from '../services/esp-firmware.service';
+import {
+  ActivateEspFirmwareDto,
+  UploadEspFirmwareDto,
+} from '../dto/esp-firmware.dto';
+import { SpacesService } from '../services/spaces.service';
+import {
+  newestBetaFirmwareVersion,
+  newestFirmwareVersion,
+} from '../services/firmware.service';
+
+// Firmware files are small (ESP32 app <= 1.25 MB, STM32 image < 256 KB).
+const UPLOAD_LIMITS = { fileSize: 2 * 1024 * 1024, files: 2 };
 import { AdminLoginDto } from '../dto/admin-login.dto';
 import {
   DeviceQueryDto,
@@ -45,6 +67,8 @@ export class CmsController {
     private readonly deviceRestartService: DeviceRestartService,
     private readonly firmwareBulkUpdateService: FirmwareBulkUpdateService,
     private readonly stmFirmwareService: StmFirmwareService,
+    private readonly espFirmwareService: EspFirmwareService,
+    private readonly spacesService: SpacesService,
   ) {}
 
   // ==================== Authentication ====================
@@ -129,9 +153,58 @@ export class CmsController {
   @HttpCode(HttpStatus.OK)
   async triggerFirmwareUpdate(
     @Param('id') id: string,
-    @Body('targetVersion') targetVersion: string,
+    @Body('targetVersion') targetVersion?: string,
   ) {
-    return this.cmsService.triggerFirmwareUpdate(id, targetVersion);
+    // targetVersion is informational for the device (it downloads whatever
+    // /api/firmware points at); default to the active stable build.
+    return this.cmsService.triggerFirmwareUpdate(
+      id,
+      targetVersion || newestFirmwareVersion(),
+    );
+  }
+
+  // ---- ESP32 firmware (builds uploaded to DO Spaces) ----
+  @Get('esp-firmwares')
+  @UseGuards(AdminGuard)
+  listEspFirmwares() {
+    return this.espFirmwareService.list();
+  }
+
+  @Get('esp-firmwares/config')
+  @UseGuards(AdminGuard)
+  getEspFirmwareConfig() {
+    return {
+      ...this.espFirmwareService.config(),
+      newestStable: newestFirmwareVersion(),
+      newestBeta: newestBetaFirmwareVersion(),
+    };
+  }
+
+  @Post('esp-firmwares/upload')
+  @UseGuards(AdminGuard)
+  @UseInterceptors(FileInterceptor('bin', { limits: UPLOAD_LIMITS }))
+  uploadEspFirmware(
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body() dto: UploadEspFirmwareDto,
+  ) {
+    if (!file) throw new BadRequestException('firmware.bin file is required');
+    return this.espFirmwareService.upload(dto, file.buffer);
+  }
+
+  @Post('esp-firmwares/:id/activate')
+  @UseGuards(AdminGuard)
+  @HttpCode(HttpStatus.OK)
+  activateEspFirmware(
+    @Param('id') id: string,
+    @Body() dto: ActivateEspFirmwareDto,
+  ) {
+    return this.espFirmwareService.activate(id, dto.channel);
+  }
+
+  @Delete('esp-firmwares/:id')
+  @UseGuards(AdminGuard)
+  deleteEspFirmware(@Param('id') id: string) {
+    return this.espFirmwareService.remove(id);
   }
 
   // ---- STM32 firmware (static images registered from the CMS) ----
@@ -151,7 +224,34 @@ export class CmsController {
       baseUrl: this.stmFirmwareService.baseUrl,
       pathTemplate: `${this.stmFirmwareService.baseUrl}/{product}/{version}/app.bin`,
       minEspVersion: this.stmFirmwareService.minEspVersion,
+      uploadEnabled: this.spacesService.enabled,
     };
+  }
+
+  // Upload app.bin (+ app.json) to DO Spaces and register it.
+  @Post('stm-firmwares/upload')
+  @UseGuards(AdminGuard)
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'bin', maxCount: 1 },
+        { name: 'manifest', maxCount: 1 },
+      ],
+      { limits: UPLOAD_LIMITS },
+    ),
+  )
+  uploadStmFirmware(
+    @UploadedFiles()
+    files: { bin?: Express.Multer.File[]; manifest?: Express.Multer.File[] },
+    @Body() dto: UploadStmFirmwareDto,
+  ) {
+    const bin = files?.bin?.[0];
+    if (!bin) throw new BadRequestException('app.bin file is required');
+    return this.stmFirmwareService.upload(
+      dto,
+      bin.buffer,
+      files.manifest?.[0]?.buffer,
+    );
   }
 
   @Post('stm-firmwares')

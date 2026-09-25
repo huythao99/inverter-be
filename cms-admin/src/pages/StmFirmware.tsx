@@ -3,11 +3,12 @@ import {
   getStmFirmwareConfig,
   getStmFirmwares,
   registerStmFirmware,
+  uploadStmFirmware,
   setStmFirmwareEnabled,
   deleteStmFirmware,
 } from '../services/api';
 import type { StmChannel, StmFirmware as StmFirmwareItem, StmProduct } from '../services/api';
-import { Plus, X, Trash2, Check, Loader2, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Plus, X, Trash2, Check, Loader2, ToggleLeft, ToggleRight, Upload } from 'lucide-react';
 
 const emptyForm = {
   product: 'inverter' as StmProduct,
@@ -18,10 +19,12 @@ const emptyForm = {
   notes: '',
 };
 
+type AddMode = 'upload' | 'url';
+
 /**
- * STM32 firmware images. Files are uploaded by hand to the firmware server (app.bin +
- * app.json side by side); registering here downloads both and checks size,
- * CRC32 and the vector table before any device can be offered the image.
+ * STM32 firmware images. Either upload app.bin (+ app.json) here - the backend
+ * checks it and stores it on DO Spaces at the standard path - or register a
+ * file already on the firmware server (the backend downloads and checks it).
  */
 const StmFirmware: React.FC = () => {
   const [items, setItems] = useState<StmFirmwareItem[]>([]);
@@ -33,12 +36,44 @@ const StmFirmware: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [baseUrl, setBaseUrl] = useState('');
+  const [uploadEnabled, setUploadEnabled] = useState(false);
+  const [mode, setMode] = useState<AddMode>('upload');
+  const [binFile, setBinFile] = useState<File | null>(null);
+  const [manifestFile, setManifestFile] = useState<File | null>(null);
+  const [uploadPct, setUploadPct] = useState<number | null>(null);
+  const [notice, setNotice] = useState('');
 
   useEffect(() => {
     getStmFirmwareConfig()
-      .then((res) => setBaseUrl(res.data.baseUrl))
+      .then((res) => {
+        setBaseUrl(res.data.baseUrl);
+        setUploadEnabled(!!res.data.uploadEnabled);
+        if (!res.data.uploadEnabled) setMode('url');
+      })
       .catch(() => undefined);
   }, []);
+
+  // app.json picked: prefill the version from fw_version.
+  const pickManifest = (file: File | null) => {
+    setManifestFile(file);
+    if (!file) return;
+    file
+      .text()
+      .then((text) => {
+        const json = JSON.parse(text.replace(/^\uFEFF/, '')) as { fw_version?: unknown };
+        if (typeof json.fw_version === 'string' && !form.version.trim()) {
+          setForm((f) => ({ ...f, version: json.fw_version as string }));
+        }
+      })
+      .catch(() => undefined);
+  };
+
+  const resetForm = () => {
+    setForm({ ...emptyForm, product: form.product });
+    setBinFile(null);
+    setManifestFile(null);
+    setUploadPct(null);
+  };
 
   // Where the backend will look when the app.bin URL is left empty.
   const defaultBinUrl =
@@ -65,22 +100,47 @@ const StmFirmware: React.FC = () => {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.version.trim()) {
+    if (mode === 'url' && !form.version.trim()) {
       setFormError('Version is required');
+      return;
+    }
+    if (mode === 'upload' && !binFile) {
+      setFormError('Choose app.bin');
       return;
     }
     setIsSubmitting(true);
     setFormError('');
+    setNotice('');
     try {
-      await registerStmFirmware({
-        product: form.product,
-        channel: form.channel,
-        version: form.version.trim(),
-        binUrl: form.binUrl.trim() || undefined,
-        manifestUrl: form.manifestUrl.trim() || undefined,
-        notes: form.notes.trim() || undefined,
-      });
-      setForm({ ...emptyForm, product: form.product });
+      if (mode === 'upload' && binFile) {
+        setUploadPct(0);
+        const res = await uploadStmFirmware(
+          {
+            product: form.product,
+            channel: form.channel,
+            version: form.version.trim() || undefined,
+            notes: form.notes.trim() || undefined,
+            bin: binFile,
+            manifest: manifestFile ?? undefined,
+          },
+          setUploadPct,
+        );
+        setNotice(
+          res.data.warning
+            ? `Uploaded v${res.data.version}. Warning: ${res.data.warning}`
+            : `Uploaded and registered v${res.data.version}`,
+        );
+      } else {
+        await registerStmFirmware({
+          product: form.product,
+          channel: form.channel,
+          version: form.version.trim(),
+          binUrl: form.binUrl.trim() || undefined,
+          manifestUrl: form.manifestUrl.trim() || undefined,
+          notes: form.notes.trim() || undefined,
+        });
+      }
+      resetForm();
       setShowForm(false);
       setProduct(form.product);
       fetchItems();
@@ -92,6 +152,7 @@ const StmFirmware: React.FC = () => {
       );
     } finally {
       setIsSubmitting(false);
+      setUploadPct(null);
     }
   };
 
@@ -128,19 +189,42 @@ const StmFirmware: React.FC = () => {
         </div>
         <button className="btn btn-primary" onClick={() => setShowForm(!showForm)}>
           <Plus size={16} />
-          Register firmware
+          Add firmware
         </button>
       </div>
 
       {showForm && (
         <div className="form-card">
           <div className="form-card-header">
-            <h3>Register STM32 firmware</h3>
+            <h3>Add STM32 firmware</h3>
             <button className="btn-icon" onClick={() => setShowForm(false)}>
               <X size={18} />
             </button>
           </div>
           <form onSubmit={handleRegister} className="blacklist-form">
+            <div className="tabs">
+              <button
+                type="button"
+                className={`tab ${mode === 'upload' ? 'active' : ''}`}
+                onClick={() => setMode('upload')}
+                disabled={!uploadEnabled}
+                title={uploadEnabled ? '' : 'Upload is not configured on the server (DO_SPACES_KEY)'}
+              >
+                Upload file
+              </button>
+              <button
+                type="button"
+                className={`tab ${mode === 'url' ? 'active' : ''}`}
+                onClick={() => setMode('url')}
+              >
+                File already on server
+              </button>
+            </div>
+            {!uploadEnabled && (
+              <p className="muted">
+                Upload is disabled: set DO_SPACES_KEY / DO_SPACES_SECRET in the backend .env.
+              </p>
+            )}
             <div className="form-row">
               <div className="form-group">
                 <label>Product</label>
@@ -164,7 +248,12 @@ const StmFirmware: React.FC = () => {
               </div>
               <div className="form-group">
                 <label>
-                  Version <span className="required">*</span>
+                  Version{' '}
+                  {mode === 'url' ? (
+                    <span className="required">*</span>
+                  ) : (
+                    <span className="optional">(from app.json if empty)</span>
+                  )}
                 </label>
                 <input
                   type="text"
@@ -174,6 +263,31 @@ const StmFirmware: React.FC = () => {
                 />
               </div>
             </div>
+            {mode === 'upload' ? (
+              <div className="form-row">
+                <div className="form-group">
+                  <label>
+                    app.bin <span className="required">*</span>
+                  </label>
+                  <input
+                    type="file"
+                    accept=".bin,application/octet-stream"
+                    onChange={(e) => setBinFile(e.target.files?.[0] ?? null)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>
+                    app.json <span className="optional">(recommended — size/CRC32 cross-check)</span>
+                  </label>
+                  <input
+                    type="file"
+                    accept=".json,application/json"
+                    onChange={(e) => pickManifest(e.target.files?.[0] ?? null)}
+                  />
+                </div>
+              </div>
+            ) : (
+              <>
             <div className="form-group">
               <label>
                 app.bin URL{' '}
@@ -201,6 +315,8 @@ const StmFirmware: React.FC = () => {
                 onChange={(e) => setForm({ ...form, manifestUrl: e.target.value })}
               />
             </div>
+              </>
+            )}
             <div className="form-group">
               <label>
                 Notes <span className="optional">(optional)</span>
@@ -212,9 +328,26 @@ const StmFirmware: React.FC = () => {
               />
             </div>
             <p className="muted">
-              The backend downloads app.bin and computes its size and CRC32; if an app.json
-              sits next to it, both must match.
+              {mode === 'upload' ? (
+                <>
+                  Stored at{' '}
+                  <code>
+                    {baseUrl || '…/firmware/stm'}/{form.product}/
+                    {form.version.trim() || '<version>'}/app.bin
+                  </code>
+                  . The backend checks size, CRC32, the version inside the image and the vector
+                  table first; an existing version is never overwritten.
+                </>
+              ) : (
+                'The backend downloads app.bin and computes its size and CRC32; if an app.json sits next to it, both must match.'
+              )}
             </p>
+            {uploadPct !== null && (
+              <div className="upload-progress">
+                <div className="upload-progress-bar" style={{ width: `${uploadPct}%` }} />
+                <span>{uploadPct < 100 ? `Uploading ${uploadPct}%` : 'Checking & storing…'}</span>
+              </div>
+            )}
             {formError && <p className="form-error">{formError}</p>}
             <div className="form-actions">
               <button
@@ -226,12 +359,27 @@ const StmFirmware: React.FC = () => {
                 Cancel
               </button>
               <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-                {isSubmitting ? <Loader2 size={16} className="spin" /> : <Check size={16} />}
-                {isSubmitting ? 'Checking...' : 'Register'}
+                {isSubmitting ? (
+                  <Loader2 size={16} className="spin" />
+                ) : mode === 'upload' ? (
+                  <Upload size={16} />
+                ) : (
+                  <Check size={16} />
+                )}
+                {isSubmitting ? 'Checking...' : mode === 'upload' ? 'Upload' : 'Register'}
               </button>
             </div>
           </form>
         </div>
+      )}
+
+      {notice && (
+        <p className={`notice ${notice.includes('Warning') ? 'notice-warn' : ''}`}>
+          {notice}
+          <button className="btn-icon" onClick={() => setNotice('')}>
+            <X size={14} />
+          </button>
+        </p>
       )}
 
       <div className="tabs">

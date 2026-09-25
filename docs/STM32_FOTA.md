@@ -36,7 +36,14 @@ files there must be public-read):
     default base: https://giabao-inverter.com/firmware/stm
     e.g.          https://giabao-inverter.com/firmware/stm/inverter/3.4.1/app.bin
 
-Upload the files there, then register the version in **CMS → STM32 Firmware**
+Easiest: **CMS → STM32 Firmware → Add firmware → Upload file** (app.bin +
+app.json). The backend checks the image and stores it on Spaces at that path
+(public-read, never overwriting an existing version) and registers it. Needs
+`DO_SPACES_KEY` / `DO_SPACES_SECRET` in the backend `.env` (optional:
+`DO_SPACES_BUCKET` = gticontrol, `DO_SPACES_REGION` = sgp1,
+`STM_SPACES_PREFIX` = firmware/stm).
+
+Or upload the files by hand, then register the version in **CMS → STM32 Firmware**
 (product, channel, version — the URL is derived; an explicit app.bin URL can
 still be given to override it). The backend downloads the file, computes size
 + CRC32 (zlib) and checks the vector table; if an `app.json` sits next to it

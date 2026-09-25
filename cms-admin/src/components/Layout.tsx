@@ -9,6 +9,7 @@ import {
   ShieldOff,
   FlaskConical,
   CircuitBoard,
+  HardDriveUpload,
   Settings,
   LogOut,
   Menu,
@@ -32,6 +33,7 @@ const Layout: React.FC = () => {
     { to: '/users', icon: Users, label: 'Users' },
     { to: '/blacklist', icon: ShieldOff, label: 'Blacklist' },
     { to: '/beta-firmware', icon: FlaskConical, label: 'Beta Firmware' },
+    { to: '/esp-firmware', icon: HardDriveUpload, label: 'ESP32 Firmware' },
     { to: '/stm-firmware', icon: CircuitBoard, label: 'STM32 Firmware' },
     { to: '/settings', icon: Settings, label: 'Settings' },
   ];

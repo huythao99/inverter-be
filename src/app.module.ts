@@ -20,6 +20,8 @@ import { DeviceRestartModule } from './modules/device-restart.module';
 import { BlacklistDeviceModule } from './modules/blacklist-device.module';
 import { BetaFirmwareDeviceModule } from './modules/beta-firmware-device.module';
 import { StmFirmwareModule } from './modules/stm-firmware.module';
+import { SpacesModule } from './modules/spaces.module';
+import { EspFirmwareModule } from './modules/esp-firmware.module';
 import { FirmwareController } from './controllers/firmware.controller';
 import { FirmwareService } from './services/firmware.service';
 import { ChargerDeviceModule } from './modules/charger-device.module';
@@ -63,6 +65,8 @@ import { UserChargerModule } from './modules/user-charger.module';
     EventEmitterModule.forRoot(),
     BlacklistDeviceModule,
     BetaFirmwareDeviceModule,
+    SpacesModule,
+    EspFirmwareModule,
     StmFirmwareModule,
     MqttModule,
     DeviceRestartModule,

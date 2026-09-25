@@ -28,8 +28,8 @@ import {
   voltageLabel,
 } from './stm-firmware.service';
 import {
-  NEWEST_FIRMWARE_VERSION,
-  NEWEST_BETA_FIRMWARE_VERSION,
+  newestFirmwareVersion,
+  newestBetaFirmwareVersion,
   compareFirmwareVersions,
   isLegacyDevice,
 } from './firmware.service';
@@ -260,9 +260,9 @@ export class FirmwareBulkUpdateService
     // device itself PATCHes after every boot, so it is accurate after an OTA.
     // Devices with no reported version are kept (unknown = maybe outdated).
     // Beta devices are skipped first (they follow their own beta build, whose
-    // version is unrelated to the stable NEWEST_FIRMWARE_VERSION).
+    // version is unrelated to the stable version).
     // Legacy devices (number < 436) never get OTA: always skipped.
-    const targetVersion = NEWEST_FIRMWARE_VERSION;
+    const targetVersion = newestFirmwareVersion();
     const nonLegacy = devices.filter((d) => !isLegacyDevice(d.deviceId));
     const skippedLegacy = devices.length - nonLegacy.length;
     const nonBeta = dto.includeBeta
@@ -275,7 +275,7 @@ export class FirmwareBulkUpdateService
     // beta-list devices (only present with includeBeta) get the beta build.
     const versionFor = (d: { deviceId: string; userId: string }) =>
       this.betaFirmwareDeviceService.isBeta(d.deviceId, d.userId)
-        ? NEWEST_BETA_FIRMWARE_VERSION
+        ? newestBetaFirmwareVersion()
         : targetVersion;
     const toUpdate = dto.includeUpToDate
       ? nonBeta
@@ -701,7 +701,7 @@ export class FirmwareBulkUpdateService
       createdAt: job.createdAt,
       sendingFinishedAt: job.sendingFinishedAt || null,
       total: Number(job.total) || Object.keys(devices).length,
-      targetVersion: job.targetVersion || NEWEST_FIRMWARE_VERSION,
+      targetVersion: job.targetVersion || newestFirmwareVersion(),
       skipped: Number(job.skipped) || 0,
       skippedBeta: Number(job.skippedBeta) || 0,
       skippedLegacy: Number(job.skippedLegacy) || 0,
