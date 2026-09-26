@@ -50,6 +50,8 @@ const ICONS: Record<string, string> = {
   phone:
     '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/>',
   menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+  headset:
+    '<path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/>',
   globe:
     '<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z"/>',
 };
@@ -303,6 +305,14 @@ export function renderLanding(ctx: LandingContext): string {
             <dt>Đại diện</dt><dd>Ngô Văn Bảo</dd>
             <dt>Hotline</dt><dd><a href="tel:0346905569">0346 905 569</a></dd>
             <dt>Website</dt><dd><a href="https://giabao-inverter.com">giabao-inverter.com</a></dd>
+          </dl>
+        </div>
+        <div class="contact-card reveal">
+          <h3>${icon('headset', 20)} Hỗ trợ phần mềm</h3>
+          <dl>
+            <dt>Phụ trách</dt><dd>Ngô Huy Thao</dd>
+            <dt>Zalo</dt><dd><a href="https://zalo.me/0375336663" target="_blank" rel="noopener">0375 336 663</a></dd>
+            <dt>Hỗ trợ</dt><dd>Ứng dụng, kết nối WiFi thiết bị, cập nhật firmware</dd>
           </dl>
         </div>
       </div>
