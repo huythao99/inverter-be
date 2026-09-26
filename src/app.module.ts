@@ -30,6 +30,8 @@ import { ChargerDataModule } from './modules/charger-data.module';
 import { ChargerFirmwareModule } from './modules/charger-firmware.module';
 import { CmsChargerModule } from './modules/cms-charger.module';
 import { UserChargerModule } from './modules/user-charger.module';
+import { AuditLogModule } from './modules/audit-log.module';
+import { DeviceHealthModule } from './modules/device-health.module';
 
 @Module({
   imports: [
@@ -63,6 +65,8 @@ import { UserChargerModule } from './modules/user-charger.module';
       ],
     }),
     EventEmitterModule.forRoot(),
+    AuditLogModule,
+    DeviceHealthModule,
     BlacklistDeviceModule,
     BetaFirmwareDeviceModule,
     SpacesModule,

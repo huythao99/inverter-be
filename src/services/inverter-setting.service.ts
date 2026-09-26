@@ -8,6 +8,8 @@ import {
   InverterSettingDocument,
 } from '../models/inverter-setting.schema';
 import { MqttService } from './mqtt.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { AUDIT_EVENT, AuditContext, AuditEvent } from '../utils/audit-context';
 import { GRID_TIE_OFF_VALUE } from '../constants/grid-tie.constants';
 
 @Injectable()
@@ -17,6 +19,7 @@ export class InverterSettingService {
     private inverterSettingModel: Model<InverterSettingDocument>,
     private mqttService: MqttService,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   private getCacheKey(userId: string, deviceId: string): string {
@@ -100,7 +103,14 @@ export class InverterSettingService {
     userId: string,
     deviceId: string,
     value: string,
+    ctx?: AuditContext,
   ): Promise<InverterSetting | null> {
+    const before = await this.inverterSettingModel
+      .findOne({ userId, deviceId }, { value: 1 })
+      .lean()
+      .maxTimeMS(2000)
+      .exec()
+      .catch(() => null);
     const updatedSetting = await this.inverterSettingModel
       .findOneAndUpdate(
         { userId, deviceId },
@@ -114,6 +124,15 @@ export class InverterSettingService {
 
     if (updatedSetting) {
       void this.mqttService.emitSyncSettings(userId, deviceId);
+      this.eventEmitter.emit(AUDIT_EVENT, {
+        ctx: ctx ?? { source: 'system' },
+        userId,
+        deviceId,
+        kind: 'inverter',
+        action: 'settings',
+        before: before?.value ?? null,
+        after: value,
+      } satisfies AuditEvent);
     }
 
     return updatedSetting;
@@ -142,7 +161,11 @@ export class InverterSettingService {
     userId: string,
     deviceId: string,
     off: boolean,
+    ctx?: AuditContext,
   ): Promise<InverterSetting | null> {
+    const wasOff = await this.getGridTieOffFromDb(userId, deviceId).catch(
+      () => null,
+    );
     const update: Record<string, unknown> = {
       $set: { gridTieOff: off, updatedAt: new Date() },
     };
@@ -162,6 +185,15 @@ export class InverterSettingService {
 
     if (result) {
       void this.mqttService.emitSyncSettings(userId, deviceId);
+      this.eventEmitter.emit(AUDIT_EVENT, {
+        ctx: ctx ?? { source: 'system' },
+        userId,
+        deviceId,
+        kind: 'inverter',
+        action: 'grid-tie',
+        before: wasOff === null ? null : wasOff ? '1' : '0',
+        after: off ? '1' : '0',
+      } satisfies AuditEvent);
     }
 
     return result;

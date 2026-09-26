@@ -6,7 +6,10 @@ import {
   Param,
   Query,
   UseInterceptors,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
+import { auditCtx } from '../utils/audit-context';
 import { CacheTTL } from '@nestjs/cache-manager';
 import { InverterSettingService } from '../services/inverter-setting.service';
 import { GridTieService } from '../services/grid-tie.service';
@@ -102,6 +105,7 @@ export class InverterSettingController {
     @Param('userId') userId: string,
     @Param('deviceId') deviceId: string,
     @Body() updateValueDto: UpdateInverterSettingValueDto,
+    @Req() req: Request,
   ) {
     const value = this.blacklistDeviceService.isBlacklisted(deviceId, userId)
       ? BLACKLIST_OFF_VALUE
@@ -110,6 +114,7 @@ export class InverterSettingController {
       userId,
       deviceId,
       value,
+      auditCtx(req, { actor: userId }),
     );
   }
 
@@ -130,9 +135,15 @@ export class InverterSettingController {
     @Param('userId') userId: string,
     @Param('deviceId') deviceId: string,
     @Body() dto: SetGridTieDto,
+    @Req() req: Request,
   ) {
     const off = dto.status === 1;
-    const setting = await this.gridTieService.setGridTie(userId, deviceId, off);
+    const setting = await this.gridTieService.setGridTie(
+      userId,
+      deviceId,
+      off,
+      auditCtx(req, { actor: userId }),
+    );
     return {
       userId,
       deviceId,

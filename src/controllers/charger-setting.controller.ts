@@ -6,7 +6,10 @@ import {
   Param,
   Query,
   UseInterceptors,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
+import { auditCtx } from '../utils/audit-context';
 import { CacheTTL } from '@nestjs/cache-manager';
 import { ChargerSettingService } from '../services/charger-setting.service';
 import { UpdateChargerSettingValueDto } from '../dto/update-charger-setting-value.dto';
@@ -59,11 +62,13 @@ export class ChargerSettingController {
     @Param('userId') userId: string,
     @Param('deviceId') deviceId: string,
     @Body() dto: UpdateChargerSettingValueDto,
+    @Req() req: Request,
   ) {
     return this.chargerSettingService.updateValueByUserIdAndDeviceId(
       userId,
       deviceId,
       dto.value,
+      auditCtx(req, { actor: userId }),
     );
   }
 
@@ -73,6 +78,7 @@ export class ChargerSettingController {
     @Param('userId') userId: string,
     @Param('deviceId') deviceId: string,
     @Body() dto: UpdateChargerSettingDto,
+    @Req() req: Request,
   ) {
     const value = encodeChargerValue(dto.vbat, dto.ibat);
     const result =
@@ -80,6 +86,7 @@ export class ChargerSettingController {
         userId,
         deviceId,
         value,
+        auditCtx(req, { actor: userId }),
       );
     return {
       ...(result ?? { userId, deviceId, value }),

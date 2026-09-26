@@ -456,3 +456,184 @@ export const triggerChargerFirmwareUpdate = (id: string, targetVersion?: string)
   api.post(`/charger/devices/${id}/firmware-update`, targetVersion ? { targetVersion } : {});
 
 export default api;
+
+// ==================== Device health ====================
+
+export type HealthIssue =
+  | 'offline'
+  | 'reboot_loop'
+  | 'crash'
+  | 'brownout'
+  | 'uart'
+  | 'plain_mqtt'
+  | 'mqtt_fail'
+  | 'low_heap'
+  | 'weak_wifi'
+  | 'outdated';
+
+export interface HealthRow {
+  userId: string;
+  deviceId: string;
+  deviceName: string | null;
+  firmwareVersion: string | null;
+  stmFwVersion: string | null;
+  online: boolean;
+  lastDataAt: string | null;
+  boots24h: number;
+  lastBoot: { at: string; reason: number; reasonText: string } | null;
+  transport: 'tls' | 'plain' | null;
+  rssi: number | null;
+  heapMin: number | null;
+  uart: { at: string; ok: number; bad: number; raw: string } | null;
+  badFrame: { at: string; sample: string } | null;
+  mqttFails24h: number;
+  issues: HealthIssue[];
+}
+
+export interface HealthSummary {
+  total: number;
+  online: number;
+  offline: number;
+  withProblems: number;
+  issues: Record<HealthIssue, number>;
+  firmware: { version: string; count: number }[];
+  resetReasons24h: { reason: number; text: string; count: number }[];
+  newestFirmware: string;
+  generatedAt: string;
+}
+
+export const getHealthSummary = () => api.get<HealthSummary>('/health/summary');
+
+export const getHealthDevices = (params: {
+  status?: string;
+  issue?: string;
+  fw?: string;
+  search?: string;
+  sort?: string;
+  page?: number;
+  limit?: number;
+}) =>
+  api.get<{ data: HealthRow[]; total: number; page: number; limit: number }>(
+    '/health/devices',
+    { params }
+  );
+
+export const getDeviceHealth = (userId: string, deviceId: string) =>
+  api.get<HealthRow | null>(`/health/devices/${userId}/${deviceId}`);
+
+// ==================== Activity (audit log) ====================
+
+export interface ActivityEntry {
+  _id: string;
+  deviceId: string;
+  kind: 'inverter' | 'charger';
+  action: 'settings' | 'schedule' | 'grid-tie';
+  source: 'app' | 'web' | 'cms' | 'api' | 'system';
+  actor: string | null;
+  actorLabel: string | null;
+  summary: string;
+  before: string | null;
+  after: string | null;
+  ip?: string | null;
+  userAgent?: string | null;
+  createdAt: string;
+}
+
+export const getDeviceActivity = (
+  userId: string,
+  deviceId: string,
+  params: { kind?: 'inverter' | 'charger'; before?: string; limit?: number } = {}
+) =>
+  api.get<{ data: ActivityEntry[]; nextBefore: string | null }>(
+    `/devices/${userId}/${deviceId}/activity`,
+    { params }
+  );
+
+// ==================== ESP32 staged rollout ====================
+
+export type RolloutStatus = 'running' | 'paused' | 'completed' | 'aborted';
+export type RolloutDeviceState =
+  | 'pushed'
+  | 'installing'
+  | 'updated'
+  | 'healthy'
+  | 'failed'
+  | 'rolled_back'
+  | 'unhealthy'
+  | 'stalled';
+
+export interface RolloutStats {
+  eligible: number;
+  onVersion: number;
+  counts: Record<RolloutDeviceState, number>;
+  healthy: number;
+  failures: number;
+  pending: number;
+  failRate: number | null;
+}
+
+export interface Rollout {
+  _id: string;
+  firmwareId: string;
+  version: string;
+  fromVersion: string;
+  stages: number[];
+  stageIndex: number;
+  percent: number;
+  status: RolloutStatus;
+  autoPush: boolean;
+  autoAdvance: boolean;
+  stageHours: number;
+  maxFailRate: number;
+  minSamples: number;
+  observeMinutes: number;
+  stageStartedAt: string;
+  pendingPush: boolean;
+  pauseReason: string | null;
+  createdBy: string | null;
+  events?: { at: string; type: string; message: string; by?: string | null }[];
+  createdAt: string;
+  updatedAt: string;
+  stats?: RolloutStats;
+}
+
+export interface RolloutDeviceRow {
+  _id: string;
+  userId: string;
+  deviceId: string;
+  state: RolloutDeviceState;
+  fromVersion: string | null;
+  otaStatus: string | null;
+  reason: string | null;
+  updatedAt: string;
+}
+
+export const getActiveRollout = () =>
+  api.get<{ rollout: Rollout | null }>('/esp-rollouts/active');
+
+export const getRollouts = () => api.get<Rollout[]>('/esp-rollouts');
+
+export const startRollout = (body: {
+  firmwareId: string;
+  stages?: number[];
+  autoPush?: boolean;
+  autoAdvance?: boolean;
+  stageHours?: number;
+  maxFailRate?: number;
+  minSamples?: number;
+  observeMinutes?: number;
+}) => api.post<Rollout>('/esp-rollouts', body);
+
+export const rolloutAction = (
+  id: string,
+  action: 'pause' | 'resume' | 'advance' | 'abort' | 'push'
+) => api.post<Rollout>(`/esp-rollouts/${id}/${action}`);
+
+export const getRolloutDevices = (
+  id: string,
+  params: { state?: string; page?: number; limit?: number } = {}
+) =>
+  api.get<{ data: RolloutDeviceRow[]; total: number; page: number; limit: number }>(
+    `/esp-rollouts/${id}/devices`,
+    { params }
+  );

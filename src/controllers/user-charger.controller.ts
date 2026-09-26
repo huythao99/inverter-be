@@ -11,7 +11,10 @@ import {
   NotFoundException,
   BadRequestException,
   Header,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
+import { auditCtx } from '../utils/audit-context';
 import { FirebaseAuthGuard } from '../auth/guards/firebase-auth.guard';
 import { CurrentFirebaseUser } from '../auth/decorators/firebase-user.decorator';
 import { FirebaseUser } from '../auth/strategies/firebase.strategy';
@@ -21,6 +24,7 @@ import { ChargerDataService } from '../services/charger-data.service';
 import { ChargerFirmwareService } from '../services/charger-firmware.service';
 import { ChargerProvisionService } from '../services/charger-provision.service';
 import { MqttAuthService } from '../services/mqtt-auth.service';
+import { AuditLogService } from '../services/audit-log.service';
 import { UpdateUserChargerSettingDto } from '../dto/update-user-charger-setting.dto';
 import {
   decodeChargerValue,
@@ -39,6 +43,7 @@ export class UserChargerController {
     private readonly chargerFirmwareService: ChargerFirmwareService,
     private readonly chargerProvisionService: ChargerProvisionService,
     private readonly mqttAuthService: MqttAuthService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   // Ensure the charger belongs to the authenticated user (throws if not).
@@ -148,6 +153,24 @@ export class UserChargerController {
     return { ...setting, ...(decoded ?? {}) };
   }
 
+  // History of setting changes (newest first).
+  @Get(':deviceId/activity')
+  async getActivity(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('deviceId') deviceId: string,
+    @Query('before') before?: string,
+    @Query('limit') limit?: number,
+  ) {
+    await this.assertOwned(user.uid, deviceId);
+    return this.auditLogService.list({
+      userId: user.uid,
+      deviceId,
+      kind: 'charger',
+      before,
+      limit,
+    });
+  }
+
   // Update setting: either { value: "HHHHLLLL" } or { vbat, ibat }.
   // Backend then publishes cmd/settings so the device pulls the new value.
   @Patch(':deviceId/settings')
@@ -155,6 +178,7 @@ export class UserChargerController {
     @CurrentFirebaseUser() user: FirebaseUser,
     @Param('deviceId') deviceId: string,
     @Body() dto: UpdateUserChargerSettingDto,
+    @Req() req: Request,
   ) {
     await this.assertOwned(user.uid, deviceId);
 
@@ -174,6 +198,7 @@ export class UserChargerController {
         user.uid,
         deviceId,
         value,
+        auditCtx(req, { actor: user.uid, actorLabel: user.email ?? null }),
       );
     const decoded = decodeChargerValue(value);
     return {

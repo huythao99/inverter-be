@@ -24,6 +24,7 @@ import {
   activeEspFirmware,
   compareFirmwareVersions,
   setActiveEspFirmware,
+  activeRollout,
 } from './firmware.service';
 
 const VERSION_RE = /^\d{1,3}\.\d{1,3}\.\d{1,3}$/;
@@ -253,6 +254,11 @@ export class EspFirmwareService implements OnModuleInit, OnModuleDestroy {
    * Make a build the active one of its product's channel (the previous one of
    * the same product is released).
    */
+  async get(id: string) {
+    if (!/^[a-f0-9]{24}$/i.test(id)) return null;
+    return this.model.findById(id).lean().exec();
+  }
+
   async activate(id: string, channel: EspFirmwareChannel) {
     if (!CHANNELS.includes(channel)) {
       throw new BadRequestException('channel must be stable or beta');
@@ -282,6 +288,12 @@ export class EspFirmwareService implements OnModuleInit, OnModuleDestroy {
     if (fw.channels?.length) {
       throw new BadRequestException(
         `v${fw.version} is active on ${fw.channels.join(', ')} - activate another build first`,
+      );
+    }
+    const r = activeRollout();
+    if (r && r.url === fw.url) {
+      throw new BadRequestException(
+        `v${fw.version} is being rolled out - finish or abort the rollout first`,
       );
     }
     // The file stays on Spaces (a device may still be downloading it).

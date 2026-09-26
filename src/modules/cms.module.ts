@@ -33,6 +33,17 @@ import { CmsGateway } from '../gateways/cms.gateway';
 import { DailyTotalsModule } from './daily-totals.module';
 import { RedisConfig } from '../config/redis.config';
 import { FirmwareBulkUpdateService } from '../services/firmware-bulk-update.service';
+import { FirmwareRolloutService } from '../services/firmware-rollout.service';
+import {
+  FirmwareRollout,
+  FirmwareRolloutSchema,
+  RolloutDevice,
+  RolloutDeviceSchema,
+} from '../models/firmware-rollout.schema';
+import {
+  DeviceHealth,
+  DeviceHealthSchema,
+} from '../models/device-health.schema';
 
 @Module({
   imports: [
@@ -73,6 +84,9 @@ import { FirmwareBulkUpdateService } from '../services/firmware-bulk-update.serv
       { name: InverterData.name, schema: InverterDataSchema },
       { name: InverterSetting.name, schema: InverterSettingSchema },
       { name: InverterSchedule.name, schema: InverterScheduleSchema },
+      { name: FirmwareRollout.name, schema: FirmwareRolloutSchema },
+      { name: RolloutDevice.name, schema: RolloutDeviceSchema },
+      { name: DeviceHealth.name, schema: DeviceHealthSchema },
     ]),
   ],
   controllers: [CmsController],
@@ -82,6 +96,7 @@ import { FirmwareBulkUpdateService } from '../services/firmware-bulk-update.serv
     CmsGateway,
     RedisConfig,
     FirmwareBulkUpdateService,
+    FirmwareRolloutService,
   ],
   exports: [CmsService],
 })

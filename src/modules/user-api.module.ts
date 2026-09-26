@@ -10,6 +10,7 @@ import { InverterDeviceModule } from './inverter-device.module';
 import { InverterSettingModule } from './inverter-setting.module';
 import { InverterScheduleModule } from './inverter-schedule.module';
 import { MqttAuthModule } from './mqtt-auth.module';
+import { EnergyReportService } from '../services/energy-report.service';
 
 @Module({
   imports: [
@@ -23,7 +24,7 @@ import { MqttAuthModule } from './mqtt-auth.module';
     MqttAuthModule,
   ],
   controllers: [UserApiController],
-  providers: [FirebaseConfig, FirebaseStrategy],
+  providers: [FirebaseConfig, FirebaseStrategy, EnergyReportService],
   exports: [FirebaseConfig],
 })
 export class UserApiModule {}

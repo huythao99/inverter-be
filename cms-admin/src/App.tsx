@@ -12,6 +12,8 @@ import Blacklist from './pages/Blacklist';
 import BetaFirmware from './pages/BetaFirmware';
 import StmFirmware from './pages/StmFirmware';
 import EspFirmware from './pages/EspFirmware';
+import Health from './pages/Health';
+import Rollout from './pages/Rollout';
 import Settings from './pages/Settings';
 import './App.css';
 
@@ -71,6 +73,8 @@ function AppRoutes() {
         <Route path="/beta-firmware" element={<BetaFirmware />} />
         <Route path="/esp-firmware" element={<EspFirmware />} />
         <Route path="/stm-firmware" element={<StmFirmware />} />
+        <Route path="/health" element={<Health />} />
+        <Route path="/rollout" element={<Rollout />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

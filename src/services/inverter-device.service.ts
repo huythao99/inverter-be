@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { OnEvent } from '@nestjs/event-emitter';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { Model } from 'mongoose';
 import {
   InverterDevice,
@@ -17,6 +17,7 @@ export class InverterDeviceService {
     @InjectModel(InverterDevice.name)
     private inverterDeviceModel: Model<InverterDeviceDocument>,
     private mqttService: MqttService,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   /** Number of distinct devices registered (landing page counter). */
@@ -186,9 +187,19 @@ export class InverterDeviceService {
       updatedAt: new Date(),
     };
 
-    return this.inverterDeviceModel
+    const device = await this.inverterDeviceModel
       .findOneAndUpdate({ userId, deviceId }, updateData, { new: true })
       .exec();
+    if (device) {
+      // The ESP32 PATCHes its version after every boot: used by the staged
+      // rollout to see updates land (or roll back).
+      this.eventEmitter.emit('device.firmware.reported', {
+        userId,
+        deviceId,
+        version: firmwareVersion,
+      });
+    }
+    return device;
   }
 
   async updateDescription(

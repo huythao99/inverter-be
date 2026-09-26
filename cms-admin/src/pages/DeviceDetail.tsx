@@ -11,6 +11,7 @@ import {
 import VirtualList from '../components/VirtualList';
 import StmFirmwareCard from '../components/StmFirmwareCard';
 import UartDebugPanel from '../components/UartDebugPanel';
+import { ActivityPanel, DeviceHealthPanel } from '../components/DevicePanels';
 import type { StmOtaLive } from '../components/StmFirmwareCard';
 import {
   ArrowLeft,
@@ -26,6 +27,8 @@ import {
   Loader2,
   RotateCcw,
   Terminal,
+  HeartPulse,
+  History,
 } from 'lucide-react';
 
 // MQTT WebSocket URL (broker must have WebSocket listener enabled on port 9001)
@@ -113,7 +116,7 @@ const DeviceDetail: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<
-    'realtime' | 'data' | 'settings' | 'schedule' | 'totals' | 'uart'
+    'realtime' | 'data' | 'settings' | 'schedule' | 'totals' | 'uart' | 'health' | 'activity'
   >('realtime');
 
   // Firmware update state
@@ -584,6 +587,20 @@ const DeviceDetail: React.FC = () => {
           <Terminal size={18} />
           UART Debug
         </button>
+        <button
+          className={`tab ${activeTab === 'health' ? 'active' : ''}`}
+          onClick={() => setActiveTab('health')}
+        >
+          <HeartPulse size={18} />
+          Health
+        </button>
+        <button
+          className={`tab ${activeTab === 'activity' ? 'active' : ''}`}
+          onClick={() => setActiveTab('activity')}
+        >
+          <History size={18} />
+          History
+        </button>
       </div>
 
       {/* Tab Content */}
@@ -703,6 +720,14 @@ const DeviceDetail: React.FC = () => {
               isConnected={isConnected}
             />
           </div>
+        )}
+
+        {activeTab === 'health' && userId && deviceId && (
+          <DeviceHealthPanel userId={userId} deviceId={deviceId} />
+        )}
+
+        {activeTab === 'activity' && userId && deviceId && (
+          <ActivityPanel userId={userId} deviceId={deviceId} />
         )}
 
         {activeTab === 'totals' && (

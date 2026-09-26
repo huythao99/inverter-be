@@ -1,4 +1,14 @@
-import { Controller, Get, Body, Patch, Param, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Body,
+  Patch,
+  Param,
+  Query,
+  Req,
+} from '@nestjs/common';
+import type { Request } from 'express';
+import { auditCtx } from '../utils/audit-context';
 import { InverterScheduleService } from '../services/inverter-schedule.service';
 import { GridTieService } from '../services/grid-tie.service';
 import { ShareService } from '../services/share.service';
@@ -102,6 +112,7 @@ export class InverterScheduleController {
     @Param('userId') userId: string,
     @Param('deviceId') deviceId: string,
     @Body() updateScheduleDto: UpdateInverterScheduleValueDto,
+    @Req() req: Request,
   ) {
     const schedule = this.blacklistDeviceService.isBlacklisted(deviceId, userId)
       ? updateScheduleDto.schedule.replace(
@@ -113,6 +124,7 @@ export class InverterScheduleController {
       userId,
       deviceId,
       schedule,
+      auditCtx(req, { actor: userId }),
     );
   }
 }

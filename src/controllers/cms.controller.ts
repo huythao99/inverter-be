@@ -44,6 +44,10 @@ import {
 } from '../dto/esp-firmware.dto';
 import { SpacesService } from '../services/spaces.service';
 import { MqttAuthService } from '../services/mqtt-auth.service';
+import { AuditLogService } from '../services/audit-log.service';
+import { DeviceHealthService } from '../services/device-health.service';
+import { FirmwareRolloutService } from '../services/firmware-rollout.service';
+import { StartRolloutDto } from '../dto/start-rollout.dto';
 import {
   newestBetaFirmwareVersion,
   newestFirmwareVersion,
@@ -73,6 +77,9 @@ export class CmsController {
     private readonly espFirmwareService: EspFirmwareService,
     private readonly spacesService: SpacesService,
     private readonly mqttAuthService: MqttAuthService,
+    private readonly auditLogService: AuditLogService,
+    private readonly deviceHealthService: DeviceHealthService,
+    private readonly firmwareRolloutService: FirmwareRolloutService,
   ) {}
 
   // ==================== Authentication ====================
@@ -150,6 +157,123 @@ export class CmsController {
     @Param('deviceId') deviceId: string,
   ) {
     return this.cmsService.getDeviceDetails(userId, deviceId);
+  }
+
+  // ==================== ESP32 staged rollout ====================
+
+  @Get('esp-rollouts')
+  @UseGuards(AdminGuard)
+  listRollouts() {
+    return this.firmwareRolloutService.list();
+  }
+
+  @Get('esp-rollouts/active')
+  @UseGuards(AdminGuard)
+  async activeRollout() {
+    return { rollout: await this.firmwareRolloutService.active() };
+  }
+
+  @Post('esp-rollouts')
+  @UseGuards(AdminGuard)
+  startRollout(
+    @Body() dto: StartRolloutDto,
+    @Request() req: { user?: { username?: string } },
+  ) {
+    return this.firmwareRolloutService.start(dto, req.user?.username ?? null);
+  }
+
+  @Get('esp-rollouts/:id')
+  @UseGuards(AdminGuard)
+  getRollout(@Param('id') id: string) {
+    return this.firmwareRolloutService.status(id);
+  }
+
+  @Get('esp-rollouts/:id/devices')
+  @UseGuards(AdminGuard)
+  getRolloutDevices(
+    @Param('id') id: string,
+    @Query('state') state?: string,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    return this.firmwareRolloutService.devices(id, state, page, limit);
+  }
+
+  @Post('esp-rollouts/:id/:action')
+  @UseGuards(AdminGuard)
+  rolloutAction(
+    @Param('id') id: string,
+    @Param('action') action: string,
+    @Request() req: { user?: { username?: string } },
+  ) {
+    if (!['pause', 'resume', 'advance', 'abort', 'push'].includes(action)) {
+      throw new BadRequestException('Unknown action');
+    }
+    return this.firmwareRolloutService.action(
+      id,
+      action as 'pause' | 'resume' | 'advance' | 'abort' | 'push',
+      req.user?.username ?? null,
+    );
+  }
+
+  // ==================== Device health ====================
+
+  @Get('health/summary')
+  @UseGuards(AdminGuard)
+  getHealthSummary() {
+    return this.deviceHealthService.summary();
+  }
+
+  // ?status=online|offline|problems &issue= &fw= &search= &sort=lastData|boots
+  @Get('health/devices')
+  @UseGuards(AdminGuard)
+  getHealthDevices(
+    @Query('status') status?: string,
+    @Query('issue') issue?: string,
+    @Query('fw') fw?: string,
+    @Query('search') search?: string,
+    @Query('sort') sort?: string,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    return this.deviceHealthService.list({
+      status,
+      issue,
+      fw,
+      search,
+      sort,
+      page,
+      limit,
+    });
+  }
+
+  @Get('health/devices/:userId/:deviceId')
+  @UseGuards(AdminGuard)
+  getDeviceHealth(
+    @Param('userId') userId: string,
+    @Param('deviceId') deviceId: string,
+  ) {
+    return this.deviceHealthService.one(userId, deviceId);
+  }
+
+  // Settings / schedule / grid-tie change history of one device (with IP).
+  @Get('devices/:userId/:deviceId/activity')
+  @UseGuards(AdminGuard)
+  getDeviceActivity(
+    @Param('userId') userId: string,
+    @Param('deviceId') deviceId: string,
+    @Query('kind') kind?: string,
+    @Query('before') before?: string,
+    @Query('limit') limit?: number,
+  ) {
+    return this.auditLogService.list({
+      userId,
+      deviceId,
+      kind: kind === 'charger' ? 'charger' : 'inverter',
+      before,
+      limit,
+      withNetwork: true,
+    });
   }
 
   @Post('devices/:id/firmware-update')

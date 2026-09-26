@@ -8,6 +8,8 @@ import {
   ChargerSettingDocument,
 } from '../models/charger-setting.schema';
 import { MqttService } from './mqtt.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { AUDIT_EVENT, AuditContext, AuditEvent } from '../utils/audit-context';
 
 @Injectable()
 export class ChargerSettingService {
@@ -16,6 +18,7 @@ export class ChargerSettingService {
     private chargerSettingModel: Model<ChargerSettingDocument>,
     private mqttService: MqttService,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   private getCacheKey(userId: string, deviceId: string): string {
@@ -41,7 +44,14 @@ export class ChargerSettingService {
     userId: string,
     deviceId: string,
     value: string,
+    ctx?: AuditContext,
   ): Promise<ChargerSetting | null> {
+    const before = await this.chargerSettingModel
+      .findOne({ userId, deviceId }, { value: 1 })
+      .lean()
+      .maxTimeMS(2000)
+      .exec()
+      .catch(() => null);
     const updated = await this.chargerSettingModel
       .findOneAndUpdate(
         { userId, deviceId },
@@ -54,6 +64,15 @@ export class ChargerSettingService {
 
     if (updated) {
       void this.mqttService.emitSyncChargerSettings(userId, deviceId);
+      this.eventEmitter.emit(AUDIT_EVENT, {
+        ctx: ctx ?? { source: 'system' },
+        userId,
+        deviceId,
+        kind: 'charger',
+        action: 'settings',
+        before: before?.value ?? null,
+        after: value,
+      } satisfies AuditEvent);
     }
 
     return updated;

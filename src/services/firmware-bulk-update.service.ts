@@ -32,6 +32,9 @@ import {
   newestBetaFirmwareVersion,
   compareFirmwareVersions,
   isLegacyDevice,
+  stableTargetFor,
+  activeRollout,
+  inActiveRollout,
 } from './firmware.service';
 
 type DeviceState =
@@ -262,7 +265,12 @@ export class FirmwareBulkUpdateService
     // Beta devices are skipped first (they follow their own beta build, whose
     // version is unrelated to the stable version).
     // Legacy devices (number < 436) never get OTA: always skipped.
-    const targetVersion = newestFirmwareVersion();
+    // During a staged rollout the devices in it target the rollout build.
+    const rollout = activeRollout();
+    const targetVersion =
+      rollout && devices.some((d) => inActiveRollout(d.deviceId))
+        ? rollout.version
+        : newestFirmwareVersion();
     const nonLegacy = devices.filter((d) => !isLegacyDevice(d.deviceId));
     const skippedLegacy = devices.length - nonLegacy.length;
     const nonBeta = dto.includeBeta
@@ -276,7 +284,7 @@ export class FirmwareBulkUpdateService
     const versionFor = (d: { deviceId: string; userId: string }) =>
       this.betaFirmwareDeviceService.isBeta(d.deviceId, d.userId)
         ? newestBetaFirmwareVersion()
-        : targetVersion;
+        : stableTargetFor(d.deviceId).version;
     const toUpdate = dto.includeUpToDate
       ? nonBeta
       : nonBeta.filter(
@@ -309,6 +317,7 @@ export class FirmwareBulkUpdateService
       skippedBeta: String(skippedBeta),
       skippedLegacy: String(skippedLegacy),
       target: 'esp32',
+      includeUpToDate: dto.includeUpToDate ? '1' : '',
       sendingFinishedAt: '',
     });
     // Every selected device gets a row (skipped ones too) so the CMS can list
@@ -490,6 +499,32 @@ export class FirmwareBulkUpdateService
     return this.getStatus(jobId);
   }
 
+  /** True when the device's current target is not newer than its version. */
+  private async targetNoLongerNewer(
+    jobId: string,
+    target: string,
+    userId: string,
+    deviceId: string,
+  ): Promise<boolean> {
+    try {
+      // Re-flashing up-to-date devices was asked for explicitly.
+      if (
+        (await this.redis.hget(this.jobKey(jobId), 'includeUpToDate')) === '1'
+      ) {
+        return false;
+      }
+      const raw = await this.redis.hget(this.infoKey(jobId), target);
+      const version = raw ? (JSON.parse(raw) as DeviceInfo).version : undefined;
+      if (!version) return false;
+      const want = this.betaFirmwareDeviceService.isBeta(deviceId, userId)
+        ? newestBetaFirmwareVersion()
+        : stableTargetFor(deviceId).version;
+      return compareFirmwareVersions(version, want) >= 0;
+    } catch {
+      return false;
+    }
+  }
+
   /** Publish triggers batch by batch (runs in the background). */
   private async runBatches(
     jobId: string,
@@ -512,6 +547,26 @@ export class FirmwareBulkUpdateService
                 skipCooldown: true,
               });
             } else {
+              // The target can change while the job is sending (a staged
+              // rollout paused/aborted): don't make a device re-flash the
+              // version it already runs.
+              if (
+                await this.targetNoLongerNewer(jobId, target, userId, deviceId)
+              ) {
+                await this.redis
+                  .pipeline()
+                  .hset(this.devKey(jobId), target, 'skipped_uptodate')
+                  .hset(
+                    this.infoKey(jobId),
+                    target,
+                    await this.mergeInfo(jobId, target, {
+                      message:
+                        'Not sent: target changed (rollout paused/aborted)',
+                    }),
+                  )
+                  .exec();
+                continue;
+              }
               await this.mqttService.publish(
                 `inverter/${userId}/${deviceId}/firmware/update`,
                 // Only { ts } - see UserApiController firmware/update.

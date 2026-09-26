@@ -6,6 +6,8 @@ import {
   InverterScheduleDocument,
 } from '../models/inverter-schedule.schema';
 import { MqttService } from './mqtt.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { AUDIT_EVENT, AuditContext, AuditEvent } from '../utils/audit-context';
 
 interface CacheEntry {
   data: InverterSchedule | null;
@@ -21,6 +23,7 @@ export class InverterScheduleService {
     @InjectModel(InverterSchedule.name)
     private inverterScheduleModel: Model<InverterScheduleDocument>,
     private mqttService: MqttService,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   private getCacheKey(userId: string, deviceId: string): string {
@@ -135,8 +138,15 @@ export class InverterScheduleService {
     userId: string,
     deviceId: string,
     schedule: string,
+    ctx?: AuditContext,
   ): Promise<InverterSchedule | null> {
     this.invalidateCache(userId, deviceId);
+    const before = await this.inverterScheduleModel
+      .findOne({ userId, deviceId }, { schedule: 1 })
+      .lean()
+      .maxTimeMS(2000)
+      .exec()
+      .catch(() => null);
     const updatedSchedule = await this.inverterScheduleModel
       .findOneAndUpdate(
         { userId, deviceId },
@@ -147,6 +157,15 @@ export class InverterScheduleService {
 
     if (updatedSchedule) {
       void this.mqttService.emitSyncSchedule(userId, deviceId);
+      this.eventEmitter.emit(AUDIT_EVENT, {
+        ctx: ctx ?? { source: 'system' },
+        userId,
+        deviceId,
+        kind: 'inverter',
+        action: 'schedule',
+        before: before?.schedule ?? null,
+        after: schedule,
+      } satisfies AuditEvent);
     }
 
     return updatedSchedule;

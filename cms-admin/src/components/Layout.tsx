@@ -14,6 +14,8 @@ import {
   LogOut,
   Menu,
   X,
+  HeartPulse,
+  Rocket,
 } from 'lucide-react';
 
 const Layout: React.FC = () => {
@@ -29,11 +31,13 @@ const Layout: React.FC = () => {
   const navItems = [
     { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/devices', icon: Cpu, label: 'Devices' },
+    { to: '/health', icon: HeartPulse, label: 'Device Health' },
     { to: '/chargers', icon: BatteryCharging, label: 'Chargers' },
     { to: '/users', icon: Users, label: 'Users' },
     { to: '/blacklist', icon: ShieldOff, label: 'Blacklist' },
     { to: '/beta-firmware', icon: FlaskConical, label: 'Beta Firmware' },
     { to: '/esp-firmware', icon: HardDriveUpload, label: 'ESP32 Firmware' },
+    { to: '/rollout', icon: Rocket, label: 'Staged Rollout' },
     { to: '/stm-firmware', icon: CircuitBoard, label: 'STM32 Firmware' },
     { to: '/settings', icon: Settings, label: 'Settings' },
   ];

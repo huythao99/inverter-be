@@ -83,6 +83,66 @@ export function setActiveEspFirmware(
     : { ...DEFAULT_ACTIVE[product][channel] };
 }
 
+// ---- Staged rollout (FirmwareRolloutService keeps this mirror current) ----
+
+/** The inverter rollout in progress, mirrored from MongoDB. */
+export interface ActiveRollout {
+  id: string;
+  version: string;
+  url: string;
+  /** Share of devices (0..100) offered the new build. */
+  percent: number;
+  status: 'running' | 'paused';
+}
+
+let rollout: ActiveRollout | null = null;
+
+export function setActiveRollout(r: ActiveRollout | null): void {
+  rollout = r ? { ...r } : null;
+}
+
+export function activeRollout(): ActiveRollout | null {
+  return rollout ? { ...rollout } : null;
+}
+
+/**
+ * Stable 0..99 bucket of a device (FNV-1a of the deviceId). A device keeps
+ * its bucket for every rollout, so 5% -> 25% only ever adds devices.
+ */
+export function rolloutBucket(deviceId: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < deviceId.length; i++) {
+    h ^= deviceId.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0) % 100;
+}
+
+/** True when this (non-beta) device is offered the rollout build now. */
+export function inActiveRollout(deviceId?: string): boolean {
+  return (
+    !!rollout &&
+    rollout.status === 'running' &&
+    !!deviceId &&
+    !isLegacyDevice(deviceId) &&
+    rolloutBucket(deviceId) < rollout.percent
+  );
+}
+
+/** Stable build a non-beta device should get (rollout build when in it). */
+export function stableTargetFor(deviceId?: string): {
+  version: string;
+  url: string;
+} {
+  if (rollout && inActiveRollout(deviceId)) {
+    return { version: rollout.version, url: rollout.url };
+  }
+  return {
+    version: active.inverter.stable.version,
+    url: active.inverter.stable.url,
+  };
+}
+
 /** Newest STABLE ESP32 inverter firmware version. */
 export function newestFirmwareVersion(): string {
   return active.inverter.stable.version;
@@ -142,6 +202,7 @@ export class FirmwareService {
     ))
       ? 'beta'
       : 'stable';
+    if (channel === 'stable') return { url: stableTargetFor(deviceId).url };
     return { url: active.inverter[channel].url };
   }
 
@@ -183,7 +244,7 @@ export class FirmwareService {
     if (deviceId && this.betaFirmwareDeviceService.isBeta(deviceId, userId)) {
       return newestBetaFirmwareVersion();
     }
-    return newestFirmwareVersion();
+    return stableTargetFor(deviceId).version;
   }
 
   /**

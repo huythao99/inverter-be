@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   TrackLogError,
   TrackLogErrorDocument,
@@ -12,11 +13,20 @@ export class TrackLogErrorService {
   constructor(
     @InjectModel(TrackLogError.name)
     private trackLogErrorModel: Model<TrackLogErrorDocument>,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   async create(dto: CreateTrackLogErrorDto): Promise<TrackLogError> {
     const created = new this.trackLogErrorModel(dto);
-    return created.save();
+    const saved = await created.save();
+    // Feeds the CMS device-health page (DeviceHealthService).
+    this.eventEmitter.emit('device.log.created', {
+      userId: dto.userId,
+      deviceId: dto.deviceId,
+      errorCode: dto.errorCode,
+      errorMessage: dto.errorMessage,
+    });
+    return saved;
   }
 
   async findAll(

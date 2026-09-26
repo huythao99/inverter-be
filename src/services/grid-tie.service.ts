@@ -3,6 +3,7 @@ import Redis from 'ioredis';
 import { RedisConfig } from '../config/redis.config';
 import { InverterSetting } from '../models/inverter-setting.schema';
 import { InverterSettingService } from './inverter-setting.service';
+import type { AuditContext } from '../utils/audit-context';
 
 export type GridTieStatus = 'on' | 'off';
 
@@ -82,11 +83,13 @@ export class GridTieService implements OnModuleInit, OnModuleDestroy {
     userId: string,
     deviceId: string,
     off: boolean,
+    ctx?: AuditContext,
   ): Promise<InverterSetting | null> {
     const setting = await this.inverterSettingService.setGridTieOffInDb(
       userId,
       deviceId,
       off,
+      ctx,
     );
     await this.writeCache(this.getKey(userId, deviceId), off);
     return setting;

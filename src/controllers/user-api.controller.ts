@@ -14,7 +14,10 @@ import {
   HttpStatus,
   Header,
   Headers,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
+import { auditCtx } from '../utils/audit-context';
 import { FirebaseAuthGuard } from '../auth/guards/firebase-auth.guard';
 import { CurrentFirebaseUser } from '../auth/decorators/firebase-user.decorator';
 import { FirebaseUser } from '../auth/strategies/firebase.strategy';
@@ -36,6 +39,8 @@ import { BlacklistDeviceService } from '../services/blacklist-device.service';
 import { DeviceRestartService } from '../services/device-restart.service';
 import { MqttService } from '../services/mqtt.service';
 import { MqttAuthService } from '../services/mqtt-auth.service';
+import { EnergyReportService } from '../services/energy-report.service';
+import { AuditLogService } from '../services/audit-log.service';
 import { StmFirmwareService } from '../services/stm-firmware.service';
 import { BetaFirmwareDeviceService } from '../services/beta-firmware-device.service';
 import {
@@ -43,6 +48,7 @@ import {
   newestBetaFirmwareVersion,
   compareFirmwareVersions,
   isLegacyDevice,
+  stableTargetFor,
 } from '../services/firmware.service';
 
 // One firmware-update trigger per device per minute (double clicks, retries).
@@ -65,6 +71,8 @@ export class UserApiController {
     private readonly betaFirmwareDeviceService: BetaFirmwareDeviceService,
     private readonly stmFirmwareService: StmFirmwareService,
     private readonly mqttAuthService: MqttAuthService,
+    private readonly energyReportService: EnergyReportService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   /** The device, or 404 when it isn't one of this user's devices. */
@@ -83,7 +91,7 @@ export class UserApiController {
   private firmwareTargetFor(userId: string, deviceId: string): string {
     return this.betaFirmwareDeviceService.isBeta(deviceId, userId)
       ? newestBetaFirmwareVersion()
-      : newestFirmwareVersion();
+      : stableTargetFor(deviceId).version;
   }
 
   /** Firmware the device reports running. Legacy (< 436) = always up to date. */
@@ -216,6 +224,7 @@ export class UserApiController {
     @CurrentFirebaseUser() user: FirebaseUser,
     @Param('deviceId') deviceId: string,
     @Body('value') value: string,
+    @Req() req: Request,
   ) {
     // First verify device belongs to user
     const device = await this.inverterDeviceService.findByUserIdAndDeviceId(
@@ -236,6 +245,7 @@ export class UserApiController {
         user.uid,
         deviceId,
         forcedOff ? BLACKLIST_OFF_VALUE : value,
+        auditCtx(req, { actor: user.uid, actorLabel: user.email ?? null }),
       );
 
     return settings;
@@ -271,6 +281,7 @@ export class UserApiController {
     @CurrentFirebaseUser() user: FirebaseUser,
     @Param('deviceId') deviceId: string,
     @Body() dto: SetGridTieDto,
+    @Req() req: Request,
   ) {
     // Verify device belongs to user
     const device = await this.inverterDeviceService.findByUserIdAndDeviceId(
@@ -287,6 +298,7 @@ export class UserApiController {
       user.uid,
       deviceId,
       off,
+      auditCtx(req, { actor: user.uid, actorLabel: user.email ?? null }),
     );
 
     return {
@@ -440,6 +452,7 @@ export class UserApiController {
     @CurrentFirebaseUser() user: FirebaseUser,
     @Param('deviceId') deviceId: string,
     @Body('schedule') schedule: string,
+    @Req() req: Request,
   ) {
     // First verify device belongs to user
     const device = await this.inverterDeviceService.findByUserIdAndDeviceId(
@@ -463,6 +476,7 @@ export class UserApiController {
         user.uid,
         deviceId,
         normalizedSchedule,
+        auditCtx(req, { actor: user.uid, actorLabel: user.email ?? null }),
       );
 
     return updatedSchedule;
@@ -669,6 +683,49 @@ export class UserApiController {
     );
 
     return result;
+  }
+
+  // History of settings / schedule / grid-tie changes (newest first).
+  // Paging: pass `before` = nextBefore of the previous page.
+  @Get('devices/:deviceId/activity')
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
+  async getDeviceActivity(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('deviceId') deviceId: string,
+    @Query('before') before?: string,
+    @Query('limit') limit?: number,
+  ) {
+    await this.ownedDevice(user.uid, deviceId);
+    return this.auditLogService.list({
+      userId: user.uid,
+      deviceId,
+      kind: 'inverter',
+      before,
+      limit,
+    });
+  }
+
+  // Monthly energy report: kWh -> money with the EVN household tariff.
+  // tariff=flat (&price=) for prepaid meters.
+  @Get('devices/:deviceId/energy-report')
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
+  async getDeviceEnergyReport(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('deviceId') deviceId: string,
+    @Query('year') year?: number,
+    @Query('month') month?: number,
+    @Query('tariff') tariff?: string,
+    @Query('price') price?: number,
+  ) {
+    await this.ownedDevice(user.uid, deviceId);
+    return this.energyReportService.report(
+      user.uid,
+      deviceId,
+      year,
+      month,
+      tariff === 'flat' ? 'flat' : 'tiered',
+      price,
+    );
   }
 
   // ---- Firmware (OTA) — used by the web app ----------------------------------
