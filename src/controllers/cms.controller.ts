@@ -52,6 +52,7 @@ import {
 // Firmware files are small (ESP32 app <= 1.25 MB, STM32 image < 256 KB).
 const UPLOAD_LIMITS = { fileSize: 2 * 1024 * 1024, files: 2 };
 import { AdminLoginDto } from '../dto/admin-login.dto';
+import { UartDebugDto } from '../dto/uart-debug.dto';
 import {
   DeviceQueryDto,
   UserQueryDto,
@@ -347,6 +348,14 @@ export class CmsController {
   @UseGuards(AdminGuard)
   async getBulkFirmwareUpdate(@Param('jobId') jobId: string) {
     return this.firmwareBulkUpdateService.getStatus(jobId);
+  }
+
+  // UART diagnostics (ESP32 cmd/uart-debug): { minutes: 1..30 | 0 = stop }
+  @Post('devices/:id/uart-debug')
+  @UseGuards(AdminGuard)
+  @HttpCode(HttpStatus.OK)
+  async setUartDebug(@Param('id') id: string, @Body() dto: UartDebugDto) {
+    return this.cmsService.setUartDebug(id, dto.minutes);
   }
 
   @Post('devices/:id/restart')

@@ -73,6 +73,13 @@ export const triggerFirmwareUpdate = (id: string, targetVersion?: string) =>
 
 // Remote ESP32 reboot via MQTT cmd/restart (1 request per device per minute).
 export const restartDevice = (id: string) => api.post(`/devices/${id}/restart`);
+// UART diagnostics: device streams raw STM32 lines on .../debug/uart for
+// `minutes` (1..30); 0 = stop.
+export const setUartDebug = (id: string, minutes: number) =>
+  api.post<{ topic: string; debugTopic: string; minutes: number }>(
+    `/devices/${id}/uart-debug`,
+    { minutes },
+  );
 
 // ---- STM32 firmware (FOTA through the ESP32) ----
 export type StmProduct = 'inverter' | 'charger';

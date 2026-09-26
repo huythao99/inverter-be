@@ -538,6 +538,27 @@ export class CmsService implements OnModuleInit {
 
   // ==================== Firmware Update ====================
 
+  /**
+   * UART diagnostics: ask the ESP32 to stream every raw STM32 line on
+   * inverter/{uid}/{id}/debug/uart for `minutes` (0 = stop). Needs ESP32
+   * firmware with cmd/uart-debug; older firmware ignores the command. The
+   * CMS reads the lines itself over MQTT (cms_viewer can read inverter/#).
+   */
+  async setUartDebug(
+    id: string,
+    minutes: number,
+  ): Promise<{ topic: string; debugTopic: string; minutes: number }> {
+    const device = await this.inverterDeviceModel.findById(id).exec();
+    if (!device) {
+      throw new NotFoundException(`Device with ID ${id} not found`);
+    }
+    const base = `inverter/${device.userId}/${device.deviceId}`;
+    const topic = `${base}/cmd/uart-debug`;
+    // ts: the firmware ignores a command older than 2 min (redelivery).
+    await this.mqttService.publish(topic, { minutes, ts: Date.now() });
+    return { topic, debugTopic: `${base}/debug/uart`, minutes };
+  }
+
   async triggerFirmwareUpdate(
     id: string,
     targetVersion: string,

@@ -10,6 +10,7 @@ import {
 } from '../services/api';
 import VirtualList from '../components/VirtualList';
 import StmFirmwareCard from '../components/StmFirmwareCard';
+import UartDebugPanel from '../components/UartDebugPanel';
 import type { StmOtaLive } from '../components/StmFirmwareCard';
 import {
   ArrowLeft,
@@ -24,6 +25,7 @@ import {
   Download,
   Loader2,
   RotateCcw,
+  Terminal,
 } from 'lucide-react';
 
 // MQTT WebSocket URL (broker must have WebSocket listener enabled on port 9001)
@@ -111,7 +113,7 @@ const DeviceDetail: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<
-    'realtime' | 'data' | 'settings' | 'schedule' | 'totals'
+    'realtime' | 'data' | 'settings' | 'schedule' | 'totals' | 'uart'
   >('realtime');
 
   // Firmware update state
@@ -575,6 +577,13 @@ const DeviceDetail: React.FC = () => {
           <Activity size={18} />
           Daily Totals
         </button>
+        <button
+          className={`tab ${activeTab === 'uart' ? 'active' : ''}`}
+          onClick={() => setActiveTab('uart')}
+        >
+          <Terminal size={18} />
+          UART Debug
+        </button>
       </div>
 
       {/* Tab Content */}
@@ -680,6 +689,19 @@ const DeviceDetail: React.FC = () => {
               data?.schedule?.parsedSchedule || data?.schedule?.schedule,
               'schedule',
             )}
+          </div>
+        )}
+
+        {/* Kept mounted (hidden) so lines keep arriving on other tabs. */}
+        {data?.device?._id && userId && deviceId && (
+          <div style={{ display: activeTab === 'uart' ? 'block' : 'none' }}>
+            <UartDebugPanel
+              deviceDbId={data.device._id}
+              userId={userId}
+              deviceId={deviceId}
+              client={mqttClientRef.current}
+              isConnected={isConnected}
+            />
           </div>
         )}
 
