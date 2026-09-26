@@ -82,8 +82,9 @@ const EspFirmware: React.FC = () => {
       setFormError('Version must look like 1.0.15 (= currentFirmwareVersion of the build)');
       return;
     }
-    if (config && binFile.size > config.maxBytes) {
-      setFormError(`File is larger than the OTA partition (${config.maxBytes} B)`);
+    const maxBytes = config ? config.maxBytesByProduct?.[product] ?? config.maxBytes : 0;
+    if (config && binFile.size > maxBytes) {
+      setFormError(`File is larger than the ${product} OTA partition (${maxBytes} B)`);
       return;
     }
     if (

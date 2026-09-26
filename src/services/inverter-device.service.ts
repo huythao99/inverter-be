@@ -19,6 +19,12 @@ export class InverterDeviceService {
     private mqttService: MqttService,
   ) {}
 
+  /** Number of distinct devices registered (landing page counter). */
+  async countDistinctDevices(): Promise<number> {
+    const ids = await this.inverterDeviceModel.distinct('deviceId').exec();
+    return ids.length;
+  }
+
   async create(
     createInverterDeviceDto: Partial<InverterDevice>,
   ): Promise<InverterDevice> {

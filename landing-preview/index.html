@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Giabao Inverter – Giám sát biến tần &amp; bộ sạc năng lượng mặt trời</title>
+<meta name="description" content="Theo dõi và điều khiển biến tần hòa lưới Giabao theo thời gian thực trên điện thoại và web: sản lượng điện, cài đặt công suất, lịch hoạt động, cập nhật firmware từ xa. Sắp ra mắt bộ sạc MPPT.">
+<meta name="theme-color" content="#0b84d8">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Giabao Inverter – Hệ thống giám sát năng lượng mặt trời">
+<meta property="og:description" content="Theo dõi, điều khiển biến tần hòa lưới và bộ sạc MPPT Giabao mọi lúc, mọi nơi.">
+<meta property="og:url" content="https://giabao-inverter.com/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f4f9ff;
+  --bg-soft: #e8f3fd;
+  --card: #ffffff;
+  --ink: #0f2742;
+  --muted: #52667d;
+  --line: #d6e7f7;
+  --primary: #0b84d8;
+  --primary-strong: #066bb2;
+  --primary-soft: #dcefff;
+  --sky: #38bdf8;
+  --sun: #f59e0b;
+  --sun-soft: #fff4dc;
+  --ok: #16a34a;
+  --ok-soft: #dcfce7;
+  --warn: #b45309;
+  --warn-soft: #fef3c7;
+  --radius: 18px;
+  --shadow: 0 1px 2px rgba(15, 39, 66, .06), 0 8px 24px rgba(15, 39, 66, .06);
+  --shadow-lg: 0 18px 50px rgba(11, 132, 216, .16);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; scroll-padding-top: 80px; }
+body {
+  font-family: 'Be Vietnam Pro', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+a { color: inherit; text-decoration: none; }
+img, svg { display: block; max-width: 100%; }
+.container { width: 100%; max-width: 1160px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 32px); }
+
+/* ---- Header ---- */
+.site-header {
+  position: sticky; top: 0; z-index: 50;
+  background: rgba(244, 249, 255, .82);
+  backdrop-filter: saturate(1.4) blur(14px);
+  -webkit-backdrop-filter: saturate(1.4) blur(14px);
+  border-bottom: 1px solid transparent;
+  transition: border-color .2s, box-shadow .2s;
+}
+.site-header.scrolled { border-bottom-color: var(--line); box-shadow: 0 4px 20px rgba(15, 39, 66, .05); }
+.nav { display: flex; align-items: center; gap: 24px; height: 68px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.1rem; white-space: nowrap; }
+.brand-mark {
+  width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center;
+  background: linear-gradient(135deg, var(--sky), var(--primary)); color: #fff;
+  box-shadow: 0 6px 16px rgba(11, 132, 216, .35);
+}
+.brand b { color: var(--primary); font-weight: 700; }
+.nav-links { display: flex; gap: 22px; margin-left: auto; font-size: .95rem; color: var(--muted); }
+.nav-links a:hover { color: var(--primary); }
+.nav-cta { display: flex; gap: 10px; }
+.nav-toggle {
+  display: none; margin-left: auto; width: 42px; height: 42px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer;
+  align-items: center; justify-content: center;
+}
+
+/* ---- Buttons ---- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 11px 20px; border-radius: 12px; font-weight: 600; font-size: .95rem;
+  border: 1px solid transparent; cursor: pointer; transition: transform .15s, box-shadow .2s, background .2s;
+  white-space: nowrap;
+}
+.btn:hover { transform: translateY(-2px); }
+.btn-primary { background: var(--primary); color: #fff; box-shadow: 0 8px 20px rgba(11, 132, 216, .28); }
+.btn-primary:hover { background: var(--primary-strong); }
+.btn-ghost { background: var(--card); color: var(--ink); border-color: var(--line); }
+.btn-ghost:hover { border-color: var(--primary); color: var(--primary); }
+.btn-lg { padding: 14px 24px; font-size: 1rem; }
+
+/* ---- Hero ---- */
+.hero {
+  position: relative; overflow: hidden;
+  background:
+    radial-gradient(900px 420px at 85% -10%, rgba(56, 189, 248, .28), transparent 60%),
+    radial-gradient(700px 380px at -10% 20%, rgba(11, 132, 216, .14), transparent 60%),
+    linear-gradient(180deg, var(--bg-soft), var(--bg));
+}
+.hero-grid {
+  display: grid; grid-template-columns: 1.05fr .95fr; align-items: center;
+  gap: clamp(24px, 5vw, 56px); padding: clamp(40px, 7vw, 88px) 0 clamp(48px, 7vw, 96px);
+}
+.status {
+  display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px;
+  font-size: .85rem; font-weight: 600; margin-bottom: 18px;
+}
+.status.ok { background: var(--ok-soft); color: var(--ok); }
+.status.warn { background: var(--warn-soft); color: var(--warn); }
+.status .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; position: relative; }
+.status.ok .dot::after {
+  content: ''; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid currentColor;
+  opacity: 0; animation: ping 2s ease-out infinite;
+}
+@keyframes ping { 0% { transform: scale(.6); opacity: .8; } 100% { transform: scale(1.8); opacity: 0; } }
+.hero h1 {
+  font-size: clamp(2rem, 4.6vw, 3.4rem); line-height: 1.15; font-weight: 800; letter-spacing: -.02em;
+}
+.hero h1 .grad {
+  background: linear-gradient(90deg, var(--primary), var(--sky));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.hero p.lead { margin-top: 16px; font-size: clamp(1rem, 1.6vw, 1.15rem); color: var(--muted); max-width: 560px; }
+.hero-cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+.hero-art { position: relative; }
+.hero-art svg { width: 100%; height: auto; filter: drop-shadow(0 24px 40px rgba(11, 132, 216, .18)); }
+.sun-rays { transform-origin: 90px 70px; animation: spin 24s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.flow { stroke-dasharray: 6 8; animation: flow 1.4s linear infinite; }
+@keyframes flow { to { stroke-dashoffset: -28; } }
+.bar { transform-origin: bottom; transform-box: fill-box; animation: grow 2.8s ease-in-out infinite alternate; }
+.bar:nth-child(2) { animation-delay: .3s; } .bar:nth-child(3) { animation-delay: .6s; }
+.bar:nth-child(4) { animation-delay: .9s; } .bar:nth-child(5) { animation-delay: 1.2s; }
+@keyframes grow { from { transform: scaleY(.45); } to { transform: scaleY(1); } }
+
+/* ---- Stats ---- */
+.stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 16px;
+  margin-top: -44px; position: relative; z-index: 2;
+}
+.stat {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 22px 24px; box-shadow: var(--shadow);
+}
+.stat .num { font-size: clamp(1.8rem, 3.4vw, 2.4rem); font-weight: 800; color: var(--primary); line-height: 1.1; }
+.stat .lbl { color: var(--muted); font-size: .95rem; margin-top: 4px; }
+
+/* ---- Sections ---- */
+section.block { padding: clamp(56px, 8vw, 96px) 0; }
+.eyebrow { color: var(--primary); font-weight: 700; font-size: .85rem; letter-spacing: .08em; text-transform: uppercase; }
+.section-title { font-size: clamp(1.6rem, 3.2vw, 2.3rem); font-weight: 800; line-height: 1.2; margin-top: 8px; letter-spacing: -.01em; }
+.section-sub { color: var(--muted); margin-top: 10px; max-width: 640px; }
+.section-head { margin-bottom: clamp(28px, 4vw, 44px); }
+.center { text-align: center; } .center .section-sub { margin-left: auto; margin-right: auto; }
+
+/* ---- Products ---- */
+.products { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap: 20px; }
+.product {
+  position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 22px;
+  padding: clamp(22px, 3vw, 32px); box-shadow: var(--shadow); overflow: hidden;
+  transition: transform .25s, box-shadow .25s;
+}
+.product:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+.product-top { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+.product-icon { width: 52px; height: 52px; border-radius: 14px; display: grid; place-items: center; flex-shrink: 0; }
+.product-icon.blue { background: var(--primary-soft); color: var(--primary); }
+.product-icon.sun { background: var(--sun-soft); color: var(--sun); }
+.product h3 { font-size: 1.25rem; font-weight: 700; line-height: 1.3; }
+.tag { display: inline-block; font-size: .75rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; margin-top: 4px; }
+.tag.live { background: var(--ok-soft); color: var(--ok); }
+.tag.soon { background: var(--sun-soft); color: #b45309; }
+.product p { color: var(--muted); }
+.checks { list-style: none; margin-top: 16px; display: grid; gap: 10px; }
+.checks li { display: flex; gap: 10px; align-items: flex-start; }
+.checks svg { flex-shrink: 0; margin-top: 3px; color: var(--primary); }
+.product.soon { border-color: #fde7b0; background: linear-gradient(180deg, #fffdf6, #fff); }
+.product.soon .checks svg { color: var(--sun); }
+.product.soon::after {
+  content: ''; position: absolute; width: 220px; height: 220px; right: -70px; top: -70px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(245, 158, 11, .18), transparent 70%); pointer-events: none;
+}
+
+/* ---- Features ---- */
+.features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.feature {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px;
+  transition: transform .25s, border-color .25s, box-shadow .25s;
+}
+.feature:hover { transform: translateY(-4px); border-color: #b9dcf7; box-shadow: var(--shadow-lg); }
+.feature .ic { width: 46px; height: 46px; border-radius: 12px; background: var(--primary-soft); color: var(--primary); display: grid; place-items: center; margin-bottom: 14px; }
+.feature h3 { font-size: 1.08rem; font-weight: 700; margin-bottom: 6px; }
+.feature p { color: var(--muted); font-size: .95rem; }
+
+/* ---- Steps ---- */
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; counter-reset: step; }
+.step { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 26px 24px 24px; }
+.step::before {
+  counter-increment: step; content: counter(step);
+  width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 800;
+  background: var(--primary); color: #fff; margin-bottom: 14px; box-shadow: 0 6px 14px rgba(11, 132, 216, .3);
+}
+.step h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 6px; }
+.step p { color: var(--muted); font-size: .95rem; }
+
+/* ---- App download ---- */
+.download {
+  border-radius: 28px; padding: clamp(28px, 5vw, 56px);
+  background: linear-gradient(120deg, var(--primary) 0%, #1aa3ec 55%, var(--sky) 100%);
+  color: #fff; display: grid; grid-template-columns: 1.3fr 1fr; gap: 24px; align-items: center;
+  box-shadow: var(--shadow-lg); position: relative; overflow: hidden;
+}
+.download::after {
+  content: ''; position: absolute; right: -80px; bottom: -120px; width: 320px; height: 320px; border-radius: 50%;
+  background: rgba(255, 255, 255, .12);
+}
+.download h2 { font-size: clamp(1.5rem, 3vw, 2.1rem); font-weight: 800; line-height: 1.2; }
+.download p { opacity: .92; margin-top: 10px; }
+.store-btns { display: flex; flex-wrap: wrap; gap: 12px; justify-content: flex-end; position: relative; z-index: 1; }
+.store {
+  display: inline-flex; align-items: center; gap: 10px; background: #0f2742; color: #fff;
+  padding: 10px 18px; border-radius: 12px; min-width: 180px; transition: transform .15s, background .2s;
+}
+.store:hover { transform: translateY(-2px); background: #081a2e; }
+.store small { display: block; font-size: .7rem; opacity: .8; line-height: 1.1; }
+.store strong { display: block; font-size: 1.02rem; line-height: 1.2; }
+.store.web { background: rgba(255, 255, 255, .18); border: 1px solid rgba(255, 255, 255, .45); }
+.store.web:hover { background: rgba(255, 255, 255, .28); }
+
+/* ---- Contact ---- */
+.contact { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 18px; }
+.contact-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; }
+.contact-card h3 { display: flex; align-items: center; gap: 10px; font-size: 1.05rem; font-weight: 700; margin-bottom: 12px; color: var(--primary); }
+.contact-card dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; }
+.contact-card dt { color: var(--muted); }
+.contact-card dd { font-weight: 500; overflow-wrap: anywhere; }
+.contact-card a { color: var(--primary); }
+.contact-card a:hover { text-decoration: underline; }
+
+/* ---- Footer ---- */
+footer { border-top: 1px solid var(--line); padding: 28px 0; margin-top: 24px; color: var(--muted); font-size: .9rem; }
+.foot { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; justify-content: space-between; }
+.foot-links { display: flex; flex-wrap: wrap; gap: 18px; }
+.foot-links a:hover { color: var(--primary); }
+.ver { background: var(--primary-soft); color: var(--primary); padding: 2px 10px; border-radius: 999px; font-size: .8rem; font-weight: 600; }
+
+/* ---- Reveal on scroll (only when JS runs) ---- */
+.js .reveal { opacity: 0; transform: translateY(18px); transition: opacity .6s ease, transform .6s ease; }
+.js .reveal.in { opacity: 1; transform: none; }
+
+/* ---- Responsive ---- */
+@media (max-width: 960px) {
+  .hero-grid { grid-template-columns: 1fr; }
+  .hero-art { max-width: 520px; margin: 0 auto; width: 100%; }
+  .features, .steps { grid-template-columns: repeat(2, 1fr); }
+  .download { grid-template-columns: 1fr; }
+  .store-btns { justify-content: flex-start; }
+}
+@media (max-width: 760px) {
+  .nav-links, .nav-cta { display: none; }
+  .nav-toggle { display: inline-flex; }
+  .site-header.nav-open .nav { flex-wrap: wrap; height: auto; padding: 13px 0; }
+  .site-header.nav-open .nav-links,
+  .site-header.nav-open .nav-cta { display: flex; flex-direction: column; width: 100%; margin: 0; gap: 4px; }
+  .site-header.nav-open .nav-links a { padding: 10px 4px; border-bottom: 1px solid var(--line); }
+  .site-header.nav-open .nav-cta { padding: 10px 0 4px; }
+  .site-header.nav-open .nav-cta .btn { width: 100%; }
+}
+@media (max-width: 600px) {
+  .features, .steps { grid-template-columns: 1fr; }
+  .hero-cta .btn { flex: 1 1 100%; }
+  .stats { margin-top: -28px; }
+  .store { flex: 1 1 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  .js .reveal { opacity: 1; transform: none; }
+}
+</style>
+<script>(function () {
+  // Wait for the DOM (works with defer, async or an inline copy in <head>).
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+  function init() {
+  var doc = document.documentElement;
+  doc.classList.add('js');
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Header: shadow once scrolled, mobile menu toggle.
+  var header = document.querySelector('.site-header');
+  var onScroll = function () { if (header) header.classList.toggle('scrolled', window.scrollY > 8); };
+  window.addEventListener('scroll', onScroll, { passive: true }); onScroll();
+  var toggle = document.querySelector('.nav-toggle');
+  if (toggle && header) {
+    toggle.addEventListener('click', function () {
+      var open = header.classList.toggle('nav-open');
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    header.querySelectorAll('.nav-links a, .nav-cta a').forEach(function (a) {
+      a.addEventListener('click', function () {
+        header.classList.remove('nav-open');
+        toggle.setAttribute('aria-expanded', 'false');
+      });
+    });
+  }
+
+  // Count-up numbers ([data-count], optional data-suffix).
+  var fmt = function (n) { return Math.round(n).toLocaleString('vi-VN'); };
+  var countUp = function (el) {
+    var target = Number(el.getAttribute('data-count')) || 0;
+    var suffix = el.getAttribute('data-suffix') || '';
+    if (reduce || target <= 0) { el.textContent = fmt(target) + suffix; return; }
+    var start = null, dur = 1400;
+    var tick = function (t) {
+      if (start === null) start = t;
+      var p = Math.min(1, (t - start) / dur);
+      el.textContent = fmt(target * (1 - Math.pow(1 - p, 3))) + suffix;
+      if (p < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  };
+
+  var items = document.querySelectorAll('.reveal, [data-count]');
+  if (!('IntersectionObserver' in window)) {
+    items.forEach(function (el) { el.classList.add('in'); if (el.hasAttribute('data-count')) countUp(el); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (!e.isIntersecting) return;
+      e.target.classList.add('in');
+      if (e.target.hasAttribute('data-count')) countUp(e.target);
+      io.unobserve(e.target);
+    });
+  }, { threshold: 0.15 });
+  items.forEach(function (el) { io.observe(el); });
+  }
+})();
+</script>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="container nav">
+    <a class="brand" href="/" aria-label="Giabao Inverter – trang chủ">
+      <span class="brand-mark"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></span>
+      <span>Giabao <b>Inverter</b></span>
+    </a>
+    <nav class="nav-links" aria-label="Điều hướng">
+      <a href="#san-pham">Sản phẩm</a>
+      <a href="#tinh-nang">Tính năng</a>
+      <a href="#cach-dung">Cách sử dụng</a>
+      <a href="#tai-ung-dung">Tải ứng dụng</a>
+      <a href="#lien-he">Liên hệ</a>
+    </nav>
+    <div class="nav-cta">
+      <a class="btn btn-primary" href="/app"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/></svg> Đăng nhập</a>
+    </div>
+    <button class="nav-toggle" type="button" aria-label="Mở menu" aria-expanded="false"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="container hero-grid">
+      <div>
+        <span class="status ok"><span class="dot"></span>Hệ thống đang hoạt động</span>
+        <h1>Năng lượng mặt trời, <span class="grad">trong lòng bàn tay</span></h1>
+        <p class="lead">Theo dõi sản lượng, cài đặt công suất và lịch hoạt động của biến tần hòa lưới Giabao theo thời gian thực – trên điện thoại hoặc trình duyệt, ở bất cứ đâu.</p>
+        <div class="hero-cta">
+          <a class="btn btn-primary btn-lg" href="/app"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/></svg> Đăng nhập hệ thống</a>
+          <a class="btn btn-ghost btn-lg" href="#tai-ung-dung"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg> Tải ứng dụng</a>
+        </div>
+      </div>
+      <div class="hero-art">
+<svg viewBox="0 0 520 400" role="img" aria-label="Tấm pin mặt trời, biến tần và ứng dụng theo dõi">
+  <defs>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1e6fc2"/><stop offset="1" stop-color="#0b4f96"/></linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#eef7ff"/></linearGradient>
+  </defs>
+  <g class="sun-rays" stroke="#f59e0b" stroke-width="5" stroke-linecap="round" opacity=".8">
+    <path d="M90 18v14M90 108v14M38 70h14M128 70h14M53 33l10 10M117 97l10 10M53 107l10-10M117 43l10-10"/>
+  </g>
+  <circle cx="90" cy="70" r="26" fill="#fbbf24"/>
+  <g transform="translate(40 150)">
+    <path d="M20 0h170l-30 110H-10z" fill="url(#panel)"/>
+    <g stroke="#7cc4ff" stroke-opacity=".55" stroke-width="2">
+      <path d="M62 0 40 110M104 0 88 110M146 0 132 110M14 22h172M8 45h172M2 68h172M-4 90h172"/>
+    </g>
+    <path d="M85 110v40M65 150h40" stroke="#94a3b8" stroke-width="6" stroke-linecap="round"/>
+  </g>
+  <path class="flow" d="M200 215 C 240 215, 250 200, 285 200" stroke="#0b84d8" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <g transform="translate(285 150)">
+    <rect width="96" height="110" rx="14" fill="url(#card)" stroke="#bfe0fb" stroke-width="2"/>
+    <rect x="14" y="16" width="44" height="8" rx="4" fill="#0b84d8" opacity=".85"/>
+    <rect x="14" y="32" width="28" height="6" rx="3" fill="#94c9f2"/>
+    <circle cx="70" cy="74" r="14" fill="#dcefff"/><path d="M63 74l5 5 9-10" stroke="#0b84d8" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="22" cy="92" r="4" fill="#16a34a"/>
+  </g>
+  <path class="flow" d="M381 205 C 410 205, 410 170, 425 150" stroke="#38bdf8" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <g transform="translate(410 40)">
+    <rect width="100" height="190" rx="18" fill="#0f2742"/>
+    <rect x="7" y="12" width="86" height="166" rx="12" fill="#f4f9ff"/>
+    <rect x="16" y="24" width="50" height="7" rx="3.5" fill="#0f2742" opacity=".7"/>
+    <rect x="16" y="38" width="30" height="5" rx="2.5" fill="#94a3b8"/>
+    <text x="16" y="72" font-family="system-ui, sans-serif" font-size="18" font-weight="800" fill="#0b84d8">2,4 kW</text>
+    <g transform="translate(16 90)">
+      <rect class="bar" x="0"  y="40" width="10" height="40" rx="3" fill="#38bdf8"/>
+      <rect class="bar" x="14" y="22" width="10" height="58" rx="3" fill="#0b84d8"/>
+      <rect class="bar" x="28" y="30" width="10" height="50" rx="3" fill="#38bdf8"/>
+      <rect class="bar" x="42" y="10" width="10" height="70" rx="3" fill="#0b84d8"/>
+      <rect class="bar" x="56" y="26" width="10" height="54" rx="3" fill="#38bdf8"/>
+    </g>
+  </g>
+  <g transform="translate(40 330)">
+    <rect width="150" height="46" rx="12" fill="#fff" stroke="#d6e7f7"/>
+    <circle cx="24" cy="23" r="12" fill="#dcfce7"/><path d="M18 23l4 4 8-8" stroke="#16a34a" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="44" y="20" font-family="system-ui, sans-serif" font-size="11" fill="#52667d">Trạng thái</text>
+    <text x="44" y="35" font-family="system-ui, sans-serif" font-size="13" font-weight="700" fill="#0f2742">Đang hòa lưới</text>
+  </g>
+</svg></div>
+    </div>
+  </section>
+
+  <div class="container">
+    <div class="stats">
+      <div class="stat reveal"><div class="num" data-count="2300" data-suffix="+">2.300+</div><div class="lbl">Thiết bị đã kết nối hệ thống</div></div>
+      <div class="stat reveal"><div class="num">1 giây</div><div class="lbl">Dữ liệu cập nhật liên tục</div></div>
+      <div class="stat reveal"><div class="num">24/7</div><div class="lbl">Giám sát thiết bị mọi lúc</div></div>
+      <div class="stat reveal"><div class="num">OTA</div><div class="lbl">Cập nhật phần mềm từ xa</div></div>
+    </div>
+  </div>
+
+  <section class="block" id="san-pham">
+    <div class="container">
+      <div class="section-head center reveal">
+        <div class="eyebrow">Sản phẩm</div>
+        <h2 class="section-title">Một ứng dụng cho cả hệ thống điện mặt trời</h2>
+        <p class="section-sub">Biến tần hòa lưới đang được hàng nghìn gia đình sử dụng, và bộ sạc MPPT – thành viên mới sắp ra mắt – quản lý chung trong cùng một ứng dụng.</p>
+      </div>
+      <div class="products">
+        <article class="product reveal">
+          <div class="product-top">
+            <div class="product-icon blue"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h4"/><path d="M7 13h2"/><path d="M14 15c1-2 2-2 3 0"/><circle cx="16" cy="9" r="1.5"/></svg></div>
+            <div><h3>Biến tần hòa lưới Giabao</h3><span class="tag live">Đang phân phối</span></div>
+          </div>
+          <p>Đưa điện từ pin lưu trữ và tấm pin lên lưới gia đình, giảm tiền điện mỗi tháng.</p>
+          <ul class="checks">
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Theo dõi điện áp, tần số, công suất và sản lượng theo từng giây</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Cài đặt công suất xả và ngưỡng điện áp pin từ xa</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Lịch hoạt động nhiều khung giờ, bật/tắt hòa lưới một chạm</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Chia sẻ công suất giữa nhiều biến tần trong nhóm</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Thống kê điện năng xả, lấy lưới và tiêu thụ theo ngày, tháng</span></li>
+          </ul>
+        </article>
+        <article class="product soon reveal">
+          <div class="product-top">
+            <div class="product-icon sun"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="17" height="10" rx="2"/><path d="M22 11v2"/><path d="m10 9-2 3h4l-2 3"/></svg></div>
+            <div><h3>Bộ sạc năng lượng mặt trời MPPT</h3><span class="tag soon">Sắp ra mắt</span></div>
+          </div>
+          <p>Sạc pin lưu trữ trực tiếp từ tấm pin với hiệu suất tối ưu, theo dõi và điều khiển ngay trong ứng dụng Giabao.</p>
+          <ul class="checks">
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Thuật toán MPPT bám điểm công suất cực đại, tận dụng tối đa tấm pin</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Xem điện áp, dòng, công suất tấm pin và dòng sạc pin theo thời gian thực</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Cài đặt ngưỡng sạc ngay trên ứng dụng, thiết bị cập nhật tức thì</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Cảnh báo lỗi, khóa/mở thiết bị từ xa</span></li>
+            <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg><span>Bảo mật từng thiết bị: tài khoản riêng, kết nối mã hóa</span></li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="tinh-nang" style="background: linear-gradient(180deg, var(--bg), var(--bg-soft));">
+    <div class="container">
+      <div class="section-head center reveal">
+        <div class="eyebrow">Tính năng</div>
+        <h2 class="section-title">Mọi thứ bạn cần để làm chủ hệ thống</h2>
+      </div>
+      <div class="features">
+        <div class="feature reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div><h3>Giám sát thời gian thực</h3><p>Số liệu từ thiết bị truyền về mỗi giây, biết ngay khi thiết bị ngắt kết nối.</p></div>
+        <div class="feature reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M1 14h6"/><path d="M9 8h6"/><path d="M17 16h6"/></svg></div><h3>Điều khiển từ xa</h3><p>Thay đổi công suất, ngưỡng điện áp, bật/tắt hòa lưới – thiết bị nhận lệnh trong tích tắc.</p></div>
+        <div class="feature reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div><h3>Lịch hoạt động</h3><p>Đặt nhiều khung giờ chạy khác nhau trong ngày, thiết bị tự động thực hiện.</p></div>
+        <div class="feature reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></div><h3>Biểu đồ &amp; thống kê</h3><p>Biểu đồ điện năng theo ngày trong tháng, tổng xả, lấy lưới và tiêu thụ.</p></div>
+        <div class="feature reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/></svg></div><h3>Cập nhật firmware từ xa</h3><p>Thiết bị luôn có phiên bản mới nhất qua mạng, không cần mang đi bảo hành.</p></div>
+        <div class="feature reveal"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></div><h3>Bảo mật</h3><p>Đăng nhập tài khoản riêng, dữ liệu truyền qua kết nối mã hóa, chỉ bạn thấy thiết bị của mình.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="cach-dung">
+    <div class="container">
+      <div class="section-head center reveal">
+        <div class="eyebrow">Cách sử dụng</div>
+        <h2 class="section-title">Bắt đầu chỉ trong vài phút</h2>
+      </div>
+      <div class="steps">
+        <div class="step reveal"><h3>Lắp đặt thiết bị</h3><p>Kỹ thuật viên lắp biến tần (hoặc bộ sạc) vào hệ thống điện mặt trời của bạn.</p></div>
+        <div class="step reveal"><h3>Kết nối WiFi qua ứng dụng</h3><p>Mở ứng dụng, chọn “Thêm thiết bị”, nhập WiFi nhà – thiết bị tự vào tài khoản của bạn.</p></div>
+        <div class="step reveal"><h3>Theo dõi &amp; điều khiển</h3><p>Xem số liệu, đổi cài đặt, đặt lịch mọi lúc trên điện thoại hoặc trình duyệt.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="tai-ung-dung" style="padding-top: 0;">
+    <div class="container">
+      <div class="download reveal">
+        <div>
+          <h2>Tải ứng dụng Giabao</h2>
+          <p>Miễn phí cho khách hàng sử dụng biến tần và bộ sạc Giabao. Một tài khoản dùng chung cho điện thoại và web.</p>
+        </div>
+        <div class="store-btns"><a class="store" href="https://play.google.com/store/apps/details?id=com.bms.gti_control" target="_blank" rel="noopener"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3.6 2.2 13.4 12l-9.8 9.8c-.4-.2-.6-.6-.6-1.1V3.3c0-.5.2-.9.6-1.1zm11 11 2.4 2.4-10.8 6.2 8.4-8.6zm3.6-3.7 2.9 1.6c.8.5.8 1.3 0 1.8l-2.9 1.6-2.7-2.5 2.7-2.5zM6.2 2.2 17 8.4l-2.4 2.4-8.4-8.6z"/></svg><span><small>Tải trên</small><strong>Google Play</strong></span></a><a class="store web" href="/app"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z"/></svg><span><small>Dùng trên</small><strong>Trình duyệt web</strong></span></a></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="lien-he" style="padding-top: 0;">
+    <div class="container">
+      <div class="section-head reveal">
+        <div class="eyebrow">Liên hệ</div>
+        <h2 class="section-title">Giabao Technology</h2>
+      </div>
+      <div class="contact">
+        <div class="contact-card reveal">
+          <h3><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18"/><path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"/><path d="M9 8h1M9 12h1M9 16h1M14 8h1M14 12h1M14 16h1"/></svg> Thông tin công ty</h3>
+          <dl>
+            <dt>Tên</dt><dd>Công ty TNHH Giabao Technology</dd>
+            <dt>Lĩnh vực</dt><dd>Hệ thống năng lượng tái tạo</dd>
+            <dt>Địa chỉ</dt><dd>Việt Nam</dd>
+          </dl>
+        </div>
+        <div class="contact-card reveal">
+          <h3><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg> Hỗ trợ khách hàng</h3>
+          <dl>
+            <dt>Đại diện</dt><dd>Ngô Văn Bảo</dd>
+            <dt>Hotline</dt><dd><a href="tel:0346905569">0346 905 569</a></dd>
+            <dt>Website</dt><dd><a href="https://giabao-inverter.com">giabao-inverter.com</a></dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="container foot">
+    <div>© 2026 Giabao Technology · Hệ thống giám sát năng lượng mặt trời</div>
+    <div class="foot-links">
+      <a href="#san-pham">Sản phẩm</a>
+      <a href="#tai-ung-dung">Tải ứng dụng</a>
+      <a href="/app">Đăng nhập</a>
+      <span class="ver">Phiên bản 0.2.27</span>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

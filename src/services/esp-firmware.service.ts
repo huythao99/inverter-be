@@ -51,6 +51,12 @@ export class EspFirmwareService implements OnModuleInit, OnModuleDestroy {
   readonly spacesPrefix: string;
   /** Size of the OTA app partition (default partition table: 1280 KB). */
   readonly maxBytes: number;
+  /**
+   * Per-product OTA slot size. The inverter uses the Arduino default table
+   * (1280 KB, fixed for units in the field); the charger ships with its own
+   * partitions.csv (app0/app1 = 0x1C0000 = 1792 KB).
+   */
+  readonly maxBytesByProduct: Record<EspProduct, number>;
 
   constructor(
     @InjectModel(EspFirmware.name)
@@ -65,6 +71,13 @@ export class EspFirmwareService implements OnModuleInit, OnModuleDestroy {
       .get<string>('ESP_SPACES_PREFIX', 'firmware/esp32')
       .replace(/^\/+|\/+$/g, '');
     this.maxBytes = Number(config.get<string>('ESP_APP_MAX_BYTES', '1310720'));
+    this.maxBytesByProduct = {
+      inverter: this.maxBytes,
+      charger: Number(
+        config.get<string>('ESP_CHARGER_APP_MAX_BYTES', String(0x1c0000)),
+      ),
+      hybrid: this.maxBytes,
+    };
   }
 
   async onModuleInit() {
@@ -148,6 +161,7 @@ export class EspFirmwareService implements OnModuleInit, OnModuleDestroy {
       pathTemplate: `${this.baseUrl}/{product}/{version}/firmware.bin`,
       uploadEnabled: this.spaces.enabled,
       maxBytes: this.maxBytes,
+      maxBytesByProduct: this.maxBytesByProduct,
       active: activeByProduct,
     };
   }
@@ -278,9 +292,10 @@ export class EspFirmwareService implements OnModuleInit, OnModuleDestroy {
   /** ESP32 app image + the version string the firmware reports. */
   private checkImage(bin: Buffer, version: string, product: EspProduct) {
     if (!bin?.length) throw new BadRequestException('firmware.bin is empty');
-    if (bin.length > this.maxBytes) {
+    const maxBytes = this.maxBytesByProduct[product] ?? this.maxBytes;
+    if (bin.length > maxBytes) {
       throw new BadRequestException(
-        `firmware.bin is ${bin.length} B, larger than the OTA partition (${this.maxBytes} B)`,
+        `firmware.bin is ${bin.length} B, larger than the ${product} OTA partition (${maxBytes} B)`,
       );
     }
     if (

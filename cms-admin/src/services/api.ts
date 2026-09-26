@@ -215,6 +215,8 @@ export interface EspFirmwareConfig {
   pathTemplate: string;
   uploadEnabled: boolean;
   maxBytes: number;
+  // OTA slot size per product (charger has a bigger partition table).
+  maxBytesByProduct?: Record<EspProduct, number>;
   active: Record<EspProduct, Record<EspChannel, ActiveEspFirmware>>;
 }
 
