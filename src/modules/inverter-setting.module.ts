@@ -12,12 +12,17 @@ import { GridTieService } from '../services/grid-tie.service';
 import { ShareService } from '../services/share.service';
 import { ShareGroup, ShareGroupSchema } from '../models/share-group.schema';
 import { InverterDataModule } from './inverter-data.module';
+import {
+  InverterDevice,
+  InverterDeviceSchema,
+} from '../models/inverter-device.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: InverterSetting.name, schema: InverterSettingSchema },
       { name: ShareGroup.name, schema: ShareGroupSchema },
+      { name: InverterDevice.name, schema: InverterDeviceSchema },
     ]),
     InverterDataModule,
   ],
