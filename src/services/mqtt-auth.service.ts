@@ -24,6 +24,21 @@ export interface HAMqttConfig {
   }>;
 }
 
+/**
+ * Topics the shared legacy device account (MQTT_LEGACY_USERNAME, "giabao") may
+ * use once it is no longer a superuser: only EXACT per-device topics, i.e.
+ * `inverter|charger/<uid>/<deviceId>/<...>` and `devices/inverter|charger/<uid>/<deviceId>`.
+ * Wildcard filters (`#`, `+`), `$SYS`, `homeassistant/...` etc. are refused, so a
+ * leaked copy of the password can no longer harvest every customer's data.
+ * Old firmware and old app builds only ever use exact topics of one device.
+ */
+const LEGACY_TOPIC =
+  /^(?:(?:inverter|charger)\/[^/+#]+\/[^/+#]+\/[^+#]+|devices\/(?:inverter|charger)\/[^/+#]+\/[^/+#]+)$/;
+
+export function legacyTopicAllowed(topic: string): boolean {
+  return typeof topic === 'string' && LEGACY_TOPIC.test(topic);
+}
+
 @Injectable()
 export class MqttAuthService implements OnModuleInit {
   private readonly logger = new Logger(MqttAuthService.name);
@@ -33,6 +48,10 @@ export class MqttAuthService implements OnModuleInit {
   private readonly statePrefix: string;
   private readonly superusers: string[];
   private readonly superuserPassword: string;
+  // Shared account baked into old firmware/app builds. Enabled only when
+  // MQTT_LEGACY_PASSWORD is set; it must then NOT be in MQTT_SUPERUSERS.
+  private readonly legacyUsername: string;
+  private readonly legacyPassword: string;
 
   constructor(
     @InjectModel(MqttCredential.name)
@@ -64,6 +83,34 @@ export class MqttAuthService implements OnModuleInit {
       'MQTT_SUPERUSER_PASSWORD',
       '',
     );
+
+    this.legacyUsername = this.configService.get<string>(
+      'MQTT_LEGACY_USERNAME',
+      'giabao',
+    );
+    this.legacyPassword = this.configService.get<string>(
+      'MQTT_LEGACY_PASSWORD',
+      '',
+    );
+    if (this.legacyPassword && this.superusers.includes(this.legacyUsername)) {
+      this.logger.warn(
+        `MQTT_LEGACY_USERNAME "${this.legacyUsername}" is also in MQTT_SUPERUSERS: it keeps full access`,
+      );
+    }
+  }
+
+  private isLegacy(username: string): boolean {
+    return (
+      !!this.legacyPassword &&
+      username === this.legacyUsername &&
+      !this.superusers.includes(username)
+    );
+  }
+
+  private static sameSecret(a: string, b: string): boolean {
+    const ha = crypto.createHash('sha256').update(a).digest();
+    const hb = crypto.createHash('sha256').update(b).digest();
+    return crypto.timingSafeEqual(ha, hb);
   }
 
   /**
@@ -354,6 +401,16 @@ export class MqttAuthService implements OnModuleInit {
       }
     }
 
+    // Shared legacy device account (restricted ACL, see legacyTopicAllowed).
+    if (this.isLegacy(username)) {
+      const ok = MqttAuthService.sameSecret(
+        password ?? '',
+        this.legacyPassword,
+      );
+      if (!ok) this.logger.debug(`MQTT auth failed: bad legacy password`);
+      return ok;
+    }
+
     // Check database credentials
     const credential = await this.mqttCredentialModel
       .findOne({ mqttUsername: username, isActive: true })
@@ -389,6 +446,13 @@ export class MqttAuthService implements OnModuleInit {
     topic: string,
     access: 'read' | 'write' | 'subscribe',
   ): Promise<boolean> {
+    // Legacy shared account: exact per-device topics only, no DB lookup.
+    if (this.isLegacy(username)) {
+      if (legacyTopicAllowed(topic)) return true;
+      this.logger.debug(`ACL denied (legacy): ${access} ${topic}`);
+      return false;
+    }
+
     const credential = await this.mqttCredentialModel
       .findOne({ mqttUsername: username, isActive: true })
       .exec();

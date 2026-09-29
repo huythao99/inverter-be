@@ -359,3 +359,38 @@ describe('share service flow', () => {
     expect(syncs).toEqual(expect.arrayContaining(['a', 'b']));
   });
 });
+
+describe('Legacy shared MQTT account ACL', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { legacyTopicAllowed } = require('./services/mqtt-auth.service');
+  it('allows exact per-device topics used by old firmware and old apps', () => {
+    for (const t of [
+      'inverter/9R1z7JVhQJQYzeQ8RI6Q5M6N7Xq2/GTIControl538/data',
+      'inverter/uid/GTIControl1/status',
+      'inverter/uid/GTIControl1/cmd/settings',
+      'inverter/uid/GTIControl1/stm/ota/status',
+      'charger/uid/ChargerControl1369/firmware/update',
+      'devices/inverter/uid/GTIControl1',
+    ]) {
+      expect(legacyTopicAllowed(t)).toBe(true);
+    }
+  });
+  it('refuses wildcards and foreign prefixes', () => {
+    for (const t of [
+      '#',
+      '$SYS/#',
+      'inverter/#',
+      'inverter/+/+/data',
+      'inverter/uid/#',
+      'inverter/uid/+/data',
+      'inverter/uid/GTIControl1/#',
+      'homeassistant/sensor/x/config',
+      'inverter_ha/uid/dev/set/x',
+      'inverter/uid',
+      'devices/inverter/uid/+',
+      '',
+    ]) {
+      expect(legacyTopicAllowed(t)).toBe(false);
+    }
+  });
+});

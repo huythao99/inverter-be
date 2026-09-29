@@ -1,11 +1,18 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { LogLevel, ValidationPipe } from '@nestjs/common';
 import * as compression from 'compression';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // Debug/verbose logs are off by default: every MQTT auth/ACL check logs a
+  // line, and pm2 writing them costs real CPU. LOG_LEVELS=error,warn,log,debug
+  // turns them back on while investigating.
+  const logLevels = (process.env.LOG_LEVELS || 'error,warn,log')
+    .split(',')
+    .map((l) => l.trim())
+    .filter(Boolean) as LogLevel[];
+  const app = await NestFactory.create(AppModule, { logger: logLevels });
 
   // Security headers (XSS, Clickjacking, MIME sniffing protection)
   app.use(
