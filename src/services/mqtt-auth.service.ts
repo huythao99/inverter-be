@@ -26,14 +26,15 @@ export interface HAMqttConfig {
 
 /**
  * Topics the shared legacy device account (MQTT_LEGACY_USERNAME, "giabao") may
- * use once it is no longer a superuser: only EXACT per-device topics, i.e.
- * `inverter|charger/<uid>/<deviceId>/<...>` and `devices/inverter|charger/<uid>/<deviceId>`.
- * Wildcard filters (`#`, `+`), `$SYS`, `homeassistant/...` etc. are refused, so a
- * leaked copy of the password can no longer harvest every customer's data.
- * Old firmware and old app builds only ever use exact topics of one device.
+ * use once it is no longer a superuser: per-device topics of ONE user,
+ * `inverter|charger/<uid>/<deviceId|+>/<...>` and
+ * `devices/inverter|charger/<uid>/<deviceId|+>`. The `+` in the device slot is
+ * what old app/web builds subscribe for their device list; the uid is always
+ * explicit. `#`, a `+` for the uid, `$SYS`, `homeassistant/...` are refused, so
+ * a leaked copy of the password can no longer harvest every customer's data.
  */
 const LEGACY_TOPIC =
-  /^(?:(?:inverter|charger)\/[^/+#]+\/[^/+#]+\/[^+#]+|devices\/(?:inverter|charger)\/[^/+#]+\/[^/+#]+)$/;
+  /^(?:(?:inverter|charger)\/[^/+#]+\/(?:[^/+#]+|\+)\/[^+#]+|devices\/(?:inverter|charger)\/[^/+#]+\/(?:[^/+#]+|\+))$/;
 
 export function legacyTopicAllowed(topic: string): boolean {
   return typeof topic === 'string' && LEGACY_TOPIC.test(topic);

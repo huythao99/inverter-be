@@ -371,6 +371,10 @@ describe('Legacy shared MQTT account ACL', () => {
       'inverter/uid/GTIControl1/stm/ota/status',
       'charger/uid/ChargerControl1369/firmware/update',
       'devices/inverter/uid/GTIControl1',
+      // device list of old app/web builds: explicit uid, + for the device
+      'inverter/uid/+/data',
+      'charger/uid/+/status',
+      'devices/inverter/uid/+',
     ]) {
       expect(legacyTopicAllowed(t)).toBe(true);
     }
@@ -382,12 +386,13 @@ describe('Legacy shared MQTT account ACL', () => {
       'inverter/#',
       'inverter/+/+/data',
       'inverter/uid/#',
-      'inverter/uid/+/data',
       'inverter/uid/GTIControl1/#',
+      'inverter/uid/+/#',
+      'inverter/+/GTIControl1/data',
       'homeassistant/sensor/x/config',
       'inverter_ha/uid/dev/set/x',
       'inverter/uid',
-      'devices/inverter/uid/+',
+      'devices/inverter/+/+',
       '',
     ]) {
       expect(legacyTopicAllowed(t)).toBe(false);
