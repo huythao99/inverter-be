@@ -34,6 +34,8 @@ export class DeviceShareLink {
   @Prop({ required: true, enum: ['inverter', 'charger'] }) kind: ViewKind;
   @Prop({ required: true }) deviceId: string;
   @Prop({ required: true, unique: true }) token: string;
+  /** null = never expires. */
+  @Prop({ type: Date, default: null }) expiresAt: Date | null;
   createdAt?: Date;
 }
 export type DeviceShareLinkDocument = DeviceShareLink & Document;

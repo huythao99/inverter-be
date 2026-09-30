@@ -4,7 +4,10 @@ import { PublicViewController } from './controllers/device-viewer.controller';
 
 describe('Public link live stream (SSE)', () => {
   const link = { ownerUid: 'OWNER', kind: 'inverter', deviceId: 'GTI1' };
-  function setup(resolve: (t: string) => any = (t) => (t === 'T' ? link : null)) {
+  const ok = (expiresAt: Date | null = null) => ({ status: 'ok', link, expiresAt });
+  function setup(
+    check: (t: string) => any = (t) => (t === 'T' ? ok() : { status: 'missing' }),
+  ) {
     let listener: ((topic: string, p: string) => void) | null = null;
     let topics: string[] = [];
     const stop = jest.fn();
@@ -17,7 +20,7 @@ describe('Public link live stream (SSE)', () => {
         return stop;
       }),
     };
-    const viewers = { resolveLink: jest.fn(async (t: string) => resolve(t)) };
+    const viewers = { checkLink: jest.fn(async (t: string) => check(t)) };
     const ctrl = new PublicViewController(viewers as any, streams as any);
     const out: string[] = [];
     const res = {
@@ -54,14 +57,46 @@ describe('Public link live stream (SSE)', () => {
   it('ends the stream when the link is revoked', async () => {
     jest.useFakeTimers();
     let valid = true;
-    const s = setup((t) => (t === 'T' && valid ? link : null));
+    const s = setup((t) => (t === 'T' && valid ? ok() : { status: 'missing' }));
     await s.ctrl.stream('T', s.req as any, s.res as any);
     valid = false;
     jest.advanceTimersByTime(30_000);
     jest.useRealTimers();
     await new Promise((r) => setImmediate(r));
     expect(s.out.join('')).toContain('event: revoked');
+    expect(s.out.join('')).toContain('"reason":"revoked"');
     expect(s.res.end).toHaveBeenCalled();
     expect(s.stop).toHaveBeenCalled();
+  });
+
+  it('refuses an expired link with 410', async () => {
+    const s = setup(() => ({ status: 'expired' }));
+    await expect(s.ctrl.stream('T', s.req as any, s.res as any)).rejects.toMatchObject({
+      status: 410,
+    });
+  });
+
+  it('ends the stream exactly when the link expires', async () => {
+    jest.useFakeTimers();
+    const s = setup(() => ok(new Date(Date.now() + 5_000)));
+    await s.ctrl.stream('T', s.req as any, s.res as any);
+    jest.advanceTimersByTime(5_001);
+    jest.useRealTimers();
+    expect(s.out.join('')).toContain('"reason":"expired"');
+    expect(s.res.end).toHaveBeenCalled();
+  });
+});
+
+describe('Public link lifetime', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { linkExpiry } = require('./services/device-viewer.service');
+  const now = Date.UTC(2026, 0, 1);
+  it('defaults to 7 days, 0 = never, only 1/7/30/0 allowed', () => {
+    expect(linkExpiry(undefined, now).getTime()).toBe(now + 7 * 86400_000);
+    expect(linkExpiry(1, now).getTime()).toBe(now + 86400_000);
+    expect(linkExpiry(30, now).getTime()).toBe(now + 30 * 86400_000);
+    expect(linkExpiry(0, now)).toBeNull();
+    expect(() => linkExpiry(3, now)).toThrow();
+    expect(() => linkExpiry('abc', now)).toThrow();
   });
 });

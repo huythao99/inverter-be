@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  GoneException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -23,6 +24,30 @@ import {
 } from '../models/charger-device.schema';
 
 export const MAX_VIEWERS_PER_DEVICE = 20;
+/** Allowed public-link lifetimes in days; 0 = never expires. */
+export const LINK_DAYS = [1, 7, 30, 0];
+export const DEFAULT_LINK_DAYS = 7;
+
+/** Expiry date for a lifetime in days (0 = never), validated. */
+export function linkExpiry(days: unknown, now = Date.now()): Date | null {
+  const d =
+    days === undefined || days === null ? DEFAULT_LINK_DAYS : Number(days);
+  if (!LINK_DAYS.includes(d)) {
+    throw new BadRequestException(
+      'Thời hạn link phải là 1, 7, 30 ngày hoặc không giới hạn',
+    );
+  }
+  return d === 0 ? null : new Date(now + d * 24 * 3600 * 1000);
+}
+
+export type LinkTarget = {
+  ownerUid: string;
+  kind: ViewKind;
+  deviceId: string;
+};
+export type LinkCheck =
+  | { status: 'ok'; link: LinkTarget; expiresAt: Date | null }
+  | { status: 'expired' | 'missing' };
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const CACHE_MS = 60_000;
 
@@ -74,10 +99,7 @@ export function parseViewPath(
 export class DeviceViewerService {
   private readonly linkCache = new Map<
     string,
-    {
-      at: number;
-      v: { ownerUid: string; kind: ViewKind; deviceId: string } | null;
-    }
+    { at: number; v: (LinkTarget & { expiresAt: Date | null }) | null }
   >();
   private readonly mqttCache = new Map<string, { at: number; v: string[] }>();
 
@@ -139,7 +161,11 @@ export class DeviceViewerService {
         createdAt: v.createdAt ?? null,
       })),
       link: link
-        ? { token: link.token, createdAt: link.createdAt ?? null }
+        ? {
+            token: link.token,
+            createdAt: link.createdAt ?? null,
+            expiresAt: link.expiresAt ?? null,
+          }
         : null,
     };
   }
@@ -198,15 +224,42 @@ export class DeviceViewerService {
     return this.listForOwner(ownerUid, kind, deviceId);
   }
 
-  /** Create (or replace: the old link stops working) the public view link. */
-  async createLink(ownerUid: string, kind: ViewKind, deviceId: string) {
+  /**
+   * Create (or replace: the old link stops working) the public view link,
+   * valid for `days` (1/7/30, 0 = never; default 7).
+   */
+  async createLink(
+    ownerUid: string,
+    kind: ViewKind,
+    deviceId: string,
+    days?: unknown,
+  ) {
+    const expiresAt = linkExpiry(days);
     await this.assertOwned(ownerUid, kind, deviceId);
     const token = crypto.randomBytes(24).toString('base64url');
     await this.linkModel.updateOne(
       { ownerUid, kind, deviceId },
-      { $set: { token } },
+      { $set: { token, expiresAt } },
       { upsert: true },
     );
+    this.invalidate();
+    return this.listForOwner(ownerUid, kind, deviceId);
+  }
+
+  /** New lifetime for the current link, counted from now (same URL). */
+  async extendLink(
+    ownerUid: string,
+    kind: ViewKind,
+    deviceId: string,
+    days?: unknown,
+  ) {
+    const expiresAt = linkExpiry(days);
+    await this.assertOwned(ownerUid, kind, deviceId);
+    const res = await this.linkModel.updateOne(
+      { ownerUid, kind, deviceId },
+      { $set: { expiresAt } },
+    );
+    if (!res.matchedCount) throw new NotFoundException('Chưa có link xem');
     this.invalidate();
     return this.listForOwner(ownerUid, kind, deviceId);
   }
@@ -301,23 +354,51 @@ export class DeviceViewerService {
     return !!g;
   }
 
-  async resolveLink(token: string) {
-    if (!token || token.length > 100) return null;
-    const hit = this.linkCache.get(token);
-    if (hit && Date.now() - hit.at < CACHE_MS) return hit.v;
-    const link = await this.linkModel.findOne({ token }).lean().exec();
-    const v = link
-      ? { ownerUid: link.ownerUid, kind: link.kind, deviceId: link.deviceId }
-      : null;
-    this.linkCache.set(token, { at: Date.now(), v });
-    return v;
+  /** State of a public link: ok (not expired), expired or missing. */
+  async checkLink(token: string): Promise<LinkCheck> {
+    if (!token || token.length > 100) return { status: 'missing' };
+    let hit = this.linkCache.get(token);
+    if (!hit || Date.now() - hit.at >= CACHE_MS) {
+      const link = await this.linkModel.findOne({ token }).lean().exec();
+      hit = {
+        at: Date.now(),
+        v: link
+          ? {
+              ownerUid: link.ownerUid,
+              kind: link.kind,
+              deviceId: link.deviceId,
+              expiresAt: link.expiresAt ?? null,
+            }
+          : null,
+      };
+      this.linkCache.set(token, hit);
+    }
+    const v = hit.v;
+    if (!v) return { status: 'missing' };
+    if (v.expiresAt && new Date(v.expiresAt).getTime() <= Date.now()) {
+      return { status: 'expired' };
+    }
+    return {
+      status: 'ok',
+      link: { ownerUid: v.ownerUid, kind: v.kind, deviceId: v.deviceId },
+      expiresAt: v.expiresAt,
+    };
+  }
+
+  /** The device of a usable (existing, not expired) link, else null. */
+  async resolveLink(token: string): Promise<LinkTarget | null> {
+    const c = await this.checkLink(token);
+    return c.status === 'ok' ? c.link : null;
   }
 
   /** What an anonymous link visitor may learn: never the owner's uid. */
   async publicInfo(token: string) {
-    const link = await this.resolveLink(token);
-    if (!link)
+    const c = await this.checkLink(token);
+    if (c.status === 'expired') throw new GoneException('Link xem đã hết hạn');
+    if (c.status !== 'ok') {
       throw new NotFoundException('Link không tồn tại hoặc đã bị thu hồi');
+    }
+    const link = c.link;
     const d = await this.findDevice(link.ownerUid, link.kind, link.deviceId);
     if (!d) throw new NotFoundException('Thiết bị không còn tồn tại');
     return {
@@ -325,6 +406,7 @@ export class DeviceViewerService {
       deviceId: link.deviceId,
       deviceName: d.deviceName || link.deviceId,
       description: d.description || '',
+      expiresAt: c.expiresAt,
     };
   }
 

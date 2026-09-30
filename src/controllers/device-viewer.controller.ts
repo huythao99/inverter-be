@@ -5,6 +5,7 @@ import {
   Delete,
   Get,
   Header,
+  GoneException,
   HttpException,
   HttpStatus,
   NotFoundException,
@@ -94,8 +95,30 @@ export class DeviceViewerController {
     @CurrentFirebaseUser() user: FirebaseUser,
     @Param('kind') kind: string,
     @Param('deviceId') deviceId: string,
+    @Body() body: { days?: number },
   ) {
-    return this.viewers.createLink(user.uid, kindOf(kind), deviceId);
+    return this.viewers.createLink(
+      user.uid,
+      kindOf(kind),
+      deviceId,
+      body?.days,
+    );
+  }
+
+  /** Change the lifetime of the current link (same URL): { days: 1|7|30|0 }. */
+  @Post('viewers/:kind/:deviceId/link/extend')
+  extendLink(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('kind') kind: string,
+    @Param('deviceId') deviceId: string,
+    @Body() body: { days?: number },
+  ) {
+    return this.viewers.extendLink(
+      user.uid,
+      kindOf(kind),
+      deviceId,
+      body?.days,
+    );
   }
 
   @Delete('viewers/:kind/:deviceId/link')
@@ -150,9 +173,14 @@ export class PublicViewController {
     @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
-    const link = await this.viewers.resolveLink(token);
-    if (!link)
+    const first = await this.viewers.checkLink(token);
+    if (first.status === 'expired') {
+      throw new GoneException('Link xem đã hết hạn');
+    }
+    if (first.status !== 'ok') {
       throw new NotFoundException('Link không tồn tại hoặc đã bị thu hồi');
+    }
+    const link = first.link;
     const key = `${link.kind}/${link.ownerUid}/${link.deviceId}`;
     if (!this.streams.acquire(key)) {
       throw new HttpException(
@@ -187,33 +215,47 @@ export class PublicViewController {
     );
 
     let done = false;
+    let expiryTimer: NodeJS.Timeout | null = null;
     const cleanup = () => {
       if (done) return;
       done = true;
       stop();
       clearInterval(ping);
       clearInterval(recheck);
+      if (expiryTimer) clearTimeout(expiryTimer);
       this.streams.release(key);
+    };
+    const finish = (reason: 'expired' | 'revoked') => {
+      if (done) return;
+      send('revoked', { reason });
+      cleanup();
+      res.end();
     };
     const ping = setInterval(() => write(': ping\n\n'), STREAM_PING_MS);
     const recheck = setInterval(() => {
       this.viewers
-        .resolveLink(token)
-        .catch(() => null)
+        .checkLink(token)
         .then((now) => {
+          if (now.status === 'expired') return finish('expired');
           if (
-            !now ||
-            now.ownerUid !== link.ownerUid ||
-            now.kind !== link.kind ||
-            now.deviceId !== link.deviceId
+            now.status !== 'ok' ||
+            now.link.ownerUid !== link.ownerUid ||
+            now.link.kind !== link.kind ||
+            now.link.deviceId !== link.deviceId
           ) {
-            send('revoked', {});
-            cleanup();
-            res.end();
+            finish('revoked');
           }
         })
         .catch(() => undefined);
     }, STREAM_RECHECK_MS);
+    // End exactly at expiry (timers cap at ~24.8 days; the recheck covers
+    // longer lifetimes).
+    if (first.expiresAt) {
+      const left = new Date(first.expiresAt).getTime() - Date.now();
+      if (left < 2_000_000_000) {
+        expiryTimer = setTimeout(() => finish('expired'), Math.max(0, left));
+      }
+    }
     req.on('close', cleanup);
   }
 }
