@@ -33,18 +33,12 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   // last two values once per accepted frame, so more accepted frames per
   // minute would inflate those devices' daily energy.
   private readonly DEVICE_RATE_LIMIT_MS = 2500;
-  private haStatePrefix: string;
 
   constructor(
     private configService: ConfigService,
     private eventEmitter: EventEmitter2,
     private blacklistDeviceService: BlacklistDeviceService,
-  ) {
-    this.haStatePrefix = this.configService.get<string>(
-      'HA_STATE_PREFIX',
-      'inverter_ha',
-    );
-  }
+  ) {}
 
   onModuleInit() {
     if (this.isInitialized) {
@@ -145,7 +139,6 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       'charger/+/+/data', // Charger telemetry/cfg/info
       'charger/+/+/status', // Charger heartbeat
       'charger/+/+/ota/status', // Charger OTA status
-      `${this.haStatePrefix}/+/+/set/+`, // Home Assistant command topics
     ];
     topics.forEach((topic) => this.client.subscribe(topic));
   }
@@ -153,12 +146,6 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   // Global message handler - called from the single listener registered in init
   private handleMessage(topic: string, message: Buffer) {
     const topicParts = topic.split('/');
-
-    // Handle Home Assistant command topics
-    if (topic.startsWith(`${this.haStatePrefix}/`) && topic.includes('/set/')) {
-      this.handleHACommandMessage(topic, message);
-      return;
-    }
 
     if (topicParts.length < 4) return;
 
@@ -380,25 +367,6 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       currentUid,
       wifiSsid,
       data: { deviceName },
-    });
-  }
-
-  // Handle Home Assistant command messages
-  private handleHACommandMessage(topic: string, message: Buffer) {
-    // Topic format: inverter_ha/{userId}/{deviceId}/set/{entity}
-    const parts = topic.split('/');
-    if (parts.length < 5) return;
-
-    const userId = parts[1];
-    const deviceId = parts[2];
-    const entity = parts[4];
-    const value = message.toString();
-
-    this.eventEmitter.emit('ha.command.received', {
-      userId,
-      deviceId,
-      entity,
-      value,
     });
   }
 
