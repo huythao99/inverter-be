@@ -399,3 +399,54 @@ describe('Legacy shared MQTT account ACL', () => {
     }
   });
 });
+
+describe('Read-only device sharing: request filter', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { parseViewPath } = require('./services/device-viewer.service');
+  it('lets viewers GET one device and its data', () => {
+    expect(
+      parseViewPath('GET', '/api/user/devices/GTIControl1', 'invite'),
+    ).toEqual({
+      kind: 'inverter',
+      deviceId: 'GTIControl1',
+    });
+    expect(
+      parseViewPath('GET', '/api/user/devices/GTIControl1/data/latest', 'link'),
+    ).toEqual({ kind: 'inverter', deviceId: 'GTIControl1' });
+    expect(
+      parseViewPath(
+        'GET',
+        '/api/user/chargers/ChargerControl9/settings',
+        'link',
+      ),
+    ).toEqual({ kind: 'charger', deviceId: 'ChargerControl9' });
+    expect(
+      parseViewPath('GET', '/api/user/devices/GTIControl1/activity', 'invite'),
+    ).not.toBeNull();
+  });
+  it('never lets a viewer write or reach other routes', () => {
+    for (const m of ['POST', 'PATCH', 'PUT', 'DELETE']) {
+      expect(
+        parseViewPath(m, '/api/user/devices/GTIControl1/settings', 'invite'),
+      ).toBeNull();
+    }
+    for (const p of [
+      '/api/user/devices',
+      '/api/user/mqtt-credentials',
+      '/api/user/viewers/inverter/GTIControl1',
+      '/api/user/share-groups',
+      '/api/user/firmware/newest',
+      '/api/user/chargers/firmware/newest',
+      '/api/user/chargers/claim',
+      '/api/user/devices/GTIControl1/firmware/version',
+      '/api/user/devices/GTIControl1/stm',
+      '/api/cms/devices',
+    ]) {
+      expect(parseViewPath('GET', p, 'invite')).toBeNull();
+    }
+    // a public link also hides who changed what
+    expect(
+      parseViewPath('GET', '/api/user/devices/GTIControl1/activity', 'link'),
+    ).toBeNull();
+  });
+});

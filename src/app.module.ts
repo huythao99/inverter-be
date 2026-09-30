@@ -32,6 +32,7 @@ import { CmsChargerModule } from './modules/cms-charger.module';
 import { UserChargerModule } from './modules/user-charger.module';
 import { AuditLogModule } from './modules/audit-log.module';
 import { DeviceHealthModule } from './modules/device-health.module';
+import { DeviceViewerModule } from './modules/device-viewer.module';
 
 @Module({
   imports: [
@@ -67,6 +68,7 @@ import { DeviceHealthModule } from './modules/device-health.module';
     EventEmitterModule.forRoot(),
     AuditLogModule,
     DeviceHealthModule,
+    DeviceViewerModule,
     BlacklistDeviceModule,
     BetaFirmwareDeviceModule,
     SpacesModule,

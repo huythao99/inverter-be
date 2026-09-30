@@ -1,4 +1,5 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
+import { DeviceViewerService } from './device-viewer.service';
 import { InjectModel } from '@nestjs/mongoose';
 import { ConfigService } from '@nestjs/config';
 import { Model } from 'mongoose';
@@ -58,6 +59,7 @@ export class MqttAuthService implements OnModuleInit {
     @InjectModel(MqttCredential.name)
     private mqttCredentialModel: Model<MqttCredentialDocument>,
     private configService: ConfigService,
+    @Optional() private readonly deviceViewers?: DeviceViewerService,
   ) {
     this.encryptionKey = this.configService.get<string>(
       'MQTT_AUTH_SECRET',
@@ -492,6 +494,15 @@ export class MqttAuthService implements OnModuleInit {
       // A topic filter must not widen the user part ("inverter/#" or
       // "inverter/+/..."): only own-prefix topics pass for kind 'app'.
       if (prefixes.some((p) => topic.startsWith(p))) return true;
+      // Devices another user shared read-only with this (app) account:
+      // exact device topics only ("owner/+/..." never matches a prefix).
+      if (kind === 'app' && this.deviceViewers) {
+        const shared = await this.deviceViewers.mqttPrefixesFor(userId);
+        const hit = shared.some((p) =>
+          p.endsWith('/') ? topic.startsWith(p) : topic === p,
+        );
+        if (hit && !topic.includes('#') && !topic.includes('+')) return true;
+      }
       this.logger.debug(`ACL denied: ${username} cannot ${access} ${topic}`);
       return false;
     }
