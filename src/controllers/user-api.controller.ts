@@ -866,52 +866,12 @@ export class UserApiController {
     return this.mqttAuthService.getOrCreateClientCredentials(user.uid);
   }
 
-  // ---- Home Assistant MQTT access (per-user broker credentials) ----
-
-  private async haConfig(userId: string) {
-    const devices = await this.inverterDeviceService.findByUserId(userId);
-    return this.mqttAuthService.getHAConfig(
-      userId,
-      devices.map((d) => ({ deviceId: d.deviceId, deviceName: d.deviceName })),
-    );
-  }
-
-  // MQTT config for Home Assistant (creates the credential on first use).
+  // Home Assistant: see HassController (api/user/hass). The old
+  // mqtt-config routes auto-created an account; they now say where to go.
   @Get('mqtt-config')
-  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
-  async getMqttConfig(@CurrentFirebaseUser() user: FirebaseUser) {
-    const config = await this.haConfig(user.uid);
-    if (!config) {
-      return { success: false, error: 'Failed to generate MQTT configuration' };
-    }
-    return {
-      success: true,
-      data: {
-        ...config,
-        setupInstructions: {
-          step1: 'Open Home Assistant',
-          step2: 'Go to Settings → Devices & Services',
-          step3: 'Click "Add Integration" and search for "MQTT"',
-          step4: 'Enter the broker, port, username, and password below',
-          step5: 'Your inverter devices will appear automatically!',
-        },
-      },
-    };
-  }
-
-  // New MQTT password for Home Assistant.
-  @Post('mqtt-config/regenerate')
-  async regenerateMqttPassword(@CurrentFirebaseUser() user: FirebaseUser) {
-    const credential = await this.mqttAuthService.regeneratePassword(user.uid);
-    if (!credential) {
-      return { success: false, error: 'Failed to regenerate password' };
-    }
-    return {
-      success: true,
-      message:
-        'Password regenerated successfully. Please update Home Assistant with the new credentials.',
-      data: await this.haConfig(user.uid),
-    };
+  @Header('Cache-Control', 'no-store')
+  getMqttConfig() {
+    return { success: false, error: 'Moved to /api/user/hass' };
   }
 
   // Remote reboot of the device's ESP32 (mobile app + web). Rate-limited to

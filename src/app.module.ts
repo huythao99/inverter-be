@@ -33,6 +33,7 @@ import { UserChargerModule } from './modules/user-charger.module';
 import { AuditLogModule } from './modules/audit-log.module';
 import { DeviceHealthModule } from './modules/device-health.module';
 import { DeviceViewerModule } from './modules/device-viewer.module';
+import { HassModule } from './modules/hass.module';
 
 @Module({
   imports: [
@@ -69,6 +70,7 @@ import { DeviceViewerModule } from './modules/device-viewer.module';
     AuditLogModule,
     DeviceHealthModule,
     DeviceViewerModule,
+    HassModule,
     BlacklistDeviceModule,
     BetaFirmwareDeviceModule,
     SpacesModule,

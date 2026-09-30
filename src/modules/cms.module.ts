@@ -1,3 +1,4 @@
+import { HassModule } from './hass.module';
 import { MqttAuthModule } from './mqtt-auth.module';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -48,6 +49,7 @@ import {
 @Module({
   imports: [
     MqttAuthModule,
+    HassModule,
     ConfigModule,
     DailyTotalsModule,
     PassportModule.register({ defaultStrategy: 'admin-jwt' }),

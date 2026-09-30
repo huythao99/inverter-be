@@ -1,5 +1,10 @@
 import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { DeviceViewerService } from './device-viewer.service';
+import {
+  HASS_STATE_ROOT,
+  hassEnabled,
+  hassPrefixFor,
+} from '../hass/hass-discovery';
 import { InjectModel } from '@nestjs/mongoose';
 import { ConfigService } from '@nestjs/config';
 import { Model } from 'mongoose';
@@ -8,22 +13,6 @@ import {
   MqttCredential,
   MqttCredentialDocument,
 } from '../models/mqtt-credential.schema';
-
-export interface HAMqttConfig {
-  broker: string;
-  port: number;
-  username: string;
-  password: string;
-  ssl: boolean;
-  discoveryPrefix: string;
-  stateTopicPrefix: string;
-  devices: Array<{
-    deviceId: string;
-    deviceName: string;
-    stateTopic: string;
-    availabilityTopic: string;
-  }>;
-}
 
 /**
  * Topics the shared legacy device account (MQTT_LEGACY_USERNAME, "giabao") may
@@ -45,9 +34,6 @@ export function legacyTopicAllowed(topic: string): boolean {
 export class MqttAuthService implements OnModuleInit {
   private readonly logger = new Logger(MqttAuthService.name);
   private readonly encryptionKey: string;
-  private readonly mqttBroker: string;
-  private readonly mqttPort: number;
-  private readonly statePrefix: string;
   private readonly superusers: string[];
   private readonly superuserPassword: string;
   // Shared account baked into old firmware/app builds. Enabled only when
@@ -64,15 +50,6 @@ export class MqttAuthService implements OnModuleInit {
     this.encryptionKey = this.configService.get<string>(
       'MQTT_AUTH_SECRET',
       'K8mN2pQ7vX4bE9fH3gJ6kL1mP5sT8wZ2',
-    );
-    this.mqttBroker = this.configService.get<string>(
-      'MQTT_BROKER_HOST',
-      'giabao-inverter.com',
-    );
-    this.mqttPort = this.configService.get<number>('MQTT_BROKER_PORT', 1883);
-    this.statePrefix = this.configService.get<string>(
-      'HA_STATE_PREFIX',
-      'inverter_ha',
     );
     // Superusers can read/write all topics (comma-separated list)
     const superuserList = this.configService.get<string>(
@@ -100,6 +77,20 @@ export class MqttAuthService implements OnModuleInit {
         `MQTT_LEGACY_USERNAME "${this.legacyUsername}" is also in MQTT_SUPERUSERS: it keeps full access`,
       );
     }
+  }
+
+  // lastUsedAt of an 'ha' account = "Home Assistant is connected". Written at
+  // most once a minute per account (ACL checks come per topic/message).
+  private readonly haTouched = new Map<string, number>();
+  private touchHa(id: string): void {
+    const now = Date.now();
+    if (now - (this.haTouched.get(id) ?? 0) < 60_000) return;
+    this.haTouched.set(id, now);
+    if (this.haTouched.size > 5000) this.haTouched.clear();
+    this.mqttCredentialModel
+      .updateOne({ _id: id }, { lastUsedAt: new Date() })
+      .exec()
+      .catch(() => {});
   }
 
   private isLegacy(username: string): boolean {
@@ -344,9 +335,10 @@ export class MqttAuthService implements OnModuleInit {
       .exec();
 
     // If exists for different user, add random suffix
-    const finalUsername = existing
-      ? `${mqttUsername}_${crypto.randomBytes(2).toString('hex')}`
-      : mqttUsername;
+    const finalUsername =
+      existing && existing.userId !== userId
+        ? `${mqttUsername}_${crypto.randomBytes(2).toString('hex')}`
+        : mqttUsername;
 
     const credential = await this.mqttCredentialModel.findOneAndUpdate(
       { userId, kind: 'ha' },
@@ -507,25 +499,21 @@ export class MqttAuthService implements OnModuleInit {
       return false;
     }
 
-    // Allow reading homeassistant discovery topics (everyone can read)
-    if (topic.startsWith('homeassistant/') && access !== 'write') {
-      return true;
-    }
-
-    // Allow reading/writing user's own topics
-    // inverter_ha/{userId}/...
-    const userTopicPrefix = `${this.statePrefix}/${userId}/`;
-    if (topic.startsWith(userTopicPrefix)) {
-      // For write access, only allow /set/ topics
-      if (access === 'write') {
-        return topic.includes('/set/');
-      }
-      return true;
-    }
-
-    // Allow bridge topics (read only)
-    if (topic.startsWith(`${this.statePrefix}/bridge/`) && access !== 'write') {
-      return true;
+    // Home Assistant (kind 'ha', phase 1): read-only. Its own discovery
+    // prefix (gti_<id>/...) and its own state topics (inverter_ha/<uid>/...).
+    // Nothing is writable; a "+" or "#" can never widen the uid part because
+    // both prefixes end with an explicit "/".
+    if (kind === 'ha') {
+      // Switched off server-wide: still accepted at login (a refused login
+      // makes Home Assistant retry in a loop), but nothing is readable.
+      if (!hassEnabled()) return false;
+      this.touchHa(String(credential._id));
+      if (access === 'write') return false;
+      const own = [
+        `${hassPrefixFor(credential.mqttUsername)}/`,
+        `${HASS_STATE_ROOT}/${userId}/`,
+      ];
+      if (own.some((p) => topic.startsWith(p))) return true;
     }
 
     this.logger.debug(
@@ -534,68 +522,28 @@ export class MqttAuthService implements OnModuleInit {
     return false;
   }
 
-  /**
-   * Add a device to user's allowed list
-   */
-  async addAllowedDevice(userId: string, deviceId: string): Promise<void> {
-    await this.mqttCredentialModel.updateOne(
-      { userId, kind: 'ha' },
-      {
-        $addToSet: { allowedDevices: deviceId },
-        $set: { updatedAt: new Date() },
-      },
-    );
-  }
-
-  /**
-   * Remove a device from user's allowed list
-   */
-  async removeAllowedDevice(userId: string, deviceId: string): Promise<void> {
-    await this.mqttCredentialModel.updateOne(
-      { userId, kind: 'ha' },
-      {
-        $pull: { allowedDevices: deviceId },
-        $set: { updatedAt: new Date() },
-      },
-    );
-  }
-
-  /**
-   * Get Home Assistant MQTT configuration for a user
-   */
-  async getHAConfig(
+  /** The Home Assistant account of a user, enabled or not. */
+  async getHaCredential(
     userId: string,
-    devices?: Array<{ deviceId: string; deviceName: string }>,
-  ): Promise<HAMqttConfig | null> {
-    const credential = await this.getOrCreateCredentials(userId);
+  ): Promise<MqttCredentialDocument | null> {
+    return this.mqttCredentialModel.findOne({ userId, kind: 'ha' }).exec();
+  }
 
-    if (!credential) {
-      return null;
+  /** Plain password of an account (shown to its owner only). */
+  revealPassword(cred: Pick<MqttCredential, 'mqttPasswordEncrypted'>): string {
+    return this.decryptPassword(cred.mqttPasswordEncrypted);
+  }
+
+  /** Turn the Home Assistant account on (created on first use). */
+  async enableHa(userId: string): Promise<MqttCredentialDocument> {
+    const cred = await this.getHaCredential(userId);
+    if (!cred) return this.generateCredentials(userId);
+    if (!cred.isActive) {
+      cred.isActive = true;
+      cred.updatedAt = new Date();
+      await cred.save();
     }
-
-    const password = this.decryptPassword(credential.mqttPasswordEncrypted);
-
-    const deviceConfigs = (devices || []).map((device) => ({
-      deviceId: device.deviceId,
-      deviceName: device.deviceName,
-      stateTopic: `${this.statePrefix}/${userId}/${device.deviceId}/state`,
-      availabilityTopic: `${this.statePrefix}/${userId}/${device.deviceId}/availability`,
-    }));
-
-    // User-specific discovery prefix
-    const shortUserId = userId.substring(0, 8);
-    const userDiscoveryPrefix = `homeassistant_${shortUserId}`;
-
-    return {
-      broker: this.mqttBroker,
-      port: this.mqttPort,
-      username: credential.mqttUsername,
-      password,
-      ssl: false,
-      discoveryPrefix: userDiscoveryPrefix,
-      stateTopicPrefix: `${this.statePrefix}/${userId}`,
-      devices: deviceConfigs,
-    };
+    return cred;
   }
 
   /**
@@ -627,74 +575,6 @@ export class MqttAuthService implements OnModuleInit {
     return this.mqttCredentialModel
       .findOne({ mqttUsername: username, isActive: true })
       .exec();
-  }
-
-  /**
-   * Generate password file content for Mosquitto
-   * Format: username:password_hash (one per line)
-   *
-   * Note: Mosquitto uses PBKDF2-SHA512 for password hashing.
-   * This generates a format that can be used with `mosquitto_passwd -U`
-   */
-  async generatePasswordFileContent(): Promise<string> {
-    const credentials = await this.mqttCredentialModel
-      .find({ isActive: true })
-      .exec();
-
-    const lines: string[] = [];
-    for (const cred of credentials) {
-      const password = this.decryptPassword(cred.mqttPasswordEncrypted);
-      // Format: username:password (plain text - run mosquitto_passwd -U to hash)
-      lines.push(`${cred.mqttUsername}:${password}`);
-    }
-
-    return lines.join('\n');
-  }
-
-  /**
-   * Generate ACL file content for Mosquitto
-   * Format:
-   *   user <username>
-   *   topic read <pattern>
-   *   topic write <pattern>
-   */
-  async generateAclFileContent(): Promise<string> {
-    const credentials = await this.mqttCredentialModel
-      .find({ isActive: true })
-      .exec();
-
-    const lines: string[] = [
-      '# Auto-generated ACL file by NestJS',
-      '# Do not edit manually - changes will be overwritten',
-      '',
-      '# Allow all users to read bridge status',
-      `pattern read ${this.statePrefix}/bridge/#`,
-      '',
-    ];
-
-    for (const cred of credentials) {
-      const shortUserId = cred.userId.substring(0, 8);
-      const userDiscoveryPrefix = `homeassistant_${shortUserId}`;
-
-      lines.push(`# User: ${cred.userId}`);
-      lines.push(`user ${cred.mqttUsername}`);
-      // Read own discovery topics (user-specific)
-      lines.push(`topic read ${userDiscoveryPrefix}/#`);
-      // Read own state topics
-      lines.push(`topic read ${this.statePrefix}/${cred.userId}/#`);
-      // Write only to set topics
-      lines.push(`topic write ${this.statePrefix}/${cred.userId}/+/set/#`);
-      lines.push('');
-    }
-
-    return lines.join('\n');
-  }
-
-  /**
-   * Get all credentials for admin use
-   */
-  async getAllCredentials(): Promise<MqttCredentialDocument[]> {
-    return this.mqttCredentialModel.find({ isActive: true }).exec();
   }
 
   /**

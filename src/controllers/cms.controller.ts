@@ -1,3 +1,4 @@
+import { HassBridgeService } from '../hass/hass-bridge.service';
 import {
   Controller,
   Get,
@@ -68,6 +69,7 @@ import {
 @Controller('api/cms')
 export class CmsController {
   constructor(
+    private readonly hassBridge: HassBridgeService,
     private readonly cmsService: CmsService,
     private readonly blacklistDeviceService: BlacklistDeviceService,
     private readonly betaFirmwareDeviceService: BetaFirmwareDeviceService,
@@ -530,6 +532,13 @@ export class CmsController {
   @UseGuards(AdminGuard)
   async getMqttConfig() {
     return this.cmsService.getMqttConfig();
+  }
+
+  // Home Assistant: enabled accounts, connected now, messages last minute.
+  @Get('hass/stats')
+  @UseGuards(AdminGuard)
+  async getHassStats() {
+    return this.hassBridge.stats();
   }
 
   // ==================== Blacklist Devices ====================

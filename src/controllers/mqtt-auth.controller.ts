@@ -3,21 +3,15 @@ import {
   Controller,
   Get,
   Post,
-  Param,
   Body,
   HttpCode,
   HttpStatus,
   HttpException,
+  GoneException,
   Logger,
   UseGuards,
 } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
 import { MqttAuthService } from '../services/mqtt-auth.service';
-import {
-  InverterDevice,
-  InverterDeviceDocument,
-} from '../models/inverter-device.schema';
 
 interface ValidateRequestDto {
   username: string;
@@ -34,89 +28,19 @@ interface AclRequestDto {
 export class MqttAuthController {
   private readonly logger = new Logger(MqttAuthController.name);
 
-  constructor(
-    private readonly mqttAuthService: MqttAuthService,
-    @InjectModel(InverterDevice.name)
-    private inverterDeviceModel: Model<InverterDeviceDocument>,
-  ) {}
+  constructor(private readonly mqttAuthService: MqttAuthService) {}
 
-  /**
-   * Get MQTT configuration for Home Assistant
-   * GET /api/mqtt-auth/config/:userId
-   */
+  // These two routes had no authentication (anyone could read or reset a
+  // user's Home Assistant password from a uid). Replaced by the signed-in
+  // api/user/hass endpoints.
   @Get('config/:userId')
-  async getConfig(@Param('userId') userId: string) {
-    // Get user's devices
-    const devices = await this.inverterDeviceModel
-      .find({ userId })
-      .select('deviceId deviceName')
-      .lean()
-      .exec();
-
-    const deviceList = devices.map((d) => ({
-      deviceId: d.deviceId,
-      deviceName: d.deviceName,
-    }));
-
-    const config = await this.mqttAuthService.getHAConfig(userId, deviceList);
-
-    if (!config) {
-      return {
-        success: false,
-        error: 'Failed to generate MQTT configuration',
-      };
-    }
-
-    return {
-      success: true,
-      data: {
-        ...config,
-        setupInstructions: {
-          step1: 'Open Home Assistant',
-          step2: 'Go to Settings → Devices & Services',
-          step3: 'Click "Add Integration" and search for "MQTT"',
-          step4: 'Enter the broker, port, username, and password below',
-          step5: 'Your inverter devices will appear automatically!',
-        },
-      },
-    };
+  getConfig() {
+    throw new GoneException('Use /api/user/hass');
   }
 
-  /**
-   * Regenerate MQTT password
-   * POST /api/mqtt-auth/regenerate/:userId
-   */
   @Post('regenerate/:userId')
-  async regeneratePassword(@Param('userId') userId: string) {
-    const credential = await this.mqttAuthService.regeneratePassword(userId);
-
-    if (!credential) {
-      return {
-        success: false,
-        error: 'Failed to regenerate password',
-      };
-    }
-
-    // Get updated config
-    const devices = await this.inverterDeviceModel
-      .find({ userId })
-      .select('deviceId deviceName')
-      .lean()
-      .exec();
-
-    const deviceList = devices.map((d) => ({
-      deviceId: d.deviceId,
-      deviceName: d.deviceName,
-    }));
-
-    const config = await this.mqttAuthService.getHAConfig(userId, deviceList);
-
-    return {
-      success: true,
-      message:
-        'Password regenerated successfully. Please update Home Assistant with the new credentials.',
-      data: config,
-    };
+  regeneratePassword() {
+    throw new GoneException('Use /api/user/hass');
   }
 
   /**
