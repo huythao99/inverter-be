@@ -15,6 +15,25 @@ import { MqttService } from './mqtt.service';
 import { RedisDailyTotalsService } from './redis-daily-totals.service';
 import { DailyTotalsService } from './daily-totals.service';
 
+/**
+ * 10-number frames: the last two values are the energy of ONE ~3 s interval
+ * (the backend used to count exactly one frame per 3 s). Scale a frame by the
+ * time really elapsed since the previous counted frame, so a skipped frame is
+ * made up by the next one. Gaps over 10 s (offline, reconnect) count as one
+ * normal interval: nothing is extrapolated over an outage.
+ */
+export const ENERGY_FRAME_MS = 3000;
+export const ENERGY_MAX_GAP_MS = 10000;
+export function energyFrameWeight(
+  prevAt: number | undefined,
+  now: number,
+): number {
+  if (prevAt === undefined) return 1;
+  const gap = now - prevAt;
+  if (gap <= 0 || gap > ENERGY_MAX_GAP_MS) return 1;
+  return gap / ENERGY_FRAME_MS;
+}
+
 @Injectable()
 export class InverterDataService implements OnModuleDestroy {
   private lastProcessed = new Map<
@@ -67,6 +86,8 @@ export class InverterDataService implements OnModuleDestroy {
   // Upper bound of a single inverter's power, used to reject impossible
   // odometer jumps. Generous on purpose: it only has to catch garbage values.
   private readonly MAX_DEVICE_KW = 50;
+  // 10-number format: time of the last frame whose energy was accumulated.
+  private lastEnergyAt = new Map<string, number>();
   private readonly ODOMETER_JUMP_MARGIN_KWH = 1;
 
   constructor(
@@ -479,13 +500,29 @@ export class InverterDataService implements OnModuleDestroy {
       return;
     }
 
+    // 8-number frames (old STM32 boards: no energy fields) are kept above for
+    // display only: they never add to the day's energy.
+    if (parts.length < 10) return;
+
     // 10-number format: accumulate last 2 values into Redis
     const { totalA, totalA2 } = this.parseTotalsFromValue(valueString);
 
     if (totalA >= 15000 || totalA2 >= 8000) return;
 
-    const currentTotalA = (Number.isNaN(totalA) ? 0 : totalA) / 1000000;
-    const currentTotalA2 = (Number.isNaN(totalA2) ? 0 : totalA2) / 1000000;
+    // Weight by the real time since the previous accumulated frame, so frames
+    // dropped by the MQTT rate limit / dedup (or 2 s vs 4 s gaps caused by the
+    // ESP32's 1 s publish tick) no longer lose or add energy.
+    const prevAt = this.lastEnergyAt.get(deviceKey);
+    if (this.lastEnergyAt.size > this.MAX_MEMORY_ENTRIES) {
+      this.lastEnergyAt.clear();
+    }
+    this.lastEnergyAt.set(deviceKey, now);
+    const weight = energyFrameWeight(prevAt, now);
+
+    const currentTotalA =
+      ((Number.isNaN(totalA) ? 0 : totalA) / 1000000) * weight;
+    const currentTotalA2 =
+      ((Number.isNaN(totalA2) ? 0 : totalA2) / 1000000) * weight;
 
     const existing = this.dailyTotalsMap.get(deviceKey);
     if (existing) {

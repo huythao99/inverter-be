@@ -13,6 +13,18 @@ import {
   BlacklistChangedPayload,
 } from './blacklist-device.service';
 
+/** Telemetry frame with fewer than 10 numbers ("value":"a#b#...#h"). */
+export function isShortFrame(message: string): boolean {
+  const key = '"value":"';
+  const start = message.indexOf(key);
+  if (start === -1) return false;
+  const end = message.indexOf('"', start + key.length);
+  if (end === -1) return false;
+  const value = message.substring(start + key.length, end);
+  if (!value) return false;
+  return value.split('#').length < 10;
+}
+
 @Injectable()
 export class MqttService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MqttService.name);
@@ -183,7 +195,13 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
 
     // Separate rate-limit buckets for data and device-info messages, so a
     // device-info message can never swallow the next data frame.
-    const deviceKey = `${isInverter ? 'data' : 'dev'}:${currentUid}-${wifiSsid}`;
+    // 8-number frames (old STM32 boards, display only, no energy) get their
+    // own bucket: they must never take the slot of a 10-number frame, whose
+    // energy would then be lost.
+    const messageStr = message.toString();
+    const shortFrame =
+      isInverter && topicParts[3] === 'data' && isShortFrame(messageStr);
+    const deviceKey = `${isInverter ? 'data' : 'dev'}${shortFrame ? '8' : ''}:${currentUid}-${wifiSsid}`;
 
     // Rate limit per device (see DEVICE_RATE_LIMIT_MS): one frame per ~3s
     // whether the ESP32 publishes every 1s (new) or every 3s (old firmware).
@@ -202,8 +220,6 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         }
       }
     }
-
-    const messageStr = message.toString();
 
     if (isInverter && topicParts[3] === 'data') {
       void this.handleInverterMessage(currentUid, wifiSsid, 'data', messageStr);
