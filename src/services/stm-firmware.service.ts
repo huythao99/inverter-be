@@ -24,6 +24,7 @@ import {
 } from '../models/inverter-device.schema';
 import { MqttService } from './mqtt.service';
 import { SpacesService } from './spaces.service';
+import { SpacesCleanupService } from './spaces-cleanup.service';
 import { BetaFirmwareDeviceService } from './beta-firmware-device.service';
 import { FIRMWARE_BASE_URL, compareFirmwareVersions } from './firmware.service';
 
@@ -181,6 +182,7 @@ export class StmFirmwareService {
     private readonly mqttService: MqttService,
     private readonly betaFirmwareDeviceService: BetaFirmwareDeviceService,
     private readonly spaces: SpacesService,
+    private readonly cleanup: SpacesCleanupService,
     configService: ConfigService,
   ) {
     // First ESP32 firmware that implements STM32 FOTA (set when released).
@@ -485,7 +487,21 @@ export class StmFirmwareService {
   async remove(id: string) {
     const fw = await this.stmFirmwareModel.findByIdAndDelete(id).lean().exec();
     if (!fw) throw new NotFoundException('STM32 firmware not found');
-    return { message: 'Deleted' };
+    // Files uploaded by this server (conventional URL) go later, so a board
+    // that is being flashed right now can finish its download.
+    const ours = fw.url === this.defaultBinUrl(fw.product, fw.version);
+    const dir = `${this.spacesPrefix}/${fw.product}/${fw.version}`;
+    const scheduled =
+      ours &&
+      (await this.cleanup.schedule('stm', fw.product, fw.version, [
+        `${dir}/app.bin`,
+        `${dir}/app.json`,
+      ]));
+    return {
+      message: scheduled
+        ? `Deleted - files removed from Spaces in ~${this.cleanup.delayMinutes} min`
+        : 'Deleted',
+    };
   }
 
   /** app.json, or null when it is optional (default URL) and missing. */

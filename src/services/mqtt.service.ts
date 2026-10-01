@@ -13,6 +13,12 @@ import {
   BlacklistChangedPayload,
 } from './blacklist-device.service';
 
+/** 10-number frame (its last two numbers = energy of this frame). */
+export function isEnergyFrame(value: string): boolean {
+  const n = value.split('#').length;
+  return n === 10 || n === 11; // 11 = trailing '#'
+}
+
 /** Telemetry frame with fewer than 10 numbers ("value":"a#b#...#h"). */
 export function isShortFrame(message: string): boolean {
   const key = '"value":"';
@@ -201,10 +207,26 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     const messageStr = message.toString();
     const shortFrame =
       isInverter && topicParts[3] === 'data' && isShortFrame(messageStr);
+
+    // 10-number frames carry the energy of THAT frame (already scaled by the
+    // STM32): every one of them must be added, whatever the frame rate (1 s
+    // to 10 s). So their energy goes out on its own event BEFORE the rate
+    // limit below, which only thins the display/storage path.
+    if (isInverter && topicParts[3] === 'data') {
+      const value = this.extractStringValue(messageStr, '"value":"');
+      if (value && isEnergyFrame(value)) {
+        this.eventEmitter.emit('inverter.energy.received', {
+          currentUid,
+          wifiSsid,
+          value,
+        });
+      }
+    }
     const deviceKey = `${isInverter ? 'data' : 'dev'}${shortFrame ? '8' : ''}:${currentUid}-${wifiSsid}`;
 
-    // Rate limit per device (see DEVICE_RATE_LIMIT_MS): one frame per ~3s
-    // whether the ESP32 publishes every 1s (new) or every 3s (old firmware).
+    // Rate limit per device (see DEVICE_RATE_LIMIT_MS): one frame per ~3s for
+    // display / storage / CMS. Energy of 10-number frames is not affected
+    // (inverter.energy.received above).
     const now = Date.now();
     const lastProcessed = this.messageHandlers.get(deviceKey);
     if (lastProcessed && now - lastProcessed < this.DEVICE_RATE_LIMIT_MS) {

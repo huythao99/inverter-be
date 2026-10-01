@@ -16,22 +16,22 @@ import { RedisDailyTotalsService } from './redis-daily-totals.service';
 import { DailyTotalsService } from './daily-totals.service';
 
 /**
- * 10-number frames: the last two values are the energy of ONE ~3 s interval
- * (the backend used to count exactly one frame per 3 s). Scale a frame by the
- * time really elapsed since the previous counted frame, so a skipped frame is
- * made up by the next one. Gaps over 10 s (offline, reconnect) count as one
- * normal interval: nothing is extrapolated over an outage.
+ * Energy (kWh) of one 10-number frame: its last two numbers are the energy of
+ * that frame, already scaled by the STM32 (unit 1e-6 kWh). Null when the frame
+ * is not a 10-number one or the values are implausible.
  */
-export const ENERGY_FRAME_MS = 3000;
-export const ENERGY_MAX_GAP_MS = 10000;
-export function energyFrameWeight(
-  prevAt: number | undefined,
-  now: number,
-): number {
-  if (prevAt === undefined) return 1;
-  const gap = now - prevAt;
-  if (gap <= 0 || gap > ENERGY_MAX_GAP_MS) return 1;
-  return gap / ENERGY_FRAME_MS;
+export function energyOfFrame(
+  value: string,
+): { totalA: number; totalA2: number } | null {
+  if (!value || typeof value !== 'string') return null;
+  const parts = value.split('#');
+  if (parts.length > 0 && parts[parts.length - 1].trim() === '') parts.pop();
+  if (parts.length !== 10) return null;
+  const a = parseFloat(parts[8]);
+  const a2 = parseFloat(parts[9]);
+  if (!isFinite(a) || !isFinite(a2)) return null;
+  if (a < 0 || a2 < 0 || a >= 15000 || a2 >= 8000) return null;
+  return { totalA: a / 1000000, totalA2: a2 / 1000000 };
 }
 
 @Injectable()
@@ -86,8 +86,9 @@ export class InverterDataService implements OnModuleDestroy {
   // Upper bound of a single inverter's power, used to reject impossible
   // odometer jumps. Generous on purpose: it only has to catch garbage values.
   private readonly MAX_DEVICE_KW = 50;
-  // 10-number format: time of the last frame whose energy was accumulated.
-  private lastEnergyAt = new Map<string, number>();
+  // 10-number energy: last frame added per device, to drop an exact repeat
+  // of the same message (never two different frames).
+  private lastEnergyFrame = new Map<string, { value: string; at: number }>();
   private readonly ODOMETER_JUMP_MARGIN_KWH = 1;
 
   constructor(
@@ -389,28 +390,6 @@ export class InverterDataService implements OnModuleDestroy {
     return { deletedCount: result.deletedCount };
   }
 
-  private parseTotalsFromValue(value: string): {
-    totalA: number;
-    totalA2: number;
-  } {
-    if (!value || typeof value !== 'string') return { totalA: 0, totalA2: 0 };
-    try {
-      const parts = value.split('#');
-      if (parts.length >= 10) {
-        // Lấy 2 phần tử cuối và ép kiểu số ngay
-        const totalA = parseFloat(parts[parts.length - 2]) || 0;
-        const totalA2 = parseFloat(parts[parts.length - 1]) || 0;
-        return {
-          totalA: isFinite(totalA) ? totalA : 0,
-          totalA2: isFinite(totalA2) ? totalA2 : 0,
-        };
-      }
-    } catch {
-      // Parsing failed, return defaults
-    }
-    return { totalA: 0, totalA2: 0 };
-  }
-
   @OnEvent('inverter.data.received')
   handleInverterDataReceived(payload: {
     currentUid: string;
@@ -500,40 +479,40 @@ export class InverterDataService implements OnModuleDestroy {
       return;
     }
 
-    // 8-number frames (old STM32 boards: no energy fields) are kept above for
-    // display only: they never add to the day's energy.
-    if (parts.length < 10) return;
+    // 8- and 10-number frames end here: 10-number energy is added for EVERY
+    // frame in handleInverterEnergy() (not rate limited), 8-number frames
+    // carry no energy.
+  }
 
-    // 10-number format: accumulate last 2 values into Redis
-    const { totalA, totalA2 } = this.parseTotalsFromValue(valueString);
-
-    if (totalA >= 15000 || totalA2 >= 8000) return;
-
-    // Weight by the real time since the previous accumulated frame, so frames
-    // dropped by the MQTT rate limit / dedup (or 2 s vs 4 s gaps caused by the
-    // ESP32's 1 s publish tick) no longer lose or add energy.
-    const prevAt = this.lastEnergyAt.get(deviceKey);
-    if (this.lastEnergyAt.size > this.MAX_MEMORY_ENTRIES) {
-      this.lastEnergyAt.clear();
+  @OnEvent('inverter.energy.received')
+  handleInverterEnergy(payload: {
+    currentUid: string;
+    wifiSsid: string;
+    value: string;
+  }) {
+    const energy = energyOfFrame(payload.value);
+    if (!energy) return;
+    const deviceKey = `${payload.currentUid}:${payload.wifiSsid}`;
+    const now = Date.now();
+    // Same message delivered twice (MQTT retry): add it once. Two real frames
+    // are at least ~1 s apart, so 500 ms never drops one.
+    const last = this.lastEnergyFrame.get(deviceKey);
+    if (last && last.value === payload.value && now - last.at < 500) return;
+    if (this.lastEnergyFrame.size > this.MAX_MEMORY_ENTRIES) {
+      this.lastEnergyFrame.clear();
     }
-    this.lastEnergyAt.set(deviceKey, now);
-    const weight = energyFrameWeight(prevAt, now);
-
-    const currentTotalA =
-      ((Number.isNaN(totalA) ? 0 : totalA) / 1000000) * weight;
-    const currentTotalA2 =
-      ((Number.isNaN(totalA2) ? 0 : totalA2) / 1000000) * weight;
+    this.lastEnergyFrame.set(deviceKey, { value: payload.value, at: now });
 
     const existing = this.dailyTotalsMap.get(deviceKey);
     if (existing) {
-      existing.totalA += currentTotalA;
-      existing.totalA2 += currentTotalA2;
+      existing.totalA += energy.totalA;
+      existing.totalA2 += energy.totalA2;
     } else {
       this.dailyTotalsMap.set(deviceKey, {
         userId: payload.currentUid,
         deviceId: payload.wifiSsid,
-        totalA: currentTotalA,
-        totalA2: currentTotalA2,
+        totalA: energy.totalA,
+        totalA2: energy.totalA2,
       });
     }
   }

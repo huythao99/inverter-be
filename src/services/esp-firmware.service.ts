@@ -16,6 +16,7 @@ import {
   EspFirmwareDocument,
 } from '../models/esp-firmware.schema';
 import { SpacesService } from './spaces.service';
+import { SpacesCleanupService } from './spaces-cleanup.service';
 import {
   ESP_PRODUCTS,
   EspFirmwareChannel,
@@ -63,6 +64,7 @@ export class EspFirmwareService implements OnModuleInit, OnModuleDestroy {
     @InjectModel(EspFirmware.name)
     private readonly model: Model<EspFirmwareDocument>,
     private readonly spaces: SpacesService,
+    private readonly cleanup: SpacesCleanupService,
     config: ConfigService,
   ) {
     this.baseUrl = config
@@ -296,9 +298,20 @@ export class EspFirmwareService implements OnModuleInit, OnModuleDestroy {
         `v${fw.version} is being rolled out - finish or abort the rollout first`,
       );
     }
-    // The file stays on Spaces (a device may still be downloading it).
     await this.model.deleteOne({ _id: fw._id }).exec();
-    return { message: 'Deleted' };
+    // The file goes later (a device may still be downloading it), and only
+    // when it is the one this server uploaded (conventional URL).
+    const key = `${this.spacesPrefix}/${fw.product}/${fw.version}/firmware.bin`;
+    const ours =
+      fw.url === `${this.baseUrl}/${fw.product}/${fw.version}/firmware.bin`;
+    const scheduled =
+      ours &&
+      (await this.cleanup.schedule('esp', fw.product, fw.version, [key]));
+    return {
+      message: scheduled
+        ? `Deleted - file removed from Spaces in ~${this.cleanup.delayMinutes} min`
+        : 'Deleted',
+    };
   }
 
   /** ESP32 app image + the version string the firmware reports. */

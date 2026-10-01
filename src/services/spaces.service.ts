@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  DeleteObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
   S3Client,
@@ -116,5 +117,13 @@ export class SpacesService {
       }),
     );
     this.logger.log(`Uploaded ${key} (${body.length} B)`);
+  }
+
+  /** Remove an object (a missing key is not an error). */
+  async deleteObject(key: string): Promise<void> {
+    await this.requireClient().send(
+      new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
+    );
+    this.logger.log(`Deleted ${key}`);
   }
 }
