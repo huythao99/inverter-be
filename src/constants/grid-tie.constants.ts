@@ -7,3 +7,7 @@ export const GRID_TIE_OFF_VALUE = '99001001';
 // "off" command on its next REST pull (setting/schedule). The real stored value
 // is preserved in MongoDB and served again if the device is un-blacklisted.
 export const BLACKLIST_OFF_VALUE = '80001011';
+
+// Emitted by InverterSettingService when a device's grid-tie status changes:
+// { userId, deviceId, off }.
+export const GRID_TIE_CHANGED_EVENT = 'inverter.gridtie.changed';

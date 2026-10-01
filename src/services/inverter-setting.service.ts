@@ -10,7 +10,10 @@ import {
 import { MqttService } from './mqtt.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AUDIT_EVENT, AuditContext, AuditEvent } from '../utils/audit-context';
-import { GRID_TIE_OFF_VALUE } from '../constants/grid-tie.constants';
+import {
+  GRID_TIE_CHANGED_EVENT,
+  GRID_TIE_OFF_VALUE,
+} from '../constants/grid-tie.constants';
 
 @Injectable()
 export class InverterSettingService {
@@ -184,7 +187,20 @@ export class InverterSettingService {
     await this.cacheManager.del(this.getCacheKey(userId, deviceId));
 
     if (result) {
+      // Both: the firmware applies schedule over setting, so a schedule window
+      // that is active right now must be re-fetched too (else the device keeps
+      // the old value until its 60 s backstop poll).
       void this.mqttService.emitSyncSettings(userId, deviceId);
+      void this.mqttService.emitSyncSchedule(userId, deviceId);
+      // GridTieSyncService publishes the dedicated retained cmd/grid-tie and
+      // re-syncs a device whose telemetry does not show the OFF values.
+      if (wasOff !== off) {
+        this.eventEmitter.emit(GRID_TIE_CHANGED_EVENT, {
+          userId,
+          deviceId,
+          off,
+        });
+      }
       this.eventEmitter.emit(AUDIT_EVENT, {
         ctx: ctx ?? { source: 'system' },
         userId,

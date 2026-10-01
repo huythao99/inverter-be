@@ -567,6 +567,21 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     await this.publish(`inverter/${userId}/${deviceId}/cmd/schedule`, {});
   }
 
+  // Grid-tie ("hoà lưới") on/off, retained so a device that is offline gets it
+  // on reconnect. Firmware that knows the topic applies OFF above share,
+  // schedule and setting (below the blacklist lock); older firmware ignores it.
+  async emitGridTie(
+    userId: string,
+    deviceId: string,
+    off: boolean,
+  ): Promise<void> {
+    await this.publishWithRetain(
+      `inverter/${userId}/${deviceId}/cmd/grid-tie`,
+      { off },
+      true,
+    );
+  }
+
   // Remote reboot. QoS 1 and NOT retained: a retained restart would reboot the
   // device again every time it reconnects. The firmware also ignores commands
   // older than ~2 minutes (via `ts`) and during the first seconds after boot.

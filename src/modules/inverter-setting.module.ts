@@ -10,6 +10,7 @@ import {
 import { RedisConfig } from '../config/redis.config';
 import { GridTieService } from '../services/grid-tie.service';
 import { ShareService } from '../services/share.service';
+import { GridTieSyncService } from '../services/grid-tie-sync.service';
 import { ShareGroup, ShareGroupSchema } from '../models/share-group.schema';
 import { InverterDataModule } from './inverter-data.module';
 import {
@@ -32,6 +33,7 @@ import {
     RedisConfig,
     GridTieService,
     ShareService,
+    GridTieSyncService,
   ],
   exports: [InverterSettingService, GridTieService, ShareService],
 })
