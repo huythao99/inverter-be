@@ -32,10 +32,9 @@ export function energyOfFrame(
   if (!isFinite(a) || !isFinite(a2)) return null;
   // Out-of-range magnitude = corrupted frame (serial noise).
   if (Math.abs(a) >= 15000 || Math.abs(a2) >= 8000) return null;
-  // Negative values are energy too (e.g. "-7.88"): added as they are, so
-  // they lower the day's total.
+  // A negative value (e.g. "-7.88") is energy too: its absolute value is added.
   if (a === 0 && a2 === 0) return null;
-  return { totalA: a / 1000000, totalA2: a2 / 1000000 };
+  return { totalA: Math.abs(a) / 1000000, totalA2: Math.abs(a2) / 1000000 };
 }
 
 @Injectable()

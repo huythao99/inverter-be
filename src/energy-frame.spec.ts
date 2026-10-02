@@ -27,15 +27,15 @@ describe('10-number energy frames', () => {
     expect(energyOfFrame('1#2#3#4#5#6#7#8#x#0')).toBeNull();
   });
 
-  it('negative values are added as they are', () => {
+  it('negative values are added as their absolute value', () => {
     const e = energyOfFrame(
       '238.61#50.02#8.11#40.55#314.42#41.00#37.50#1600.00#874.59#-7.88',
     )!;
     expect(e.totalA).toBeCloseTo(874.59 / 1e6, 12);
-    expect(e.totalA2).toBeCloseTo(-7.88 / 1e6, 12);
+    expect(e.totalA2).toBeCloseTo(7.88 / 1e6, 12);
     const both = energyOfFrame('1#2#3#4#5#6#7#8#-5#-1')!;
-    expect(both.totalA).toBeCloseTo(-5 / 1e6, 12);
-    expect(both.totalA2).toBeCloseTo(-1 / 1e6, 12);
+    expect(both.totalA).toBeCloseTo(5 / 1e6, 12);
+    expect(both.totalA2).toBeCloseTo(1 / 1e6, 12);
     expect(energyOfFrame('1#2#3#4#5#6#7#8#-20000#0')).toBeNull();
     expect(energyOfFrame('1#2#3#4#5#6#7#8#0#0')).toBeNull();
   });
