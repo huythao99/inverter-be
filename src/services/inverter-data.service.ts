@@ -30,7 +30,11 @@ export function energyOfFrame(
   const a = parseFloat(parts[8]);
   const a2 = parseFloat(parts[9]);
   if (!isFinite(a) || !isFinite(a2)) return null;
-  if (a < 0 || a2 < 0 || a >= 15000 || a2 >= 8000) return null;
+  // Out-of-range magnitude = corrupted frame (serial noise).
+  if (Math.abs(a) >= 15000 || Math.abs(a2) >= 8000) return null;
+  // Negative values are energy too (e.g. "-7.88"): added as they are, so
+  // they lower the day's total.
+  if (a === 0 && a2 === 0) return null;
   return { totalA: a / 1000000, totalA2: a2 / 1000000 };
 }
 
