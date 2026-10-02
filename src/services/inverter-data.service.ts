@@ -457,13 +457,14 @@ export class InverterDataService implements OnModuleDestroy {
 
       const rawA = parseFloat(parts[10]);
       const rawA2 = parseFloat(parts[11]);
-      // Both odometers must be valid: writing 0 for a bad field would become
+      // Both odometers must be numbers: writing 0 for a bad field would become
       // the next day's baseline and create a huge fake daily value.
-      if (!isFinite(rawA) || !isFinite(rawA2) || rawA < 0 || rawA2 < 0) {
+      if (!isFinite(rawA) || !isFinite(rawA2)) {
         return;
       }
-      const totalA = rawA / 1000; // Wh -> kWh
-      const totalA2 = rawA2 / 1000;
+      // Negative value: its absolute value is used (same rule as 10-number).
+      const totalA = Math.abs(rawA) / 1000; // Wh -> kWh
+      const totalA2 = Math.abs(rawA2) / 1000;
 
       if (!this.isPlausibleOdometer(deviceKey, totalA, totalA2, now)) return;
 
