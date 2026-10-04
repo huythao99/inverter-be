@@ -7,7 +7,6 @@ import Devices from './pages/Devices';
 import DeviceDetail from './pages/DeviceDetail';
 import Chargers from './pages/Chargers';
 import ChargerDetail from './pages/ChargerDetail';
-import Users from './pages/Users';
 import Blacklist from './pages/Blacklist';
 import BetaFirmware from './pages/BetaFirmware';
 import StmFirmware from './pages/StmFirmware';
@@ -68,7 +67,6 @@ function AppRoutes() {
         <Route path="/devices/:userId/:deviceId" element={<DeviceDetail />} />
         <Route path="/chargers" element={<Chargers />} />
         <Route path="/chargers/:userId/:deviceId" element={<ChargerDetail />} />
-        <Route path="/users" element={<Users />} />
         <Route path="/blacklist" element={<Blacklist />} />
         <Route path="/beta-firmware" element={<BetaFirmware />} />
         <Route path="/esp-firmware" element={<EspFirmware />} />

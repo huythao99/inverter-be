@@ -1,155 +1,56 @@
-import {
-  Controller,
-  Get,
-  Body,
-  Param,
-  Delete,
-  Query,
-  HttpStatus,
-  HttpException,
-} from '@nestjs/common';
-import { DailyTotalsService } from '../services/daily-totals.service';
+import { Controller, Delete, Get, GoneException, Logger } from '@nestjs/common';
 
+/**
+ * Old unauthenticated energy API (`?userId=` in the query): anyone knowing a
+ * user id could read that user's energy, or wipe the current month with
+ * DELETE clear-current-month. Closed: every route answers 410.
+ *
+ * App builds since 2026-09-25 and the web app use the authenticated
+ * /api/user/devices/:deviceId/(day-totals|monthly-totals|chart-data|
+ * calculate-daily-totals) instead. Hits are logged (at most once a minute,
+ * with a count) to see how many old app builds are still around.
+ */
 @Controller('api/daily-totals')
 export class DailyTotalsController {
-  constructor(private readonly dailyTotalsService: DailyTotalsService) {}
+  private readonly logger = new Logger(DailyTotalsController.name);
+  private hits = 0;
+  private lastLogAt = 0;
+
+  private gone(route: string): never {
+    this.hits++;
+    const now = Date.now();
+    if (now - this.lastLogAt > 60_000) {
+      this.logger.warn(
+        `closed legacy API called: ${route} (${this.hits} call(s) since last log)`,
+      );
+      this.lastLogAt = now;
+      this.hits = 0;
+    }
+    throw new GoneException('Use /api/user/devices/:deviceId/...');
+  }
 
   @Get('by-day')
-  async getDailyTotalsByDay(
-    @Query('userId') userId: string,
-    @Query('deviceId') deviceId?: string,
-    @Query('date') date?: string,
-  ) {
-    if (!userId) {
-      throw new HttpException('userId is required', HttpStatus.BAD_REQUEST);
-    }
-
-    const records = await this.dailyTotalsService.getDailyTotalsByDay(
-      userId,
-      deviceId,
-      date,
-    );
-
-    // Sum all records to get total values
-    const totalA = records.reduce((sum, record) => sum + record.totalA, 0);
-    const totalA2 = records.reduce((sum, record) => sum + record.totalA2, 0);
-
-    return {
-      userId,
-      deviceId: deviceId || 'all',
-      date: date || 'all',
-      totalA,
-      totalA2,
-      count: records.length,
-    };
+  getDailyTotalsByDay(): never {
+    return this.gone('GET by-day');
   }
 
   @Get('monthly')
-  async getMonthlyTotals(
-    @Query('userId') userId: string,
-    @Query('deviceId') deviceId?: string,
-    @Query('year') year?: string,
-    @Query('month') month?: string,
-  ) {
-    if (!userId) {
-      throw new HttpException('userId is required', HttpStatus.BAD_REQUEST);
-    }
-
-    let yearNum: number | undefined;
-    let monthNum: number | undefined;
-
-    if (year) {
-      yearNum = parseInt(year, 10);
-      if (isNaN(yearNum) || yearNum < 2000 || yearNum > 3000) {
-        throw new HttpException('Invalid year format', HttpStatus.BAD_REQUEST);
-      }
-    }
-
-    if (month) {
-      monthNum = parseInt(month, 10);
-      if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-        throw new HttpException(
-          'Invalid month format (1-12)',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-    }
-
-    const monthlyData = await this.dailyTotalsService.getMonthlyTotals(
-      userId,
-      deviceId,
-      yearNum,
-      monthNum,
-    );
-
-    // Return only totalA and totalA2
-    return {
-      totalA: monthlyData.totalA,
-      totalA2: monthlyData.totalA2,
-    };
+  getMonthlyTotals(): never {
+    return this.gone('GET monthly');
   }
 
   @Get('monthly/chart')
-  async getMonthlyChartData(
-    @Query('userId') userId: string,
-    @Query('deviceId') deviceId?: string,
-    @Query('year') year?: string,
-    @Query('month') month?: string,
-  ) {
-    if (!userId) {
-      throw new HttpException('userId is required', HttpStatus.BAD_REQUEST);
-    }
-
-    let yearNum: number | undefined;
-    let monthNum: number | undefined;
-
-    if (year) {
-      yearNum = parseInt(year, 10);
-      if (isNaN(yearNum) || yearNum < 2000 || yearNum > 3000) {
-        throw new HttpException('Invalid year format', HttpStatus.BAD_REQUEST);
-      }
-    }
-
-    if (month) {
-      monthNum = parseInt(month, 10);
-      if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-        throw new HttpException(
-          'Invalid month format (1-12)',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-    }
-
-    return this.dailyTotalsService.getMonthlyChartData(
-      userId,
-      deviceId,
-      yearNum,
-      monthNum,
-    );
+  getMonthlyChart(): never {
+    return this.gone('GET monthly/chart');
   }
 
   @Delete('clear-current-month')
-  async clearCurrentMonthTotals(
-    @Query('userId') userId: string,
-    @Query('deviceId') deviceId?: string,
-  ) {
-    if (!userId) {
-      throw new HttpException('userId is required', HttpStatus.BAD_REQUEST);
-    }
-
-    await this.dailyTotalsService.clearCurrentMonthTotals(userId, deviceId);
-
-    return { message: 'Current month totals cleared successfully' };
+  clearCurrentMonthTotals(): never {
+    return this.gone('DELETE clear-current-month');
   }
 
   @Get('calculate/:userId/:deviceId')
-  async calculateTotalsByUserAndDevice(
-    @Param('userId') userId: string,
-    @Param('deviceId') deviceId: string,
-  ) {
-    return this.dailyTotalsService.calculateTotalsByUserAndDevice(
-      userId,
-      deviceId,
-    );
+  calculateTotalsByUserAndDevice(): never {
+    return this.gone('GET calculate');
   }
 }

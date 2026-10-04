@@ -11,6 +11,8 @@ import { InverterSettingModule } from './inverter-setting.module';
 import { InverterScheduleModule } from './inverter-schedule.module';
 import { MqttAuthModule } from './mqtt-auth.module';
 import { EnergyReportService } from '../services/energy-report.service';
+import { EnergyOverviewService } from '../services/energy-overview.service';
+import { ShareOverviewService } from '../services/share-overview.service';
 
 @Module({
   imports: [
@@ -24,7 +26,13 @@ import { EnergyReportService } from '../services/energy-report.service';
     MqttAuthModule,
   ],
   controllers: [UserApiController],
-  providers: [FirebaseConfig, FirebaseStrategy, EnergyReportService],
+  providers: [
+    FirebaseConfig,
+    FirebaseStrategy,
+    EnergyReportService,
+    EnergyOverviewService,
+    ShareOverviewService,
+  ],
   exports: [FirebaseConfig],
 })
 export class UserApiModule {}

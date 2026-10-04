@@ -368,20 +368,6 @@ export const getBulkFirmwareUpdateDevices = (
   });
 
 // Users
-export const getUsers = (params?: {
-  page?: number;
-  limit?: number;
-  search?: string;
-  isActive?: boolean;
-}) => api.get('/users', { params });
-
-export const getUser = (userId: string) => api.get(`/users/${userId}`);
-
-export const updateUser = (userId: string, data: { isActive?: boolean; allowedDevices?: string[] }) =>
-  api.put(`/users/${userId}`, data);
-
-export const deleteUser = (userId: string) => api.delete(`/users/${userId}`);
-
 // Blacklist
 export const getBlacklist = () => api.get('/blacklist');
 

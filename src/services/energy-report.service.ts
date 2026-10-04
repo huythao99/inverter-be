@@ -102,6 +102,31 @@ export class EnergyReportService {
     return { year: Math.floor(idx / 12), month: (idx % 12) + 1 };
   }
 
+  /** Flat price in use (VND/kWh) for mode 'flat', null for the EVN tiers. */
+  flatPriceFor(mode: TariffMode, flatPriceIn?: number): number | null {
+    if (mode !== 'flat') return null;
+    const p = Number(flatPriceIn);
+    return p > 0 && p < 20000 ? p : this.flatDefault;
+  }
+
+  /** Bill (VND, VAT included) for `kwh` of one meter in one month. */
+  billFor(kwh: number, flatPrice: number | null): number {
+    return flatPrice !== null
+      ? Math.round(kwh * flatPrice * (1 + this.vat / 100))
+      : billForKwh(kwh, this.tiers, this.vat);
+  }
+
+  tariffInfo(mode: TariffMode, flatPrice: number | null) {
+    return {
+      mode,
+      tiers: this.tiers,
+      flatPrice,
+      vatPercent: this.vat,
+      source:
+        mode === 'flat' ? 'Giá điện công tơ trả trước' : EVN_TARIFF_SOURCE,
+    };
+  }
+
   async report(
     userId: string,
     deviceId: string,

@@ -60,10 +60,8 @@ import { AdminLoginDto } from '../dto/admin-login.dto';
 import { UartDebugDto } from '../dto/uart-debug.dto';
 import {
   DeviceQueryDto,
-  UserQueryDto,
   AnalyticsQueryDto,
   UpdateDeviceDto,
-  UpdateUserDto,
 } from '../dto/cms-query.dto';
 
 @Controller('api/cms')
@@ -489,35 +487,6 @@ export class CmsController {
   @HttpCode(HttpStatus.OK)
   async restartDevice(@Param('id') id: string) {
     return this.deviceRestartService.restartById(id, 'cms');
-  }
-
-  // ==================== User Management ====================
-
-  @Get('users')
-  @UseGuards(AdminGuard)
-  async getUsers(@Query() query: UserQueryDto) {
-    return this.cmsService.getUsers(query);
-  }
-
-  @Get('users/:userId')
-  @UseGuards(AdminGuard)
-  async getUser(@Param('userId') userId: string) {
-    return this.cmsService.getUserById(userId);
-  }
-
-  @Put('users/:userId')
-  @UseGuards(AdminGuard)
-  async updateUser(
-    @Param('userId') userId: string,
-    @Body() updateDto: UpdateUserDto,
-  ) {
-    return this.cmsService.updateUser(userId, updateDto);
-  }
-
-  @Delete('users/:userId')
-  @UseGuards(AdminGuard)
-  async deleteUser(@Param('userId') userId: string) {
-    return this.cmsService.deleteUser(userId);
   }
 
   // ==================== Settings ====================

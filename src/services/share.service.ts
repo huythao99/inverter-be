@@ -527,6 +527,59 @@ export class ShareService implements OnModuleInit, OnModuleDestroy {
     return saved;
   }
 
+  /**
+   * Live state of a group for the app's overview: each member's latest frame
+   * (null when offline), grid-tie status and the watts the group gives it
+   * right now (null when the group is off or the member is not active).
+   * Read-only: nothing is published.
+   */
+  async groupLive(
+    userId: string,
+    groupId: string,
+  ): Promise<{
+    group: ShareGroup;
+    poolWatts: number;
+    members: Array<{
+      deviceId: string;
+      ratio: number;
+      value: string | null;
+      gridTieOff: boolean;
+      assignedWatts: number | null;
+    }>;
+  } | null> {
+    const group = await this.getGroup(userId, groupId);
+    if (!group) return null;
+    const members = await Promise.all(
+      group.members.map(async (m) => {
+        const [value, gridTieOff] = await Promise.all([
+          this.freshValue(userId, m.deviceId),
+          this.gridTieService.isOff(userId, m.deviceId),
+        ]);
+        return { deviceId: m.deviceId, ratio: m.ratio, value, gridTieOff };
+      }),
+    );
+    let poolWatts = 0;
+    const active: ShareSlot[] = [];
+    for (const m of members) {
+      if (m.gridTieOff || !m.value) continue;
+      poolWatts += this.parsePEnergy(m.value);
+      active.push({
+        deviceId: m.deviceId,
+        ratio: m.ratio,
+        cap: SHARE_MAX_WATTS,
+      });
+    }
+    const assigned = group.enabled ? allocateShare(poolWatts, active) : {};
+    return {
+      group,
+      poolWatts: Math.round(poolWatts),
+      members: members.map((m) => ({
+        ...m,
+        assignedWatts: assigned[m.deviceId] ?? null,
+      })),
+    };
+  }
+
   async listGroups(userId: string): Promise<ShareGroup[]> {
     return this.shareGroupModel.find({ userId }).lean().exec();
   }

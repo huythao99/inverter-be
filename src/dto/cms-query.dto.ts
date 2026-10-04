@@ -38,21 +38,6 @@ export class DeviceQueryDto extends PaginationQueryDto {
   search?: string;
 }
 
-export class UserQueryDto extends PaginationQueryDto {
-  @IsOptional()
-  @IsString()
-  userId?: string;
-
-  @IsOptional()
-  @IsString()
-  search?: string;
-
-  @IsOptional()
-  @Transform(({ value }) => value === 'true' || value === true)
-  @IsBoolean()
-  isActive?: boolean;
-}
-
 export class AnalyticsQueryDto {
   @IsOptional()
   @IsDateString()
@@ -79,17 +64,6 @@ export class UpdateDeviceDto {
   @IsOptional()
   @IsString()
   firmwareVersion?: string;
-}
-
-export class UpdateUserDto {
-  @IsOptional()
-  @Transform(({ value }) => value === 'true' || value === true)
-  @IsBoolean()
-  isActive?: boolean;
-
-  @IsOptional()
-  @IsString({ each: true })
-  allowedDevices?: string[];
 }
 
 export class UpdateSettingsDto {

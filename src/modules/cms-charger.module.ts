@@ -1,3 +1,5 @@
+import { FirebaseConfig } from '../config/firebase.config';
+import { UserEmailService } from '../services/user-email.service';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { CmsChargerController } from '../controllers/cms-charger.controller';
@@ -27,6 +29,6 @@ import { MqttAuthModule } from './mqtt-auth.module';
     MqttAuthModule,
   ],
   controllers: [CmsChargerController],
-  providers: [CmsChargerService],
+  providers: [CmsChargerService, FirebaseConfig, UserEmailService],
 })
 export class CmsChargerModule {}

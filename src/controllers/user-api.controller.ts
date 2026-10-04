@@ -40,6 +40,8 @@ import { DeviceRestartService } from '../services/device-restart.service';
 import { MqttService } from '../services/mqtt.service';
 import { MqttAuthService } from '../services/mqtt-auth.service';
 import { EnergyReportService } from '../services/energy-report.service';
+import { EnergyOverviewService } from '../services/energy-overview.service';
+import { ShareOverviewService } from '../services/share-overview.service';
 import { AuditLogService } from '../services/audit-log.service';
 import { StmFirmwareService } from '../services/stm-firmware.service';
 import { BetaFirmwareDeviceService } from '../services/beta-firmware-device.service';
@@ -72,6 +74,8 @@ export class UserApiController {
     private readonly stmFirmwareService: StmFirmwareService,
     private readonly mqttAuthService: MqttAuthService,
     private readonly energyReportService: EnergyReportService,
+    private readonly energyOverviewService: EnergyOverviewService,
+    private readonly shareOverviewService: ShareOverviewService,
     private readonly auditLogService: AuditLogService,
   ) {}
 
@@ -341,6 +345,17 @@ export class UserApiController {
       throw new NotFoundException(`Share group ${groupId} not found`);
     }
     return group;
+  }
+
+  // Overview of one group: each member's live frame, the watts the group
+  // assigns it right now and its energy today.
+  @Get('share-groups/:groupId/overview')
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
+  getShareGroupOverview(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('groupId') groupId: string,
+  ) {
+    return this.shareOverviewService.overview(user.uid, groupId);
   }
 
   // Update a share group (members / ratios / enabled)
@@ -703,6 +718,27 @@ export class UserApiController {
       before,
       limit,
     });
+  }
+
+  // Account overview: all the inverters the user owns (shared devices are not
+  // counted). Today live, `year`/`month` by day, `year` by month, lifetime.
+  // tariff=flat (&price=) for prepaid meters.
+  @Get('energy-overview')
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
+  getEnergyOverview(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Query('year') year?: number,
+    @Query('month') month?: number,
+    @Query('tariff') tariff?: string,
+    @Query('price') price?: number,
+  ) {
+    return this.energyOverviewService.overview(
+      user.uid,
+      year,
+      month,
+      tariff === 'flat' ? 'flat' : 'tiered',
+      price,
+    );
   }
 
   // Monthly energy report: kWh -> money with the EVN household tariff.

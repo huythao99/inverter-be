@@ -1,3 +1,5 @@
+import { FirebaseConfig } from '../config/firebase.config';
+import { UserEmailService } from '../services/user-email.service';
 import { HassModule } from './hass.module';
 import { MqttAuthModule } from './mqtt-auth.module';
 import { Module } from '@nestjs/common';
@@ -94,6 +96,8 @@ import {
   controllers: [CmsController],
   providers: [
     CmsService,
+    FirebaseConfig,
+    UserEmailService,
     AdminJwtStrategy,
     CmsGateway,
     RedisConfig,

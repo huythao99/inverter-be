@@ -44,6 +44,11 @@ interface DeviceDetailData {
     firmwareVersion: string;
     updatedAt: string;
   } | null;
+  owner?: {
+    email: string | null;
+    displayName: string | null;
+    phoneNumber: string | null;
+  };
   data: {
     value: string;
     parsedValue?: any;
@@ -422,6 +427,13 @@ const DeviceDetail: React.FC = () => {
         <div className="header-content">
           <h1>{data?.device?.deviceName || deviceId}</h1>
           <p className="device-info">
+            {(data?.owner?.email || data?.owner?.phoneNumber) && (
+              <>
+                <span>{data?.owner?.email || data?.owner?.phoneNumber}</span>
+                {data?.owner?.displayName && <span> ({data.owner.displayName})</span>}
+                {' · '}
+              </>
+            )}
             <span className="monospace">{userId}</span> /{' '}
             <span className="monospace">{deviceId}</span>
             <span

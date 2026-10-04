@@ -28,6 +28,8 @@ import {
 interface Device {
   _id: string;
   userId: string;
+  /** Owner's Firebase email, resolved by the backend (null if unknown). */
+  ownerEmail?: string | null;
   deviceId: string;
   deviceName: string;
   firmwareVersion: string;
@@ -249,7 +251,7 @@ const Devices: React.FC = () => {
           <Search size={20} />
           <input
             type="text"
-            placeholder="Search by device ID, name, or user ID..."
+            placeholder="Search by device ID, name, user ID or email..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -454,7 +456,7 @@ const Devices: React.FC = () => {
                   </th>
                   <th>Device ID</th>
                   <th>Device Name</th>
-                  <th>User ID</th>
+                  <th>User</th>
                   <th>Firmware</th>
                   <th>Last Updated</th>
                   <th>Actions</th>
@@ -491,7 +493,15 @@ const Devices: React.FC = () => {
                         device.deviceName
                       )}
                     </td>
-                    <td className="monospace">{device.userId}</td>
+<td>
+                      {device.ownerEmail && <div>{device.ownerEmail}</div>}
+                      <div
+                        className="monospace"
+                        style={{ fontSize: 12, opacity: device.ownerEmail ? 0.6 : 1 }}
+                      >
+                        {device.userId}
+                      </div>
+                    </td>
                     <td>
                       {editingId === device._id ? (
                         <input

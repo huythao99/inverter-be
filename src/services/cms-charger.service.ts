@@ -21,6 +21,7 @@ import { decodeChargerValue } from '../utils/charger-value.util';
 // A charger is "online" if it sent a message within this window.
 const ONLINE_WINDOW_MS = 15000;
 
+import { UserEmailService } from './user-email.service';
 @Injectable()
 export class CmsChargerService {
   constructor(
@@ -32,6 +33,7 @@ export class CmsChargerService {
     private chargerSettingModel: Model<ChargerSettingDocument>,
     private chargerFirmwareService: ChargerFirmwareService,
     private mqttAuthService: MqttAuthService,
+    private userEmailService: UserEmailService,
   ) {}
 
   async getDashboard(): Promise<{
@@ -75,7 +77,7 @@ export class CmsChargerService {
   }
 
   async getDevices(query: DeviceQueryDto): Promise<{
-    data: ChargerDevice[];
+    data: Array<ChargerDevice & { ownerEmail: string | null }>;
     total: number;
     page: number;
     totalPages: number;
@@ -92,9 +94,11 @@ export class CmsChargerService {
         { deviceName: { $regex: search, $options: 'i' } },
         { userId: { $regex: search, $options: 'i' } },
       ];
+      const uid = await this.userEmailService.uidForSearch(search);
+      if (uid) filter.$or.push({ userId: uid });
     }
 
-    const [data, total] = await Promise.all([
+    const [rows, total] = await Promise.all([
       this.chargerDeviceModel
         .find(filter)
         .sort({ updatedAt: -1 })
@@ -104,6 +108,7 @@ export class CmsChargerService {
         .exec(),
       this.chargerDeviceModel.countDocuments(filter).exec(),
     ]);
+    const data = await this.userEmailService.withOwners(rows);
 
     return { data, total, page, totalPages: Math.ceil(total / limit) };
   }

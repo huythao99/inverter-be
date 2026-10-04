@@ -21,6 +21,8 @@ import {
 interface Charger {
   _id: string;
   userId: string;
+  /** Owner's Firebase email, resolved by the backend (null if unknown). */
+  ownerEmail?: string | null;
   deviceId: string;
   deviceName: string;
   firmwareVersion: string;
@@ -128,7 +130,7 @@ const Chargers: React.FC = () => {
           <Search size={20} />
           <input
             type="text"
-            placeholder="Search by device ID, name, or user ID..."
+            placeholder="Search by device ID, name, user ID or email..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -149,7 +151,7 @@ const Chargers: React.FC = () => {
                 <tr>
                   <th>Device ID</th>
                   <th>Device Name</th>
-                  <th>User ID</th>
+                  <th>User</th>
                   <th>Firmware</th>
                   <th>Last Updated</th>
                   <th>Actions</th>
@@ -173,7 +175,15 @@ const Chargers: React.FC = () => {
                         charger.deviceName
                       )}
                     </td>
-                    <td className="monospace">{charger.userId}</td>
+<td>
+                      {charger.ownerEmail && <div>{charger.ownerEmail}</div>}
+                      <div
+                        className="monospace"
+                        style={{ fontSize: 12, opacity: charger.ownerEmail ? 0.6 : 1 }}
+                      >
+                        {charger.userId}
+                      </div>
+                    </td>
                     <td>
                       {editingId === charger._id ? (
                         <input
