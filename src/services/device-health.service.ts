@@ -97,6 +97,35 @@ export interface HealthSummary {
   generatedAt: string;
 }
 
+const STM_SETTINGS = ['auto', 'new', 'legacy'] as const;
+
+/**
+ * "mode=legacy src=auto detected=legacy setting=0" (firmware STM_PROTOCOL
+ * log). setting is the NVS value: 0 auto, 1 new, 2 legacy.
+ */
+export function parseStmProtocolLog(msg: string): {
+  mode: 'new' | 'legacy';
+  detected: 'new' | 'legacy';
+  src: string;
+  setting: 'auto' | 'new' | 'legacy';
+} | null {
+  const v: Record<string, string> = {};
+  for (const part of msg.split(/\s+/)) {
+    const i = part.indexOf('=');
+    if (i > 0) v[part.slice(0, i)] = part.slice(i + 1);
+  }
+  const lm = (x?: string) =>
+    x === 'legacy' ? 'legacy' : x === 'new' ? 'new' : null;
+  const mode = lm(v.mode);
+  if (!mode) return null;
+  return {
+    mode,
+    detected: lm(v.detected) ?? mode,
+    src: (v.src ?? '').slice(0, 20),
+    setting: STM_SETTINGS[Number(v.setting)] ?? 'auto',
+  };
+}
+
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 
@@ -257,6 +286,11 @@ export class DeviceHealthService implements OnModuleInit, OnModuleDestroy {
         }
         break;
       }
+      case 'STM_PROTOCOL': {
+        const p = parseStmProtocolLog(msg);
+        if (p) set.stmProto = { ...p, at };
+        break;
+      }
       case 'OTA_PENDING_VERIFY':
         set.ota = { state: 'pending', at };
         break;
@@ -409,6 +443,18 @@ export class DeviceHealthService implements OnModuleInit, OnModuleDestroy {
     );
     this.cache = { at: now, rows };
     return rows;
+  }
+
+  /** Last STM_PROTOCOL report of one device (null = never reported). */
+  async stmProto(
+    userId: string,
+    deviceId: string,
+  ): Promise<DeviceHealth['stmProto']> {
+    const h = await this.healthModel
+      .findOne({ userId, deviceId }, { stmProto: 1 })
+      .lean()
+      .exec();
+    return h?.stmProto ?? null;
   }
 
   async one(userId: string, deviceId: string): Promise<HealthRow | null> {

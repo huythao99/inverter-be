@@ -51,6 +51,14 @@ export class InverterDevice {
     at: Date;
   } | null;
 
+  // ESP32 <-> STM32 link protocol, set from the CMS and pushed to the device
+  // (retained inverter/{uid}/{dev}/cmd/stm-protocol {"mode"}):
+  //   auto   = the ESP32 detects it at boot (default),
+  //   new    = "*VVVV@PPPP#" straight on the UART,
+  //   legacy = first boards: STM_START/STM_READY handshake + raw 8 digits.
+  @Prop({ type: String, enum: ['auto', 'new', 'legacy'], default: 'auto' })
+  stmProtocol: 'auto' | 'new' | 'legacy';
+
   @Prop({ default: Date.now })
   updatedAt: Date;
 }

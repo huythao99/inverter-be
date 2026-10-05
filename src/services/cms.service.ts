@@ -558,6 +558,64 @@ export class CmsService implements OnModuleInit {
    * firmware with cmd/uart-debug; older firmware ignores the command. The
    * CMS reads the lines itself over MQTT (cms_viewer can read inverter/#).
    */
+  /** ESP32 <-> STM32 link protocol setting of one device (by _id). */
+  async getStmProtocolSetting(id: string): Promise<{
+    userId: string;
+    deviceId: string;
+    setting: 'auto' | 'new' | 'legacy';
+  }> {
+    const device = await this.inverterDeviceModel
+      .findById(id, { userId: 1, deviceId: 1, stmProtocol: 1 })
+      .lean()
+      .exec();
+    if (!device) {
+      throw new NotFoundException(`Device with ID ${id} not found`);
+    }
+    return {
+      userId: device.userId,
+      deviceId: device.deviceId,
+      setting: device.stmProtocol ?? 'auto',
+    };
+  }
+
+  /**
+   * Save the link protocol and push it (retained) to the device. Firmware
+   * without the topic ignores it. `published` false = broker down: the value
+   * is saved, re-save once MQTT is back.
+   */
+  async setStmProtocol(
+    id: string,
+    mode: 'auto' | 'new' | 'legacy',
+  ): Promise<{
+    userId: string;
+    deviceId: string;
+    setting: 'auto' | 'new' | 'legacy';
+    published: boolean;
+  }> {
+    const device = await this.inverterDeviceModel
+      .findByIdAndUpdate(
+        id,
+        { $set: { stmProtocol: mode } },
+        { new: true, projection: { userId: 1, deviceId: 1 } },
+      )
+      .lean()
+      .exec();
+    if (!device) {
+      throw new NotFoundException(`Device with ID ${id} not found`);
+    }
+    const published = await this.mqttService.emitStmProtocol(
+      device.userId,
+      device.deviceId,
+      mode,
+    );
+    return {
+      userId: device.userId,
+      deviceId: device.deviceId,
+      setting: mode,
+      published,
+    };
+  }
+
   async setUartDebug(
     id: string,
     minutes: number,

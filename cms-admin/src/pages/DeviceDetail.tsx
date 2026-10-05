@@ -11,6 +11,7 @@ import {
 import VirtualList from '../components/VirtualList';
 import StmFirmwareCard from '../components/StmFirmwareCard';
 import UartDebugPanel from '../components/UartDebugPanel';
+import StmProtocolCard from '../components/StmProtocolCard';
 import { ActivityPanel, DeviceHealthPanel } from '../components/DevicePanels';
 import type { StmOtaLive } from '../components/StmFirmwareCard';
 import {
@@ -553,6 +554,7 @@ const DeviceDetail: React.FC = () => {
 
       {/* STM32 power board firmware */}
       {data?.device && <StmFirmwareCard deviceId={data.device._id} live={stmOta} />}
+      {data?.device && <StmProtocolCard deviceId={data.device._id} />}
 
       {/* Tabs */}
       <div className="tabs">

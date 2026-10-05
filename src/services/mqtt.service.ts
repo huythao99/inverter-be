@@ -582,6 +582,23 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
+  // ESP32 <-> STM32 link protocol override (auto | new | legacy). Retained so
+  // the device gets it on every reconnect; firmware keeps it in NVS. Returns
+  // false when the broker is not connected (nothing was sent).
+  async emitStmProtocol(
+    userId: string,
+    deviceId: string,
+    mode: 'auto' | 'new' | 'legacy',
+  ): Promise<boolean> {
+    if (!this.isConnected()) return false;
+    await this.publishWithRetain(
+      `inverter/${userId}/${deviceId}/cmd/stm-protocol`,
+      { mode },
+      true,
+    );
+    return true;
+  }
+
   // Remote reboot. QoS 1 and NOT retained: a retained restart would reboot the
   // device again every time it reconnects. The firmware also ignores commands
   // older than ~2 minutes (via `ts`) and during the first seconds after boot.

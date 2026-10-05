@@ -273,6 +273,27 @@ export const deleteStmFirmware = (id: string) => api.delete(`/stm-firmwares/${id
 
 export const getDeviceStm = (id: string) => api.get<DeviceStmInfo>(`/devices/${id}/stm`);
 
+// ESP32 <-> STM32 link protocol (auto-detected by the ESP32, or forced).
+export type StmProtocolSetting = 'auto' | 'new' | 'legacy';
+export interface StmProtocolInfo {
+  setting: StmProtocolSetting;
+  /** Last STM_PROTOCOL report of the device (null = never reported). */
+  reported: {
+    mode: 'new' | 'legacy';
+    detected: 'new' | 'legacy';
+    src: string;
+    setting: StmProtocolSetting;
+    at: string;
+  } | null;
+  published?: boolean;
+}
+
+export const getStmProtocol = (id: string) =>
+  api.get<StmProtocolInfo>(`/devices/${id}/stm-protocol`);
+
+export const setStmProtocol = (id: string, mode: StmProtocolSetting) =>
+  api.put<StmProtocolInfo>(`/devices/${id}/stm-protocol`, { mode });
+
 export const triggerStmUpdate = (id: string, force = false) =>
   api.post<{ success: boolean; targetVersion: string; crc32: string }>(
     `/devices/${id}/stm-update`,

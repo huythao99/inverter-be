@@ -58,6 +58,7 @@ import {
 const UPLOAD_LIMITS = { fileSize: 2 * 1024 * 1024, files: 2 };
 import { AdminLoginDto } from '../dto/admin-login.dto';
 import { UartDebugDto } from '../dto/uart-debug.dto';
+import { StmProtocolDto } from '../dto/stm-protocol.dto';
 import {
   DeviceQueryDto,
   AnalyticsQueryDto,
@@ -480,6 +481,30 @@ export class CmsController {
   @HttpCode(HttpStatus.OK)
   async setUartDebug(@Param('id') id: string, @Body() dto: UartDebugDto) {
     return this.cmsService.setUartDebug(id, dto.minutes);
+  }
+
+  // ESP32 <-> STM32 link protocol: setting (auto | new | legacy) + what the
+  // device last reported (STM_PROTOCOL log: mode in use, detected).
+  @Get('devices/:id/stm-protocol')
+  @UseGuards(AdminGuard)
+  async getStmProtocol(@Param('id') id: string) {
+    const s = await this.cmsService.getStmProtocolSetting(id);
+    const reported = await this.deviceHealthService.stmProto(
+      s.userId,
+      s.deviceId,
+    );
+    return { setting: s.setting, reported };
+  }
+
+  @Put('devices/:id/stm-protocol')
+  @UseGuards(AdminGuard)
+  async setStmProtocol(@Param('id') id: string, @Body() dto: StmProtocolDto) {
+    const r = await this.cmsService.setStmProtocol(id, dto.mode);
+    const reported = await this.deviceHealthService.stmProto(
+      r.userId,
+      r.deviceId,
+    );
+    return { setting: r.setting, published: r.published, reported };
   }
 
   @Post('devices/:id/restart')

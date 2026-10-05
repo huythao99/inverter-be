@@ -67,6 +67,16 @@ export class DeviceHealth {
   @Prop({ type: Object, default: null })
   ota: { state: 'pending' | 'confirmed'; at: Date } | null;
 
+  /** Last STM_PROTOCOL report: link mode in use and what the ESP32 detected. */
+  @Prop({ type: Object, default: null })
+  stmProto: {
+    mode: 'new' | 'legacy';
+    detected: 'new' | 'legacy';
+    src: string;
+    setting: 'auto' | 'new' | 'legacy';
+    at: Date;
+  } | null;
+
   @Prop({ type: Object, default: null })
   lastLog: { code: string; message: string; at: Date } | null;
 
