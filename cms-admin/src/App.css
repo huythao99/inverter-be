@@ -126,6 +126,10 @@ body {
 
 .main-content {
   flex: 1;
+  /* A flex item never shrinks below its content by default: without this a
+     wide table (even inside .table-container) stretched the page past the
+     phone screen and Safari zoomed the whole CMS out. */
+  min-width: 0;
   margin-left: 260px;
   padding: 24px;
   min-height: 100vh;
@@ -450,7 +454,10 @@ body {
   background: var(--bg-card);
   border-radius: 12px;
   box-shadow: var(--shadow);
-  overflow: hidden;
+  /* Wide tables scroll sideways inside their card instead of being cut. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
 .table-container h3 {
@@ -2262,4 +2269,17 @@ body {
   .health-panels { grid-template-columns: 1fr; }
   .rollout-card-head { flex-direction: column; }
   .rollout-actions .btn { flex: 1 1 100%; justify-content: center; }
+}
+
+/* Phones: every table scrolls sideways on its own (also the ones that are not
+   inside a .table-container), so the page itself never gets wider than the
+   screen. */
+@media (max-width: 768px) {
+  .data-table,
+  .bulk-table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
 }
