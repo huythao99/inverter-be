@@ -59,6 +59,10 @@ const UPLOAD_LIMITS = { fileSize: 2 * 1024 * 1024, files: 2 };
 import { AdminLoginDto } from '../dto/admin-login.dto';
 import { UartDebugDto } from '../dto/uart-debug.dto';
 import { StmProtocolDto } from '../dto/stm-protocol.dto';
+import { CmsGridTieDto } from '../dto/cms-grid-tie.dto';
+import { GridTieService } from '../services/grid-tie.service';
+import { MqttService } from '../services/mqtt.service';
+import { auditCtx } from '../utils/audit-context';
 import {
   DeviceQueryDto,
   AnalyticsQueryDto,
@@ -81,6 +85,8 @@ export class CmsController {
     private readonly auditLogService: AuditLogService,
     private readonly deviceHealthService: DeviceHealthService,
     private readonly firmwareRolloutService: FirmwareRolloutService,
+    private readonly gridTieService: GridTieService,
+    private readonly mqttService: MqttService,
   ) {}
 
   // ==================== Authentication ====================
@@ -505,6 +511,42 @@ export class CmsController {
       r.deviceId,
     );
     return { setting: r.setting, published: r.published, reported };
+  }
+
+  // Grid-tie ("hoà lưới") status of one device (by _id): DB value.
+  @Get('devices/:id/grid-tie')
+  @UseGuards(AdminGuard)
+  async getGridTie(@Param('id') id: string) {
+    const s = await this.cmsService.getStmProtocolSetting(id);
+    const off = await this.gridTieService.isOff(s.userId, s.deviceId);
+    return { off };
+  }
+
+  // Set grid-tie ON/OFF and ALWAYS re-publish the retained cmd/grid-tie,
+  // even when the DB value is unchanged: clears a stale retained OFF (and the
+  // OFF the firmware keeps in NVS) left from a dropped publish.
+  @Put('devices/:id/grid-tie')
+  @UseGuards(AdminGuard)
+  async setGridTie(
+    @Param('id') id: string,
+    @Body() dto: CmsGridTieDto,
+    @Request() req: any,
+  ) {
+    const s = await this.cmsService.getStmProtocolSetting(id);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    const admin = String(req?.user?.username ?? 'cms');
+    await this.gridTieService.setGridTie(
+      s.userId,
+      s.deviceId,
+      dto.off,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+      auditCtx(req, { source: 'cms', actor: admin, actorLabel: admin }),
+    );
+    const published = this.mqttService.isConnected();
+    if (published) {
+      await this.mqttService.emitGridTie(s.userId, s.deviceId, dto.off);
+    }
+    return { off: dto.off, published };
   }
 
   @Post('devices/:id/restart')

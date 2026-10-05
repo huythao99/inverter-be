@@ -1,6 +1,7 @@
 import { FirebaseConfig } from '../config/firebase.config';
 import { UserEmailService } from '../services/user-email.service';
 import { HassModule } from './hass.module';
+import { InverterSettingModule } from './inverter-setting.module';
 import { MqttAuthModule } from './mqtt-auth.module';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -52,6 +53,7 @@ import {
   imports: [
     MqttAuthModule,
     HassModule,
+    InverterSettingModule,
     ConfigModule,
     DailyTotalsModule,
     PassportModule.register({ defaultStrategy: 'admin-jwt' }),

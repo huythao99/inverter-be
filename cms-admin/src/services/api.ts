@@ -294,6 +294,13 @@ export const getStmProtocol = (id: string) =>
 export const setStmProtocol = (id: string, mode: StmProtocolSetting) =>
   api.put<StmProtocolInfo>(`/devices/${id}/stm-protocol`, { mode });
 
+// Grid-tie ("hoà lưới") of one device. PUT always re-publishes the retained
+// cmd/grid-tie (clears a stale OFF on the device).
+export const getGridTie = (id: string) => api.get<{ off: boolean }>(`/devices/${id}/grid-tie`);
+
+export const setGridTie = (id: string, off: boolean) =>
+  api.put<{ off: boolean; published: boolean }>(`/devices/${id}/grid-tie`, { off });
+
 export const triggerStmUpdate = (id: string, force = false) =>
   api.post<{ success: boolean; targetVersion: string; crc32: string }>(
     `/devices/${id}/stm-update`,
