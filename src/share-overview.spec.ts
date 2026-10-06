@@ -137,6 +137,41 @@ describe('share group overview', () => {
     expect(o.monthStart).toBe(month);
   });
 
+  it('grid of the group counted once: average per day, not a sum', async () => {
+    const today = todayKey();
+    const { week, month } = periodStarts(today);
+    const from = week < month ? week : month;
+    const rows = [
+      // same grid line: both members measured ~4 kWh that day
+      { deviceId: 'A', date: dayDate(from), totalA: 1, totalA2: 4 },
+      { deviceId: 'B', date: dayDate(from), totalA: 1, totalA2: 4.2 },
+    ];
+    const member = (deviceId: string, value: string | null) => ({
+      deviceId,
+      ratio: 1,
+      value,
+      gridTieOff: false,
+      assignedWatts: null,
+    });
+    const svc = setup(
+      {
+        group: { name: 'N', enabled: true },
+        poolWatts: 0,
+        members: [
+          member('A', '230#50#500#51#200#40#48#2000'),
+          member('B', '230#50#520#51#300#40#48#2000'),
+        ],
+      },
+      rows,
+    );
+    const o = await svc.overview('u', 'g');
+    const inMonth = from >= month && from < today;
+    expect(o.totals.gridPower).toBe(510); // avg(500, 520), not 1020
+    expect(o.totals.gridTiePower).toBe(500); // discharge still summed
+    expect(o.totals.todayGridKwh).toBe(1); // only A measured today
+    expect(o.totals.monthGridKwh).toBeCloseTo(1 + (inMonth ? 4.1 : 0), 2);
+  });
+
   it("404 for a group that is not the user's", async () => {
     await expect(setup(null).overview('u', 'g')).rejects.toThrow(
       NotFoundException,

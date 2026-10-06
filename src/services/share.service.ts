@@ -46,6 +46,36 @@ export function encodeShareWatts(watts: number): number {
   return w + 1000;
 }
 
+/**
+ * deviceId -> key of its "same grid line" cluster: the devices of a user's
+ * share groups (enabled or not; the wiring does not change when sharing is
+ * switched off), joined when groups overlap. Devices in no group are absent.
+ */
+export function gridClustersOf(
+  groups: Array<{ members: Array<{ deviceId: string }> }>,
+): Map<string, string> {
+  const parent = new Map<string, string>();
+  const find = (x: string): string => {
+    let r = x;
+    while (parent.get(r) !== r) r = parent.get(r)!;
+    parent.set(x, r);
+    return r;
+  };
+  for (const g of groups) {
+    const ids = (g.members ?? []).map((m) => m.deviceId).filter(Boolean);
+    if (ids.length < 2) continue;
+    for (const id of ids) if (!parent.has(id)) parent.set(id, id);
+    for (const id of ids.slice(1)) {
+      const a = find(ids[0]);
+      const b = find(id);
+      if (a !== b) parent.set(b, a);
+    }
+  }
+  const out = new Map<string, string>();
+  for (const id of parent.keys()) out.set(id, `grid:${find(id)}`);
+  return out;
+}
+
 /** Max discharge (W) from an 8-digit setting "VVVVPPPP" (PPPP = W + 1000). */
 export function decodePowerField(value?: string | null): number | null {
   if (!value || !/^\d{8}/.test(value)) return null;
@@ -358,6 +388,16 @@ export class ShareService implements OnModuleInit, OnModuleDestroy {
     return (
       (Number.isFinite(p) ? p : 0) + (Number.isFinite(energy) ? energy : 0)
     );
+  }
+
+  /** Same-grid-line clusters of a user's devices (see gridClustersOf). */
+  async gridClusters(userId: string): Promise<Map<string, string>> {
+    const groups = await this.shareGroupModel
+      .find({ userId }, { members: 1 })
+      .lean()
+      .maxTimeMS(5000)
+      .exec();
+    return gridClustersOf(groups);
   }
 
   // The enabled share group this device belongs to, if any.

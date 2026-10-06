@@ -3,6 +3,7 @@ import { DailyTotalsService } from './daily-totals.service';
 import { RedisDailyTotalsService } from './redis-daily-totals.service';
 import { InverterDeviceService } from './inverter-device.service';
 import { EnergyReportService, TariffMode } from './energy-report.service';
+import { ShareService } from './share.service';
 
 const GMT7_MS = 7 * 3600 * 1000;
 const round = (v: number, d = 2) => Math.round(v * 10 ** d) / 10 ** d;
@@ -66,19 +67,46 @@ export function gmt7DateKey(d: Date): string {
   return new Date(d.getTime() + GMT7_MS).toISOString().slice(0, 10);
 }
 
+/** deviceId -> billing / grid-line key (own id unless in a share cluster). */
+export type ClusterOf = (deviceId: string) => string;
+const ownId: ClusterOf = (id) => id;
+
 /**
- * Savings of every (device, month): bill(generated + grid) - bill(grid).
- * Each inverter is billed as its own meter, the same way as the per-device
- * energy report, so the account total equals the sum of the device reports.
- * Key: `${deviceId}|YYYY-MM`.
+ * Devices on the same grid line (share group members) all measure the same
+ * import: per cluster and day, the import counts once - the average of the
+ * members' readings that day. Each member keeps readings / n, so sums over
+ * the cluster give the average while every device stays listed.
+ */
+export function splitSharedGrid(
+  rows: DayRow[],
+  clusterOf: ClusterOf,
+): DayRow[] {
+  // Only members that measured something that day (an offline member's 0
+  // must not pull the average down).
+  const n = new Map<string, number>();
+  const key = (r: DayRow) => `${clusterOf(r.deviceId)}|${r.date}`;
+  for (const r of rows) {
+    if (r.a2 > 0) n.set(key(r), (n.get(key(r)) ?? 0) + 1);
+  }
+  return rows.map((r) => {
+    const k = n.get(key(r)) ?? 1;
+    return k > 1 && r.a2 > 0 ? { ...r, a2: r.a2 / k } : r;
+  });
+}
+
+/**
+ * Savings of every (meter, month): bill(generated + grid) - bill(grid).
+ * A meter is one inverter, or all the inverters of one grid line (share
+ * group): they sit behind the same electricity meter. Key: `${meter}|YYYY-MM`.
  */
 export function monthlySavings(
   rows: DayRow[],
   bill: (kwh: number) => number,
+  clusterOf: ClusterOf = ownId,
 ): Map<string, { a: number; savings: number }> {
   const sums = new Map<string, { a: number; a2: number }>();
   for (const r of rows) {
-    const k = `${r.deviceId}|${r.date.slice(0, 7)}`;
+    const k = `${clusterOf(r.deviceId)}|${r.date.slice(0, 7)}`;
     const s = sums.get(k) ?? { a: 0, a2: 0 };
     s.a += r.a;
     s.a2 += r.a2;
@@ -99,6 +127,7 @@ export function summarizePeriod(
   rows: DayRow[],
   names: Map<string, string>,
   savingsByMonth: Map<string, { a: number; savings: number }>,
+  clusterOf: ClusterOf = ownId,
 ): OverviewPeriod {
   const perDev = new Map<
     string,
@@ -121,7 +150,8 @@ export function summarizePeriod(
     let devSavings = 0;
     if (d) {
       for (const [m, a] of d.byMonth) {
-        const full = savingsByMonth.get(`${deviceId}|${m}`);
+        // The meter's savings, in proportion to this device's output.
+        const full = savingsByMonth.get(`${clusterOf(deviceId)}|${m}`);
         if (!full || full.a <= 0) continue;
         devSavings += full.savings * Math.min(1, a / full.a);
       }
@@ -172,6 +202,7 @@ export class EnergyOverviewService {
     private readonly redisTotals: RedisDailyTotalsService,
     private readonly devices: InverterDeviceService,
     private readonly energyReport: EnergyReportService,
+    private readonly share: ShareService,
   ) {}
 
   private toRows(
@@ -275,12 +306,17 @@ export class EnergyOverviewService {
     );
     current.push(...liveToday.values());
 
-    const rows = [...past, ...current];
+    // Share group members = one grid line: their grid import counts once.
+    const clusters = await this.share
+      .gridClusters(userId)
+      .catch(() => new Map<string, string>());
+    const clusterOf: ClusterOf = (id) => clusters.get(id) ?? id;
+    const rows = splitSharedGrid([...past, ...current], clusterOf);
     const flatPrice = this.energyReport.flatPriceFor(mode, flatPriceIn);
     const bill = (kwh: number) => this.energyReport.billFor(kwh, flatPrice);
-    const savings = monthlySavings(rows, bill);
+    const savings = monthlySavings(rows, bill, clusterOf);
     const sum = (filter: (r: DayRow) => boolean) =>
-      summarizePeriod(rows.filter(filter), names, savings);
+      summarizePeriod(rows.filter(filter), names, savings, clusterOf);
 
     const ym = `${year}-${String(month).padStart(2, '0')}`;
     const monthRows = rows.filter((r) => r.date.startsWith(ym));
@@ -309,6 +345,7 @@ export class EnergyOverviewService {
         yearRows.filter((r) => r.date.startsWith(p)),
         names,
         savings,
+        clusterOf,
       );
       return {
         month: i + 1,
@@ -332,10 +369,14 @@ export class EnergyOverviewService {
         year,
         month,
         partial: year === nowY && month === nowM,
-        ...summarizePeriod(monthRows, names, savings),
+        ...summarizePeriod(monthRows, names, savings, clusterOf),
         days,
       },
-      year: { year, ...summarizePeriod(yearRows, names, savings), months },
+      year: {
+        year,
+        ...summarizePeriod(yearRows, names, savings, clusterOf),
+        months,
+      },
       lifetime: { since, ...sum(() => true) },
     };
   }
