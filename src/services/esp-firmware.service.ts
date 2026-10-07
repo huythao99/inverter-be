@@ -29,6 +29,14 @@ import {
 } from './firmware.service';
 
 const VERSION_RE = /^\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+
+export interface ReleaseNote {
+  version: string;
+  /** Plain text, one change per line. */
+  notes: string;
+  /** Upload date (ISO), null when unknown. */
+  date: string | null;
+}
 const CHANNELS: EspFirmwareChannel[] = ['stable', 'beta'];
 
 // ESP32 app image: header magic, and the esp_app_desc_t magic right after the
@@ -138,6 +146,78 @@ export class EspFirmwareService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  // ---- Release notes (users) --------------------------------------------
+
+  private releaseCache = new Map<
+    EspProduct,
+    { at: number; rows: ReleaseNote[] }
+  >();
+  private readonly RELEASE_CACHE_MS = 60_000;
+
+  /**
+   * Builds of a product with release notes, newest first, up to `upTo`
+   * (the version this user's device is offered: a beta build above it is
+   * not shown to stable users). Cached 1 min.
+   */
+  async releaseNotes(
+    product: EspProduct,
+    upTo: string,
+    limit = 10,
+  ): Promise<ReleaseNote[]> {
+    let hit = this.releaseCache.get(product);
+    if (!hit || Date.now() - hit.at > this.RELEASE_CACHE_MS) {
+      const docs = await this.model
+        .find(
+          { product, releaseNotes: { $nin: [null, ''] } },
+          { version: 1, releaseNotes: 1, createdAt: 1 },
+        )
+        .lean()
+        .maxTimeMS(5000)
+        .exec();
+      const rows = docs
+        .map((d) => ({
+          version: d.version,
+          notes: (d.releaseNotes ?? '').trim(),
+          date: d.createdAt ? new Date(d.createdAt).toISOString() : null,
+        }))
+        .sort((a, b) => compareFirmwareVersions(b.version, a.version));
+      hit = { at: Date.now(), rows };
+      this.releaseCache.set(product, hit);
+    }
+    return hit.rows
+      .filter((r) => !upTo || compareFirmwareVersions(r.version, upTo) <= 0)
+      .slice(0, limit);
+  }
+
+  /** Release notes of one version ('' when none). */
+  async releaseNoteOf(product: EspProduct, version: string): Promise<string> {
+    if (!version) return '';
+    const rows = await this.releaseNotes(product, version, 1);
+    return rows[0]?.version === version ? rows[0].notes : '';
+  }
+
+  /** CMS: edit the internal note and / or the users' release notes. */
+  async updateNotes(
+    id: string,
+    dto: { notes?: string; releaseNotes?: string },
+  ) {
+    if (!/^[a-f0-9]{24}$/i.test(id)) {
+      throw new NotFoundException('ESP32 firmware not found');
+    }
+    const set: Record<string, string> = {};
+    if (dto.notes !== undefined) set.notes = dto.notes.trim();
+    if (dto.releaseNotes !== undefined) {
+      set.releaseNotes = dto.releaseNotes.trim();
+    }
+    const fw = await this.model
+      .findByIdAndUpdate(id, { $set: set }, { new: true })
+      .lean()
+      .exec();
+    if (!fw) throw new NotFoundException('ESP32 firmware not found');
+    this.releaseCache.clear();
+    return fw;
+  }
+
   list(product?: EspProduct) {
     return this.model
       .find(product ? { product } : {})
@@ -178,6 +258,7 @@ export class EspFirmwareService implements OnModuleInit, OnModuleDestroy {
       product: EspProduct;
       version: string;
       notes?: string;
+      releaseNotes?: string;
       activate?: EspFirmwareChannel;
     },
     bin: Buffer,
@@ -221,6 +302,7 @@ export class EspFirmwareService implements OnModuleInit, OnModuleDestroy {
         md5: crypto.createHash('md5').update(bin).digest('hex'),
         channels: [],
         notes: dto.notes?.trim() ?? '',
+        releaseNotes: dto.releaseNotes?.trim() ?? '',
       });
     } catch (err) {
       if ((err as { code?: number }).code === 11000) {
@@ -230,6 +312,7 @@ export class EspFirmwareService implements OnModuleInit, OnModuleDestroy {
       }
       throw err;
     }
+    this.releaseCache.clear();
     this.logger.log(
       `Uploaded ESP32 ${product} firmware v${version} (${bin.length} B)`,
     );
@@ -299,6 +382,7 @@ export class EspFirmwareService implements OnModuleInit, OnModuleDestroy {
       );
     }
     await this.model.deleteOne({ _id: fw._id }).exec();
+    this.releaseCache.clear();
     // The file goes later (a device may still be downloading it), and only
     // when it is the one this server uploaded (conventional URL).
     const key = `${this.spacesPrefix}/${fw.product}/${fw.version}/firmware.bin`;

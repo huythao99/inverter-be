@@ -71,7 +71,7 @@ export class DeviceHealth {
   @Prop({ type: Object, default: null })
   stmProto: {
     mode: 'new' | 'legacy';
-    detected: 'new' | 'legacy';
+    detected: 'new' | 'legacy' | 'unknown';
     src: string;
     setting: 'auto' | 'new' | 'legacy';
     at: Date;

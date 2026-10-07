@@ -19,6 +19,13 @@ describe('STM_PROTOCOL log', () => {
     ).toBe('legacy');
   });
 
+  it('AUTO still checking -> unknown', () => {
+    expect(
+      parseStmProtocolLog('mode=new src=auto detected=unknown setting=0')
+        ?.detected,
+    ).toBe('unknown');
+  });
+
   it('rejects garbage', () => {
     expect(parseStmProtocolLog('')).toBeNull();
     expect(parseStmProtocolLog('mode=xyz')).toBeNull();

@@ -105,7 +105,7 @@ const STM_SETTINGS = ['auto', 'new', 'legacy'] as const;
  */
 export function parseStmProtocolLog(msg: string): {
   mode: 'new' | 'legacy';
-  detected: 'new' | 'legacy';
+  detected: 'new' | 'legacy' | 'unknown';
   src: string;
   setting: 'auto' | 'new' | 'legacy';
 } | null {
@@ -120,7 +120,8 @@ export function parseStmProtocolLog(msg: string): {
   if (!mode) return null;
   return {
     mode,
-    detected: lm(v.detected) ?? mode,
+    // "unknown" = AUTO still checking the STM32's echo (firmware >= 1.1.4).
+    detected: v.detected === 'unknown' ? 'unknown' : (lm(v.detected) ?? mode),
     src: (v.src ?? '').slice(0, 20),
     setting: STM_SETTINGS[Number(v.setting)] ?? 'auto',
   };

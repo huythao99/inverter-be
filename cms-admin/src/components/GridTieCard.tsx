@@ -12,7 +12,9 @@ const GridTieCard: React.FC<{ deviceId: string }> = ({ deviceId }) => {
   const [off, setOff] = useState<boolean | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(
+    null,
+  );
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -53,11 +55,14 @@ const GridTieCard: React.FC<{ deviceId: string }> = ({ deviceId }) => {
               ok: true,
               text: `Đã gửi lệnh ${res.data.off ? 'TẮT' : 'BẬT'} hoà lưới (thiết bị offline sẽ nhận khi kết nối lại).`,
             }
-          : { ok: false, text: 'Đã lưu nhưng MQTT đang mất kết nối — chưa gửi được xuống thiết bị.' },
+          : {
+              ok: false,
+              text: 'Đã lưu nhưng MQTT đang mất kết nối — chưa gửi được xuống thiết bị.',
+            },
       );
     } catch (err) {
-      const message = (err as { response?: { data?: { message?: string } } })?.response?.data
-        ?.message;
+      const message = (err as { response?: { data?: { message?: string } } })
+        ?.response?.data?.message;
       setNotice({ ok: false, text: message || 'Không gửi được lệnh' });
     } finally {
       setIsSaving(false);
@@ -67,11 +72,18 @@ const GridTieCard: React.FC<{ deviceId: string }> = ({ deviceId }) => {
   return (
     <div className="stm-card">
       <div className="stm-card-header">
-        <h3>
-          {off ? <ZapOff size={18} /> : <Zap size={18} />} Hoà lưới
-        </h3>
-        <button className="btn-icon" onClick={load} title="Refresh" disabled={isLoading}>
-          {isLoading ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
+        <h3>{off ? <ZapOff size={18} /> : <Zap size={18} />} Hoà lưới</h3>
+        <button
+          className="btn-icon"
+          onClick={load}
+          title="Refresh"
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <Loader2 size={16} className="spin" />
+          ) : (
+            <RefreshCw size={16} />
+          )}
         </button>
       </div>
 
@@ -80,13 +92,18 @@ const GridTieCard: React.FC<{ deviceId: string }> = ({ deviceId }) => {
           <div className="stm-grid">
             <div>
               <label>Trạng thái (server)</label>
-              <span style={{ fontWeight: 600, color: off ? '#cc1100' : '#05a03a' }}>
+              <span
+                style={{ fontWeight: 600, color: off ? '#cc1100' : '#05a03a' }}
+              >
                 {off ? 'TẮT hoà lưới' : 'Đang hoà lưới'}
               </span>
             </div>
           </div>
 
-          <div className="stm-card-header" style={{ marginTop: 12, marginBottom: 0 }}>
+          <div
+            className="stm-card-header"
+            style={{ marginTop: 12, marginBottom: 0 }}
+          >
             <span style={{ fontSize: 13, color: '#666' }}>
               Bản tin báo 99.00 / 1.00 mà server đang "hoà lưới"? Bấm Gửi lại.
             </span>
@@ -97,7 +114,11 @@ const GridTieCard: React.FC<{ deviceId: string }> = ({ deviceId }) => {
                 disabled={isSaving}
                 title="Gửi lại trạng thái hiện tại xuống thiết bị"
               >
-                {isSaving ? <Loader2 size={16} className="spin" /> : <Send size={16} />}
+                {isSaving ? (
+                  <Loader2 size={16} className="spin" />
+                ) : (
+                  <Send size={16} />
+                )}
                 Gửi lại
               </button>
               <button
@@ -112,7 +133,9 @@ const GridTieCard: React.FC<{ deviceId: string }> = ({ deviceId }) => {
         </>
       )}
 
-      {notice && <p className={`stm-note ${notice.ok ? '' : 'error'}`}>{notice.text}</p>}
+      {notice && (
+        <p className={`stm-note ${notice.ok ? '' : 'error'}`}>{notice.text}</p>
+      )}
     </div>
   );
 };

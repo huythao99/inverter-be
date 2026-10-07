@@ -4,6 +4,7 @@ import {
   deleteEspFirmware,
   getEspFirmwareConfig,
   getEspFirmwares,
+  updateEspFirmwareNotes,
   uploadEspFirmware,
 } from '../services/api';
 import type {
@@ -12,9 +13,18 @@ import type {
   EspFirmwareConfig,
   EspProduct,
 } from '../services/api';
-import { Check, Loader2, Plus, Trash2, Upload, X } from 'lucide-react';
+import { Check, FileText, Loader2, Plus, Trash2, Upload, X } from 'lucide-react';
 
-const emptyForm = { version: '', notes: '', activate: '' as '' | EspChannel };
+const emptyForm = {
+  version: '',
+  notes: '',
+  releaseNotes: '',
+  activate: '' as '' | EspChannel,
+};
+
+const RELEASE_NOTES_HINT =
+  'Shown to users in the app / web (Vietnamese, one change per line), e.g.\n' +
+  'Sửa lỗi máy không xả sau khi cập nhật\nKết nối WiFi ổn định hơn';
 
 const PRODUCTS: { key: EspProduct; label: string; defaultFile: string }[] = [
   { key: 'inverter', label: 'Inverter (hoà lưới)', defaultFile: 'firmware.bin / firmware-beta.bin' },
@@ -50,6 +60,36 @@ const EspFirmware: React.FC = () => {
   const [notice, setNotice] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  // Notes / release notes editor (one build at a time).
+  const [editing, setEditing] = useState<EspFirmwareItem | null>(null);
+  const [editNotes, setEditNotes] = useState({ notes: '', releaseNotes: '' });
+  const [editError, setEditError] = useState('');
+  const [isSavingNotes, setIsSavingNotes] = useState(false);
+
+  const openNotes = (it: EspFirmwareItem) => {
+    setEditing(it);
+    setEditNotes({ notes: it.notes ?? '', releaseNotes: it.releaseNotes ?? '' });
+    setEditError('');
+  };
+
+  const saveNotes = async () => {
+    if (!editing) return;
+    setIsSavingNotes(true);
+    setEditError('');
+    try {
+      await updateEspFirmwareNotes(editing._id, {
+        notes: editNotes.notes,
+        releaseNotes: editNotes.releaseNotes,
+      });
+      setNotice(`Saved notes of v${editing.version}`);
+      setEditing(null);
+      fetchAll();
+    } catch (err) {
+      setEditError(errorText(err, 'Could not save'));
+    } finally {
+      setIsSavingNotes(false);
+    }
+  };
 
   const fetchAll = async () => {
     setIsLoading(true);
@@ -105,6 +145,7 @@ const EspFirmware: React.FC = () => {
           product,
           version: form.version.trim(),
           notes: form.notes.trim() || undefined,
+          releaseNotes: form.releaseNotes.trim() || undefined,
           activate: form.activate || undefined,
           bin: binFile,
         },
@@ -290,7 +331,20 @@ const EspFirmware: React.FC = () => {
               <input
                 type="text"
                 value={form.notes}
+                placeholder="Internal, CMS only"
                 onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              />
+            </div>
+            <div className="form-group">
+              <label>
+                Release notes for users <span className="optional">(optional)</span>
+              </label>
+              <textarea
+                rows={4}
+                maxLength={3000}
+                value={form.releaseNotes}
+                placeholder={RELEASE_NOTES_HINT}
+                onChange={(e) => setForm({ ...form, releaseNotes: e.target.value })}
               />
             </div>
             <p className="muted">
@@ -359,6 +413,19 @@ const EspFirmware: React.FC = () => {
                       {it.version}
                     </a>
                     {it.notes && <div className="muted">{it.notes}</div>}
+                    {it.releaseNotes ? (
+                      <div
+                        className="muted"
+                        style={{ whiteSpace: 'pre-line' }}
+                        title="Release notes (users)"
+                      >
+                        📝 {it.releaseNotes}
+                      </div>
+                    ) : (
+                      <div className="muted" style={{ fontStyle: 'italic' }}>
+                        No release notes
+                      </div>
+                    )}
                   </td>
                   <td>
                     {it.channels.length ? (
@@ -384,6 +451,13 @@ const EspFirmware: React.FC = () => {
                       <Loader2 size={16} className="spin" />
                     ) : (
                       <>
+                        <button
+                          className="btn-icon"
+                          onClick={() => openNotes(it)}
+                          title="Edit notes / release notes"
+                        >
+                          <FileText size={16} />
+                        </button>
                         {!it.channels.includes('beta') && (
                           <button
                             className="btn btn-secondary btn-sm"
@@ -440,6 +514,53 @@ const EspFirmware: React.FC = () => {
           </table>
         )}
       </div>
+
+      {editing && (
+        <div className="modal-backdrop" onClick={() => !isSavingNotes && setEditing(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>
+              {productLabel(editing.product)} v{editing.version}
+            </h3>
+            <div className="form-group">
+              <label>Internal note (CMS only)</label>
+              <input
+                type="text"
+                maxLength={500}
+                value={editNotes.notes}
+                onChange={(e) => setEditNotes({ ...editNotes, notes: e.target.value })}
+              />
+            </div>
+            <div className="form-group">
+              <label>Release notes for users (app / web)</label>
+              <textarea
+                rows={8}
+                maxLength={3000}
+                value={editNotes.releaseNotes}
+                placeholder={RELEASE_NOTES_HINT}
+                onChange={(e) => setEditNotes({ ...editNotes, releaseNotes: e.target.value })}
+              />
+              <p className="muted">
+                Users see it before updating to this version and in the version history. Empty =
+                not shown.
+              </p>
+            </div>
+            {editError && <p className="form-error">{editError}</p>}
+            <div className="modal-actions">
+              <button
+                className="btn btn-secondary"
+                onClick={() => setEditing(null)}
+                disabled={isSavingNotes}
+              >
+                Cancel
+              </button>
+              <button className="btn btn-primary" onClick={saveNotes} disabled={isSavingNotes}>
+                {isSavingNotes ? <Loader2 size={16} className="spin" /> : <Check size={16} />}
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

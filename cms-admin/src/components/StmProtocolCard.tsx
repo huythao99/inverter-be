@@ -15,6 +15,10 @@ const MODE_LABEL: Record<'new' | 'legacy', string> = {
 const SRC_LABEL: Record<string, string> = {
   auto: 'tự nhận khi khởi động',
   'auto-late': 'tự nhận sau khi khởi động',
+  'auto-new': 'tự nhận: STM32 làm theo lệnh mới',
+  'auto-legacy': 'tự nhận: STM32 làm theo lệnh cũ',
+  'auto-try-legacy': 'đang thử giao thức cũ',
+  'auto-revert-new': 'thử cũ không được, quay về mới',
   nvs: 'theo cài đặt đã lưu',
   cms: 'theo CMS',
 };
@@ -27,7 +31,9 @@ const StmProtocolCard: React.FC<{ deviceId: string }> = ({ deviceId }) => {
   const [info, setInfo] = useState<StmProtocolInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(
+    null,
+  );
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -63,12 +69,18 @@ const StmProtocolCard: React.FC<{ deviceId: string }> = ({ deviceId }) => {
       setInfo(res.data);
       setNotice(
         res.data.published === false
-          ? { ok: false, text: 'Đã lưu nhưng MQTT đang mất kết nối — chưa gửi được xuống thiết bị.' }
-          : { ok: true, text: `Đã gửi "${SETTING_LABEL[mode]}" (thiết bị offline sẽ nhận khi kết nối lại).` },
+          ? {
+              ok: false,
+              text: 'Đã lưu nhưng MQTT đang mất kết nối — chưa gửi được xuống thiết bị.',
+            }
+          : {
+              ok: true,
+              text: `Đã gửi "${SETTING_LABEL[mode]}" (thiết bị offline sẽ nhận khi kết nối lại).`,
+            },
       );
     } catch (err) {
-      const message = (err as { response?: { data?: { message?: string } } })?.response?.data
-        ?.message;
+      const message = (err as { response?: { data?: { message?: string } } })
+        ?.response?.data?.message;
       setNotice({ ok: false, text: message || 'Không lưu được' });
     } finally {
       setIsSaving(false);
@@ -85,8 +97,17 @@ const StmProtocolCard: React.FC<{ deviceId: string }> = ({ deviceId }) => {
         <h3>
           <Cable size={18} /> Giao tiếp ESP32 ↔ STM32
         </h3>
-        <button className="btn-icon" onClick={load} title="Refresh" disabled={isLoading}>
-          {isLoading ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
+        <button
+          className="btn-icon"
+          onClick={load}
+          title="Refresh"
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <Loader2 size={16} className="spin" />
+          ) : (
+            <RefreshCw size={16} />
+          )}
         </button>
       </div>
 
@@ -99,19 +120,32 @@ const StmProtocolCard: React.FC<{ deviceId: string }> = ({ deviceId }) => {
             </div>
             <div>
               <label>Tự nhận diện</label>
-              <span>{r ? (r.detected === 'legacy' ? 'Bo mạch cũ' : 'Bo mạch mới') : '—'}</span>
+              <span>
+                {r
+                  ? r.detected === 'legacy'
+                    ? 'Bo mạch cũ'
+                    : r.detected === 'new'
+                      ? 'Bo mạch mới'
+                      : 'Đang kiểm tra…'
+                  : '—'}
+              </span>
             </div>
             <div>
               <label>Nguồn</label>
-              <span>{r ? SRC_LABEL[r.src] ?? r.src : '—'}</span>
+              <span>{r ? (SRC_LABEL[r.src] ?? r.src) : '—'}</span>
             </div>
             <div>
               <label>Báo cáo lúc</label>
-              <span>{r ? new Date(r.at).toLocaleString() : 'chưa có (firmware cũ?)'}</span>
+              <span>
+                {r ? new Date(r.at).toLocaleString() : 'chưa có (firmware cũ?)'}
+              </span>
             </div>
           </div>
 
-          <div className="stm-card-header" style={{ marginTop: 12, marginBottom: 0 }}>
+          <div
+            className="stm-card-header"
+            style={{ marginTop: 12, marginBottom: 0 }}
+          >
             <span style={{ fontSize: 13, color: '#666' }}>Chế độ</span>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {(['auto', 'new', 'legacy'] as StmProtocolSetting[]).map((m) => (
@@ -129,17 +163,22 @@ const StmProtocolCard: React.FC<{ deviceId: string }> = ({ deviceId }) => {
 
           {pending && (
             <p className="stm-note warn">
-              Thiết bị đang báo chế độ "{SETTING_LABEL[r!.setting]}", chưa áp dụng "
-              {SETTING_LABEL[info.setting]}" (đang offline hoặc chưa khởi động lại kết nối).
+              Thiết bị đang báo chế độ "{SETTING_LABEL[r!.setting]}", chưa áp
+              dụng "{SETTING_LABEL[info.setting]}" (đang offline hoặc chưa khởi
+              động lại kết nối).
             </p>
           )}
           {r?.mode === 'legacy' && (
-            <p className="stm-note">Chế độ cũ: không cập nhật được firmware STM32 qua mạng.</p>
+            <p className="stm-note">
+              Chế độ cũ: không cập nhật được firmware STM32 qua mạng.
+            </p>
           )}
         </>
       )}
 
-      {notice && <p className={`stm-note ${notice.ok ? '' : 'error'}`}>{notice.text}</p>}
+      {notice && (
+        <p className={`stm-note ${notice.ok ? '' : 'error'}`}>{notice.text}</p>
+      )}
     </div>
   );
 };

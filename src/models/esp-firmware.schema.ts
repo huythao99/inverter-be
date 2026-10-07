@@ -47,8 +47,14 @@ export class EspFirmware {
   @Prop({ type: [String], enum: ['stable', 'beta'], default: [] })
   channels: ('stable' | 'beta')[];
 
+  // Internal note (CMS only).
   @Prop({ type: String, default: '' })
   notes: string;
+
+  // "What's new" shown to users in the app / web before and after updating.
+  // Vietnamese, plain text, one change per line. Empty = nothing shown.
+  @Prop({ type: String, default: '' })
+  releaseNotes: string;
 
   createdAt?: Date;
   updatedAt?: Date;

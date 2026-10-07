@@ -201,6 +201,8 @@ export interface EspFirmware {
   md5: string;
   channels: EspChannel[];
   notes: string;
+  /** "What's new" shown to users in the app / web (one change per line). */
+  releaseNotes?: string;
   createdAt: string;
 }
 
@@ -230,6 +232,7 @@ export const uploadEspFirmware = (
     product: EspProduct;
     version: string;
     notes?: string;
+    releaseNotes?: string;
     activate?: EspChannel;
     bin: File;
   },
@@ -239,6 +242,7 @@ export const uploadEspFirmware = (
   fd.append('product', body.product);
   fd.append('version', body.version);
   if (body.notes) fd.append('notes', body.notes);
+  if (body.releaseNotes) fd.append('releaseNotes', body.releaseNotes);
   if (body.activate) fd.append('activate', body.activate);
   fd.append('bin', body.bin);
   return api.post<EspFirmware & { warning?: string | null }>(
@@ -252,6 +256,11 @@ export const activateEspFirmware = (id: string, channel: EspChannel) =>
   api.post<EspFirmware>(`/esp-firmwares/${id}/activate`, { channel });
 
 export const deleteEspFirmware = (id: string) => api.delete(`/esp-firmwares/${id}`);
+
+export const updateEspFirmwareNotes = (
+  id: string,
+  body: { notes?: string; releaseNotes?: string },
+) => api.patch<EspFirmware>(`/esp-firmwares/${id}`, body);
 
 export const registerStmFirmware = (body: {
   product: StmProduct;
@@ -280,7 +289,7 @@ export interface StmProtocolInfo {
   /** Last STM_PROTOCOL report of the device (null = never reported). */
   reported: {
     mode: 'new' | 'legacy';
-    detected: 'new' | 'legacy';
+    detected: 'new' | 'legacy' | 'unknown';
     src: string;
     setting: StmProtocolSetting;
     at: string;

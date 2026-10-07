@@ -41,6 +41,7 @@ import {
 import { EspFirmwareService } from '../services/esp-firmware.service';
 import {
   ActivateEspFirmwareDto,
+  UpdateEspFirmwareNotesDto,
   UploadEspFirmwareDto,
 } from '../dto/esp-firmware.dto';
 import { SpacesService } from '../services/spaces.service';
@@ -349,6 +350,16 @@ export class CmsController {
     @Body() dto: ActivateEspFirmwareDto,
   ) {
     return this.espFirmwareService.activate(id, dto.channel);
+  }
+
+  // Internal note and / or the release notes users see in the app / web.
+  @Patch('esp-firmwares/:id')
+  @UseGuards(AdminGuard)
+  updateEspFirmwareNotes(
+    @Param('id') id: string,
+    @Body() dto: UpdateEspFirmwareNotesDto,
+  ) {
+    return this.espFirmwareService.updateNotes(id, dto);
   }
 
   @Delete('esp-firmwares/:id')

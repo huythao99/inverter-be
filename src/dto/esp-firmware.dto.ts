@@ -24,6 +24,12 @@ export class UploadEspFirmwareDto {
   @MaxLength(500)
   notes?: string;
 
+  // Shown to users (app / web).
+  @IsOptional()
+  @IsString()
+  @MaxLength(3000)
+  releaseNotes?: string;
+
   // Make it active on this channel right after the upload.
   @IsOptional()
   @IsIn(['stable', 'beta'])
@@ -33,4 +39,17 @@ export class UploadEspFirmwareDto {
 export class ActivateEspFirmwareDto {
   @IsIn(['stable', 'beta'])
   channel: 'stable' | 'beta';
+}
+
+// PATCH /api/cms/esp-firmwares/:id
+export class UpdateEspFirmwareNotesDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  notes?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(3000)
+  releaseNotes?: string;
 }

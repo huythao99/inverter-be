@@ -44,6 +44,7 @@ import { EnergyOverviewService } from '../services/energy-overview.service';
 import { ShareOverviewService } from '../services/share-overview.service';
 import { AuditLogService } from '../services/audit-log.service';
 import { StmFirmwareService } from '../services/stm-firmware.service';
+import { EspFirmwareService } from '../services/esp-firmware.service';
 import { BetaFirmwareDeviceService } from '../services/beta-firmware-device.service';
 import {
   newestFirmwareVersion,
@@ -77,6 +78,7 @@ export class UserApiController {
     private readonly energyOverviewService: EnergyOverviewService,
     private readonly shareOverviewService: ShareOverviewService,
     private readonly auditLogService: AuditLogService,
+    private readonly espFirmwareService: EspFirmwareService,
   ) {}
 
   /** The device, or 404 when it isn't one of this user's devices. */
@@ -770,14 +772,44 @@ export class UserApiController {
   // deviceId: the stable version.
   @Get('firmware/newest')
   @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
-  getNewestFirmware(
+  async getNewestFirmware(
     @CurrentFirebaseUser() user: FirebaseUser,
     @Query('deviceId') deviceId?: string,
   ) {
+    const version = deviceId
+      ? this.firmwareTargetFor(user.uid, deviceId)
+      : newestFirmwareVersion();
+    // "What's new" of that version ('' when none was written).
+    const releaseNotes = await this.espFirmwareService
+      .releaseNoteOf('inverter', version)
+      .catch(() => '');
+    return { version, releaseNotes };
+  }
+
+  // Release notes of the firmware versions up to the one this device is
+  // offered, newest first, each marked as installed / newer than installed.
+  @Get('devices/:deviceId/firmware/releases')
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
+  async getFirmwareReleases(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('deviceId') deviceId: string,
+  ) {
+    const device = await this.ownedDevice(user.uid, deviceId);
+    const target = this.firmwareTargetFor(user.uid, deviceId);
+    const current = this.firmwareCurrentFor(
+      user.uid,
+      deviceId,
+      device.firmwareVersion,
+    );
+    const rows = await this.espFirmwareService.releaseNotes('inverter', target);
     return {
-      version: deviceId
-        ? this.firmwareTargetFor(user.uid, deviceId)
-        : newestFirmwareVersion(),
+      currentVersion: current,
+      targetVersion: target,
+      releases: rows.map((r) => ({
+        ...r,
+        installed: r.version === current,
+        isNew: compareFirmwareVersions(r.version, current) > 0,
+      })),
     };
   }
 
