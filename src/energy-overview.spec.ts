@@ -4,6 +4,7 @@ import {
   EnergyOverviewService,
   gmt7DateKey,
   monthlySavings,
+  splitSharedGrid,
   summarizePeriod,
 } from './services/energy-overview.service';
 
@@ -100,6 +101,7 @@ describe('energy overview', () => {
       redisTotals as any,
       devices as any,
       energyReport as any,
+      { gridClusters: () => Promise.resolve(new Map()) } as any,
     );
 
     const o = await svc.overview('u');
@@ -118,8 +120,38 @@ describe('energy overview', () => {
     expect(pastCalls).toBe(1);
   });
 
+  it('share group = one grid line: import counted once', () => {
+    // A and B measure the same import (4 kWh each); C is on its own line.
+    const rows: DayRow[] = [
+      { deviceId: 'A', date: '2026-10-01', a: 1, a2: 4 },
+      { deviceId: 'B', date: '2026-10-01', a: 3, a2: 4.2 },
+      { deviceId: 'C', date: '2026-10-01', a: 2, a2: 5 },
+      // B offline the next day: A alone, nothing to average
+      { deviceId: 'A', date: '2026-10-02', a: 1, a2: 3 },
+      { deviceId: 'B', date: '2026-10-02', a: 0, a2: 0 },
+    ];
+    const clusterOf = (id: string) => (id === 'C' ? 'C' : 'grid:A');
+    const fixed = splitSharedGrid(rows, clusterOf);
+    const names3 = new Map([...names, ['C', 'Máy C']]);
+    const sav = monthlySavings(fixed, bill, clusterOf);
+    const p = summarizePeriod(fixed, names3, sav, clusterOf);
+    // grid: avg(4, 4.2) = 4.1 + 3 (day 2) + C 5
+    expect(p.gridKwh).toBe(12.1);
+    expect(p.generatedKwh).toBe(7);
+    // A+B billed as one meter: bill(5 + 7.1) - bill(7.1) = 10, split by output
+    expect(sav.get('grid:A|2026-10')!.savings).toBe(10);
+    const by = new Map(p.devices.map((d) => [d.deviceId, d]));
+    expect(by.get('A')!.savings + by.get('B')!.savings).toBe(10);
+    expect(by.get('B')!.savings).toBe(6); // 3 of the 5 kWh
+    // Without clusters (old behaviour) the import was 4 + 4.2 + 3 + 5
+    expect(
+      summarizePeriod(rows, names3, monthlySavings(rows, bill)).gridKwh,
+    ).toBe(16.2);
+  });
+
   it('rejects an invalid month', async () => {
     const svc = new EnergyOverviewService(
+      {} as any,
       {} as any,
       {} as any,
       {} as any,

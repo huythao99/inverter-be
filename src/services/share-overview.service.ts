@@ -195,6 +195,30 @@ export class ShareOverviewService {
 
     const sum = (f: (m: ShareOverviewMember) => number) =>
       members.reduce((s, m) => s + f(m), 0);
+    // The members share one grid line and all measure the same import: it
+    // counts once, as the average of the members that measured something.
+    const mean = (v: number[]) =>
+      v.length ? v.reduce((s, x) => s + x, 0) / v.length : 0;
+    const avg = (f: (m: ShareOverviewMember) => number | null | undefined) =>
+      mean(
+        members
+          .map(f)
+          .filter((x): x is number => typeof x === 'number' && x !== 0),
+      );
+    // Grid kWh since a day: averaged per DAY (a member that was offline or
+    // not yet in the group on some days does not pull the others down).
+    const gridSince = (start: string) => {
+      const byDate = new Map<string, number[]>();
+      for (const [, days] of past) {
+        for (const [date, v] of days) {
+          if (date < start || !(v.a2 > 0)) continue;
+          byDate.set(date, [...(byDate.get(date) ?? []), v.a2]);
+        }
+      }
+      let total = avg((m) => m.today.gridKwh);
+      for (const v of byDate.values()) total += mean(v);
+      return total;
+    };
     return {
       groupId,
       name: live.group.name ?? '',
@@ -203,15 +227,15 @@ export class ShareOverviewService {
       poolWatts: live.poolWatts,
       totals: {
         gridTiePower: Math.round(sum((m) => m.live?.gridTiePower ?? 0)),
-        gridPower: Math.round(sum((m) => m.live?.gridPower ?? 0)),
+        gridPower: Math.round(avg((m) => m.live?.gridPower)),
         assignedWatts: Math.round(sum((m) => m.assignedWatts ?? 0)),
         online: members.filter((m) => m.online).length,
         todayGeneratedKwh: round(sum((m) => m.today.generatedKwh)),
-        todayGridKwh: round(sum((m) => m.today.gridKwh)),
+        todayGridKwh: round(avg((m) => m.today.gridKwh)),
         weekGeneratedKwh: round(sum((m) => m.week.generatedKwh)),
-        weekGridKwh: round(sum((m) => m.week.gridKwh)),
+        weekGridKwh: round(gridSince(starts.week)),
         monthGeneratedKwh: round(sum((m) => m.month.generatedKwh)),
-        monthGridKwh: round(sum((m) => m.month.gridKwh)),
+        monthGridKwh: round(gridSince(starts.month)),
       },
       weekStart: starts.week,
       monthStart: starts.month,
