@@ -492,7 +492,7 @@ const EspFirmware: React.FC = () => {
                             <button
                               className="btn-icon danger"
                               onClick={() => setDeleteConfirm(it._id)}
-                              title="Delete from the list (the file stays on Spaces)"
+                              title="Delete (the file is removed from Spaces too)"
                             >
                               <Trash2 size={16} />
                             </button>

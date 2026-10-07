@@ -487,20 +487,22 @@ export class StmFirmwareService {
   async remove(id: string) {
     const fw = await this.stmFirmwareModel.findByIdAndDelete(id).lean().exec();
     if (!fw) throw new NotFoundException('STM32 firmware not found');
-    // Files uploaded by this server (conventional URL) go later, so a board
-    // that is being flashed right now can finish its download.
+    // Files uploaded by this server (conventional URL) go too, right away.
     const ours = fw.url === this.defaultBinUrl(fw.product, fw.version);
     const dir = `${this.spacesPrefix}/${fw.product}/${fw.version}`;
-    const scheduled =
-      ours &&
-      (await this.cleanup.schedule('stm', fw.product, fw.version, [
-        `${dir}/app.bin`,
-        `${dir}/app.json`,
-      ]));
+    const files = ours
+      ? await this.cleanup.deleteNow('stm', fw.product, fw.version, [
+          `${dir}/app.bin`,
+          `${dir}/app.json`,
+        ])
+      : 'none';
     return {
-      message: scheduled
-        ? `Deleted - files removed from Spaces in ~${this.cleanup.delayMinutes} min`
-        : 'Deleted',
+      message:
+        files === 'deleted'
+          ? 'Deleted - files removed from Spaces'
+          : files === 'queued'
+            ? 'Deleted - Spaces did not answer, the files will be removed in a few minutes'
+            : 'Deleted',
     };
   }
 

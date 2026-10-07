@@ -383,18 +383,23 @@ export class EspFirmwareService implements OnModuleInit, OnModuleDestroy {
     }
     await this.model.deleteOne({ _id: fw._id }).exec();
     this.releaseCache.clear();
-    // The file goes later (a device may still be downloading it), and only
-    // when it is the one this server uploaded (conventional URL).
+    // The file goes too, right away, when it is the one this server
+    // uploaded (conventional URL). Only an active / rolling-out build is
+    // offered to devices, and those cannot be deleted (checked above); an
+    // interrupted download just leaves a device on its current firmware.
     const key = `${this.spacesPrefix}/${fw.product}/${fw.version}/firmware.bin`;
     const ours =
       fw.url === `${this.baseUrl}/${fw.product}/${fw.version}/firmware.bin`;
-    const scheduled =
-      ours &&
-      (await this.cleanup.schedule('esp', fw.product, fw.version, [key]));
+    const files = ours
+      ? await this.cleanup.deleteNow('esp', fw.product, fw.version, [key])
+      : 'none';
     return {
-      message: scheduled
-        ? `Deleted - file removed from Spaces in ~${this.cleanup.delayMinutes} min`
-        : 'Deleted',
+      message:
+        files === 'deleted'
+          ? 'Deleted - file removed from Spaces'
+          : files === 'queued'
+            ? 'Deleted - Spaces did not answer, the file will be removed in a few minutes'
+            : 'Deleted',
     };
   }
 

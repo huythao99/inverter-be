@@ -19,13 +19,16 @@ const REGISTRY_MODEL: Record<SpacesPendingDelete['kind'], string> = {
   stm: 'StmFirmware',
 };
 const MAX_ATTEMPTS = 10;
+/** A file that failed to delete right away is retried after this. */
+const RETRY_FIRST_MS = 5 * 60_000;
 
 /**
- * Deleting a firmware in the CMS removes its record at once, and its files on
- * DO Spaces only after a delay (default 60 min, SPACES_DELETE_DELAY_MIN), so a
- * device that already started downloading it can finish. The file is kept if
- * a record with the same product + version was uploaded again meanwhile.
- * Runs on the primary pm2 instance only.
+ * Deleting a firmware in the CMS removes its record and its files on DO Spaces
+ * right away (deleteNow). Only a file Spaces failed to delete is queued and
+ * retried later (backoff); schedule() still queues with the configured delay
+ * (SPACES_DELETE_DELAY_MIN, default 60) for callers that want one. A queued
+ * file is kept if the same product + version was uploaded again meanwhile.
+ * The queue runs on the primary pm2 instance only.
  */
 @Injectable()
 export class SpacesCleanupService implements OnModuleInit, OnModuleDestroy {
@@ -63,12 +66,43 @@ export class SpacesCleanupService implements OnModuleInit, OnModuleDestroy {
     return Math.round(this.delayMs / 60_000);
   }
 
+  /**
+   * Delete the files now. A file Spaces refuses (network, permissions) is
+   * queued and retried in a few minutes. Never throws (the record is gone
+   * already). 'deleted' = all gone, 'queued' = some will be retried,
+   * 'none' = Spaces disabled / nothing to delete.
+   */
+  async deleteNow(
+    kind: SpacesPendingDelete['kind'],
+    product: string,
+    version: string,
+    keys: string[],
+  ): Promise<'deleted' | 'queued' | 'none'> {
+    if (!this.spaces.enabled || keys.length === 0) return 'none';
+    const left: string[] = [];
+    for (const key of keys) {
+      try {
+        await this.spaces.deleteObject(key);
+        this.logger.log(`deleted from Spaces: ${key}`);
+      } catch (e) {
+        this.logger.warn(
+          `Spaces delete of ${key} failed, retrying later: ${(e as Error).message}`,
+        );
+        left.push(key);
+      }
+    }
+    if (!left.length) return 'deleted';
+    await this.schedule(kind, product, version, left, RETRY_FIRST_MS);
+    return 'queued';
+  }
+
   /** Remember files to delete later. Never throws (the record is gone already). */
   async schedule(
     kind: SpacesPendingDelete['kind'],
     product: string,
     version: string,
     keys: string[],
+    afterMs = this.delayMs,
   ): Promise<boolean> {
     if (!this.spaces.enabled || keys.length === 0) return false;
     try {
@@ -77,7 +111,7 @@ export class SpacesCleanupService implements OnModuleInit, OnModuleDestroy {
         product,
         version,
         keys,
-        deleteAfter: new Date(Date.now() + this.delayMs),
+        deleteAfter: new Date(Date.now() + afterMs),
       });
       return true;
     } catch (e) {

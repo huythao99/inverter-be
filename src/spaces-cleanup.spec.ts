@@ -81,4 +81,27 @@ describe('Spaces cleanup after a CMS delete', () => {
     expect(jobs[0].attempts).toBe(1);
     expect(jobs[0].deleteAfter.getTime()).toBeGreaterThan(t.getTime());
   });
+
+  it('CMS delete: files removed right away', async () => {
+    const { svc, jobs, deleted } = setup();
+    expect(
+      await svc.deleteNow('stm', 'inverter', '3.4.1', [
+        'x/app.bin',
+        'x/app.json',
+      ]),
+    ).toBe('deleted');
+    expect(deleted).toEqual(['x/app.bin', 'x/app.json']);
+    expect(jobs).toHaveLength(0);
+  });
+
+  it('CMS delete: a file Spaces refuses is retried a few minutes later', async () => {
+    const { svc, jobs } = setup({ failDelete: true });
+    expect(
+      await svc.deleteNow('esp', 'inverter', '1.1.1', ['a/firmware.bin']),
+    ).toBe('queued');
+    expect(jobs).toHaveLength(1);
+    const wait = jobs[0].deleteAfter.getTime() - Date.now();
+    expect(wait).toBeGreaterThan(60_000);
+    expect(wait).toBeLessThanOrEqual(5 * 60_000);
+  });
 });
