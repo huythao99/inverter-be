@@ -9,6 +9,15 @@ import {
 import { CreateDailyTotalsDto } from '../dto/create-daily-totals.dto';
 import { UpdateDailyTotalsDto } from '../dto/update-daily-totals.dto';
 import { QueryDailyTotalsDto } from '../dto/query-daily-totals.dto';
+import { OdoDay, odometerDayEnergies } from '../utils/odometer';
+
+/** Previous day's odometer: max + latest reading of each counter. */
+interface PrevDayReading {
+  totalA: number;
+  totalA2: number;
+  lastA: number | null;
+  lastA2: number | null;
+}
 
 @Injectable()
 export class DailyTotalsService {
@@ -66,84 +75,82 @@ export class DailyTotalsService {
 
   /**
    * Convert ONE device's odometer (autoCalculate) records into real daily
-   * values. Records are collapsed to one reading per GMT+7 day (max of each
-   * counter = the day's last reading, also absorbs legacy duplicate buckets).
-   * Daily value = this day's reading - previous day's reading. With no
-   * previous reading (first day online) the first reading seen that day is
-   * the baseline (odoStartA/odoStartA2); if the counter went down (STM32
-   * odometer reset) the reading itself is used.
+   * values. Records are collapsed to one entry per GMT+7 day (max / first /
+   * latest reading of each counter; also absorbs legacy duplicate buckets),
+   * then odometerDayEnergies() turns them into energy, handling STM32
+   * counter resets (see utils/odometer.ts).
    */
   private odometerToDailyValues(
     autoRecords: DailyTotalsDocument[],
-    baseline: { totalA: number; totalA2: number } | null,
+    baseline: PrevDayReading | null,
   ): Array<{
     dayStart: Date;
     record: DailyTotalsDocument;
     totalA: number;
     totalA2: number;
   }> {
-    const toDec = (v: number | null | undefined): Decimal | null =>
-      v === null || v === undefined || !isFinite(v) ? null : new Decimal(v);
-    const minDec = (x: Decimal | null, y: Decimal | null): Decimal | null =>
-      x === null ? y : y === null ? x : Decimal.min(x, y);
+    const num = (v: number | null | undefined): number | null =>
+      v === null || v === undefined || !isFinite(v) ? null : v;
+    const minN = (x: number | null, y: number | null) =>
+      x === null ? y : y === null ? x : Math.min(x, y);
 
     const dayMap = new Map<
       number,
       {
         record: DailyTotalsDocument;
-        a: Decimal;
-        a2: Decimal;
-        startA: Decimal | null;
-        startA2: Decimal | null;
+        a: OdoDay;
+        a2: OdoDay;
+        lastAt: number;
       }
     >();
     for (const r of autoRecords) {
       const key = this.getGMT7Date(r.date).getTime();
-      const a = new Decimal(r.totalA || 0);
-      const a2 = new Decimal(r.totalA2 || 0);
-      const startA = toDec(r.odoStartA);
-      const startA2 = toDec(r.odoStartA2);
+      const a = Number(r.totalA) || 0;
+      const a2 = Number(r.totalA2) || 0;
+      const at = new Date(r.updatedAt ?? 0).getTime() || 0;
+      const lastA = num(r.lastA);
+      const lastA2 = num(r.lastA2);
       const cur = dayMap.get(key);
       if (!cur) {
-        dayMap.set(key, { record: r, a, a2, startA, startA2 });
+        dayMap.set(key, {
+          record: r,
+          a: { max: a, start: num(r.odoStartA), last: lastA },
+          a2: { max: a2, start: num(r.odoStartA2), last: lastA2 },
+          lastAt: at,
+        });
         continue;
       }
-      if (a.greaterThan(cur.a)) {
-        cur.a = a;
+      if (a > cur.a.max) {
+        cur.a.max = a;
         cur.record = r;
       }
-      if (a2.greaterThan(cur.a2)) cur.a2 = a2;
-      cur.startA = minDec(cur.startA, startA);
-      cur.startA2 = minDec(cur.startA2, startA2);
+      if (a2 > cur.a2.max) cur.a2.max = a2;
+      cur.a.start = minN(cur.a.start, num(r.odoStartA));
+      cur.a2.start = minN(cur.a2.start, num(r.odoStartA2));
+      // Latest reading = the one of the most recently written bucket.
+      if (at >= cur.lastAt && (lastA !== null || lastA2 !== null)) {
+        if (lastA !== null) cur.a.last = lastA;
+        if (lastA2 !== null) cur.a2.last = lastA2;
+        cur.lastAt = at;
+      }
     }
 
-    let prevA = baseline ? new Decimal(baseline.totalA) : null;
-    let prevA2 = baseline ? new Decimal(baseline.totalA2) : null;
-    const out: Array<{
-      dayStart: Date;
-      record: DailyTotalsDocument;
-      totalA: number;
-      totalA2: number;
-    }> = [];
-
-    for (const key of [...dayMap.keys()].sort((x, y) => x - y)) {
-      const { record, a, a2, startA, startA2 } = dayMap.get(key)!;
-      // No previous day: measure against the first reading seen that day
-      // (legacy records without it fall back to the whole reading).
-      const baseA = prevA ?? startA;
-      const baseA2 = prevA2 ?? startA2;
-      const dA = baseA ? a.minus(baseA) : a;
-      const dA2 = baseA2 ? a2.minus(baseA2) : a2;
-      out.push({
-        dayStart: new Date(key),
-        record,
-        totalA: dA.isNegative() ? a.toNumber() : dA.toNumber(),
-        totalA2: dA2.isNegative() ? a2.toNumber() : dA2.toNumber(),
-      });
-      prevA = a;
-      prevA2 = a2;
-    }
-    return out;
+    const keys = [...dayMap.keys()].sort((x, y) => x - y);
+    const days = keys.map((k) => dayMap.get(k)!);
+    const eA = odometerDayEnergies(
+      days.map((d) => d.a),
+      baseline ? { max: baseline.totalA, last: baseline.lastA } : null,
+    );
+    const eA2 = odometerDayEnergies(
+      days.map((d) => d.a2),
+      baseline ? { max: baseline.totalA2, last: baseline.lastA2 } : null,
+    );
+    return keys.map((k, i) => ({
+      dayStart: new Date(k),
+      record: days[i].record,
+      totalA: eA[i],
+      totalA2: eA2[i],
+    }));
   }
 
   // Last reading of the GMT+7 day immediately before `dayStart`. Handles legacy
@@ -153,7 +160,7 @@ export class DailyTotalsService {
     userId: string,
     deviceId: string,
     dayStart: Date,
-  ): Promise<{ totalA: number; totalA2: number } | null> {
+  ): Promise<PrevDayReading | null> {
     const latest = await this.dailyTotalsModel
       .findOne({
         userId,
@@ -178,14 +185,25 @@ export class DailyTotalsService {
       })
       .exec();
 
-    let maxA = new Decimal(latest.totalA);
-    let maxA2 = new Decimal(latest.totalA2);
-    for (const r of dayRecords) {
-      if (new Decimal(r.totalA).greaterThan(maxA)) maxA = new Decimal(r.totalA);
-      if (new Decimal(r.totalA2).greaterThan(maxA2))
-        maxA2 = new Decimal(r.totalA2);
+    let maxA = Number(latest.totalA) || 0;
+    let maxA2 = Number(latest.totalA2) || 0;
+    let lastA: number | null = null;
+    let lastA2: number | null = null;
+    let lastAt = -1;
+    for (const r of dayRecords.length ? dayRecords : [latest]) {
+      maxA = Math.max(maxA, Number(r.totalA) || 0);
+      maxA2 = Math.max(maxA2, Number(r.totalA2) || 0);
+      const at = new Date(r.updatedAt ?? 0).getTime() || 0;
+      const hasLast =
+        (r.lastA !== undefined && r.lastA !== null) ||
+        (r.lastA2 !== undefined && r.lastA2 !== null);
+      if (hasLast && at >= lastAt) {
+        lastAt = at;
+        if (r.lastA !== undefined && r.lastA !== null) lastA = r.lastA;
+        if (r.lastA2 !== undefined && r.lastA2 !== null) lastA2 = r.lastA2;
+      }
     }
-    return { totalA: maxA.toNumber(), totalA2: maxA2.toNumber() };
+    return { totalA: maxA, totalA2: maxA2, lastA, lastA2 };
   }
 
   /**
@@ -472,6 +490,10 @@ export class DailyTotalsService {
           // First reading of the day = baseline for the first day online.
           $min: { odoStartA: totalA, odoStartA2: totalA2 },
           $set: {
+            // Latest reading: the day's end even when the STM32 counter
+            // restarted from 0 during the day (max would hide it).
+            lastA: totalA,
+            lastA2: totalA2,
             autoCalculate: true,
             timezone: 'Asia/Ho_Chi_Minh',
             updatedAt: new Date(),

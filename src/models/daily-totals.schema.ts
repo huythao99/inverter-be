@@ -39,6 +39,15 @@ export class DailyTotals {
   @Prop({ type: Number })
   odoStartA2?: number;
 
+  // Odometer devices only: LATEST reading of the day (plain $set). Differs
+  // from totalA (max) when the STM32 counter restarted from 0 that day.
+  // Absent on records written before it existed.
+  @Prop({ type: Number })
+  lastA?: number;
+
+  @Prop({ type: Number })
+  lastA2?: number;
+
   @Prop({ default: Date.now })
   createdAt: Date;
 
