@@ -72,13 +72,18 @@ import {
   stmRuns,
   stmValueOf,
 } from '../utils/run-source';
-import { ShareService } from '../services/share.service';
+import { SHARE_EXPIRY_MIN_FW, ShareService } from '../services/share.service';
+import { compareFirmwareVersions } from '../services/firmware.service';
+
 import { auditCtx } from '../utils/audit-context';
 import {
   DeviceQueryDto,
   AnalyticsQueryDto,
   UpdateDeviceDto,
 } from '../dto/cms-query.dto';
+
+/** First firmware that takes the share's cut-off voltage from the active slot. */
+const SHARE_SLOT_VOLTAGE_FW = '1.1.6';
 
 @Controller('api/cms')
 export class CmsController {
@@ -598,7 +603,18 @@ export class CmsController {
         schedule: d.schedule?.schedule ?? null,
         gridTieOff,
         blacklisted,
-        share: { enabled: share.enabled, computedW: share.computed },
+        share: {
+          enabled: share.enabled,
+          computedW: share.computed,
+          // Voltage from the active slot except on 1.0.8 - 1.1.5 (share over
+          // MQTT + setting voltage). Unknown fw = old = server-baked slots.
+          slotVoltage:
+            !d.firmwareVersion ||
+            compareFirmwareVersions(d.firmwareVersion, SHARE_EXPIRY_MIN_FW) <
+              0 ||
+            compareFirmwareVersions(d.firmwareVersion, SHARE_SLOT_VOLTAGE_FW) >=
+              0,
+        },
       },
       slots,
     );

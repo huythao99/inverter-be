@@ -39,8 +39,10 @@ const expectedLabel = (info: RunSourceInfo) => {
     const slot = info.schedule.slots.find((s) => s.index === e.slot);
     return `Lịch #${e.slot}${slot ? ` (${slot.startVn} – ${slot.endVn})` : ''}`;
   }
-  if (e.source === 'share' && info.flags.share.groupName) {
-    return `Chia tải — nhóm "${info.flags.share.groupName}"`;
+  if (e.source === 'share') {
+    const group = info.flags.share.groupName ? ` — nhóm "${info.flags.share.groupName}"` : '';
+    const volt = e.slot !== null ? `Lịch #${e.slot}` : 'Cài đặt';
+    return `Chia tải${group} (điện áp theo ${volt})`;
   }
   return SOURCE_LABEL[e.source as RunSource] ?? e.source;
 };

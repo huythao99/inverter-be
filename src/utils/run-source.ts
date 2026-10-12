@@ -128,7 +128,18 @@ export interface RunSourceInput {
   schedule: string | null;
   gridTieOff: boolean;
   blacklisted: boolean;
-  share: { enabled: boolean; computedW: number | null };
+  share: {
+    enabled: boolean;
+    computedW: number | null;
+    /**
+     * Cut-off voltage while sharing comes from the active schedule slot
+     * (else the setting). False only for firmware 1.0.8 - 1.1.5, which gets
+     * the share over MQTT and always used the SETTING's voltage. Older
+     * firmware gets the share baked by the server into every slot, and
+     * 1.1.6+ picks the active slot itself.
+     */
+    slotVoltage: boolean;
+  };
 }
 
 export interface Expected {
@@ -157,17 +168,26 @@ export function expectedSource(
     };
   }
   const setting = decodeValue(inp.setting);
+  const active = slots.find((s) => s.active);
   if (inp.share.enabled && inp.share.computedW !== null) {
+    const w = inp.share.computedW;
+    if (inp.share.slotVoltage && active?.decoded) {
+      return {
+        source: 'share',
+        slot: active.index,
+        value: { cutoffV: active.decoded.cutoffV, limitW: w },
+        note: `Điện áp cắt lấy từ ô lịch #${active.index}`,
+      };
+    }
     return {
       source: 'share',
       slot: null,
-      value: setting
-        ? { cutoffV: setting.cutoffV, limitW: inp.share.computedW }
-        : null,
-      note: null,
+      value: setting ? { cutoffV: setting.cutoffV, limitW: w } : null,
+      note: inp.share.slotVoltage
+        ? 'Điện áp cắt lấy từ Cài đặt (ngoài khung giờ lịch)'
+        : 'Điện áp cắt lấy từ Cài đặt (firmware 1.0.8 - 1.1.5 bỏ qua lịch khi chia tải, cập nhật 1.1.6 để lấy theo lịch)',
     };
   }
-  const active = slots.find((s) => s.active);
   if (active) {
     if (active.decoded) {
       return {

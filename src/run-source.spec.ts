@@ -15,7 +15,11 @@ const base = {
   schedule: null as string | null,
   gridTieOff: false,
   blacklisted: false,
-  share: { enabled: false, computedW: null as number | null },
+  share: {
+    enabled: false,
+    computedW: null as number | null,
+    slotVoltage: false,
+  },
 };
 
 describe('run-source', () => {
@@ -74,11 +78,36 @@ describe('run-source', () => {
           ...base,
           now: at('06:00'),
           schedule,
-          share: { enabled: true, computedW: 350 },
+          share: { enabled: true, computedW: 350, slotVoltage: false },
         },
         slots,
       ),
-    ).toMatchObject({ source: 'share', value: { cutoffV: 50, limitW: 350 } });
+    ).toMatchObject({
+      source: 'share',
+      slot: null,
+      value: { cutoffV: 50, limitW: 350 },
+    });
+  });
+
+  it('share takes the active slot voltage (old fw / 1.1.6+)', () => {
+    const schedule = 'start=01:00&end=05:00&value=52001500';
+    const share = { enabled: true, computedW: 350, slotVoltage: true };
+    const inSlot = parseSchedule(schedule, at('02:00'));
+    expect(
+      expectedSource({ ...base, now: at('02:00'), schedule, share }, inSlot),
+    ).toMatchObject({
+      source: 'share',
+      slot: 1,
+      value: { cutoffV: 52, limitW: 350 },
+    });
+    const outside = parseSchedule(schedule, at('08:00'));
+    expect(
+      expectedSource({ ...base, now: at('08:00'), schedule, share }, outside),
+    ).toMatchObject({
+      source: 'share',
+      slot: null,
+      value: { cutoffV: 50, limitW: 350 },
+    });
   });
 
   it('a matching slot with a bad value falls back to the setting', () => {
