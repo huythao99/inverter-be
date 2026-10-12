@@ -20,6 +20,7 @@ import {
   isLegacyDevice,
   newestFirmwareVersion,
 } from './firmware.service';
+import { parseSourceLog } from '../utils/run-source';
 
 export type HealthIssue =
   | 'offline'
@@ -292,6 +293,11 @@ export class DeviceHealthService implements OnModuleInit, OnModuleDestroy {
         if (p) set.stmProto = { ...p, at };
         break;
       }
+      case 'SOURCE_CHANGE': {
+        const r = parseSourceLog(msg);
+        if (r) set.runSource = { ...r, at };
+        break;
+      }
       case 'OTA_PENDING_VERIFY':
         set.ota = { state: 'pending', at };
         break;
@@ -444,6 +450,18 @@ export class DeviceHealthService implements OnModuleInit, OnModuleDestroy {
     );
     this.cache = { at: now, rows };
     return rows;
+  }
+
+  /** Last SOURCE_CHANGE report of one device (null = never reported). */
+  async runSource(
+    userId: string,
+    deviceId: string,
+  ): Promise<DeviceHealth['runSource']> {
+    const h = await this.healthModel
+      .findOne({ userId, deviceId }, { runSource: 1 })
+      .lean()
+      .exec();
+    return h?.runSource ?? null;
   }
 
   /** Last STM_PROTOCOL report of one device (null = never reported). */

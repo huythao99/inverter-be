@@ -77,6 +77,10 @@ export class DeviceHealth {
     at: Date;
   } | null;
 
+  /** Last SOURCE_CHANGE report: what the writer runs (share/schedule/...). */
+  @Prop({ type: Object, default: null })
+  runSource: { source: string; value: string; at: Date } | null;
+
   @Prop({ type: Object, default: null })
   lastLog: { code: string; message: string; at: Date } | null;
 

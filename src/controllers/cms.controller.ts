@@ -63,6 +63,16 @@ import { StmProtocolDto } from '../dto/stm-protocol.dto';
 import { CmsGridTieDto } from '../dto/cms-grid-tie.dto';
 import { GridTieService } from '../services/grid-tie.service';
 import { MqttService } from '../services/mqtt.service';
+import {
+  VN_OFFSET_MIN,
+  decodeValue,
+  expectedSource,
+  parseSchedule,
+  stmMatches,
+  stmRuns,
+  stmValueOf,
+} from '../utils/run-source';
+import { ShareService } from '../services/share.service';
 import { auditCtx } from '../utils/audit-context';
 import {
   DeviceQueryDto,
@@ -88,6 +98,7 @@ export class CmsController {
     private readonly firmwareRolloutService: FirmwareRolloutService,
     private readonly gridTieService: GridTieService,
     private readonly mqttService: MqttService,
+    private readonly shareService: ShareService,
   ) {}
 
   // ==================== Authentication ====================
@@ -558,6 +569,94 @@ export class CmsController {
       await this.mqttService.emitGridTie(s.userId, s.deviceId, dto.off);
     }
     return { off: dto.off, published };
+  }
+
+  // "Running on schedule or setting?": the server's view (lock > grid-tie OFF
+  // > share > schedule > setting, same order as the firmware), what the
+  // device last reported (SOURCE_CHANGE) and what the STM32 really runs
+  // (telemetry cut-off / limit), plus the schedule as a table.
+  @Get('devices/:id/run-source')
+  @UseGuards(AdminGuard)
+  async getRunSource(@Param('id') id: string) {
+    const d = await this.cmsService.getRunSourceData(id);
+    const now = new Date();
+    const [gridTieOff, share, reported, stmProto] = await Promise.all([
+      this.gridTieService.isOff(d.userId, d.deviceId),
+      this.shareService.getShareStatus(d.userId, d.deviceId),
+      this.deviceHealthService.runSource(d.userId, d.deviceId),
+      this.deviceHealthService.stmProto(d.userId, d.deviceId),
+    ]);
+    const blacklisted = this.blacklistDeviceService.isBlacklisted(
+      d.deviceId,
+      d.userId,
+    );
+    const slots = parseSchedule(d.schedule?.schedule, now);
+    const expected = expectedSource(
+      {
+        now,
+        setting: d.setting?.value ?? null,
+        schedule: d.schedule?.schedule ?? null,
+        gridTieOff,
+        blacklisted,
+        share: { enabled: share.enabled, computedW: share.computed },
+      },
+      slots,
+    );
+    const settingValue = decodeValue(d.setting?.value);
+    const stmValue = stmValueOf(d.data?.value);
+    const legacy = stmProto?.mode === 'legacy';
+    const candidates = [
+      { key: 'gridtie', value: { cutoffV: 99, limitW: 1 } },
+      ...(expected.source === 'share'
+        ? [{ key: 'share', value: expected.value }]
+        : []),
+      ...slots.map((s) => ({ key: `schedule#${s.index}`, value: s.decoded })),
+      { key: 'setting', value: settingValue },
+    ];
+    const hh = (m: number) =>
+      `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+    const nowMin = now.getUTCHours() * 60 + now.getUTCMinutes();
+    return {
+      now: now.toISOString(),
+      nowUtc: hh(nowMin),
+      nowVn: hh(nowMin + VN_OFFSET_MIN),
+      firmwareVersion: d.firmwareVersion,
+      expected,
+      reported,
+      stm: stmValue
+        ? {
+            ...stmValue,
+            at: d.data?.updatedAt ?? null,
+            legacy,
+            matches: stmMatches(stmValue, candidates, legacy),
+            matchesExpected:
+              expected.source === 'lock'
+                ? null
+                : stmRuns(stmValue, expected.value, legacy),
+          }
+        : null,
+      setting: d.setting
+        ? {
+            raw: d.setting.value,
+            value: settingValue,
+            updatedAt: d.setting.updatedAt,
+          }
+        : null,
+      schedule: {
+        raw: d.schedule?.schedule ?? null,
+        updatedAt: d.schedule?.updatedAt ?? null,
+        slots,
+      },
+      flags: {
+        blacklisted,
+        gridTieOff,
+        share: {
+          enabled: share.enabled,
+          groupName: share.group?.name ?? null,
+          computedW: share.computed,
+        },
+      },
+    };
   }
 
   @Post('devices/:id/restart')

@@ -310,6 +310,58 @@ export const getGridTie = (id: string) => api.get<{ off: boolean }>(`/devices/${
 export const setGridTie = (id: string, off: boolean) =>
   api.put<{ off: boolean; published: boolean }>(`/devices/${id}/grid-tie`, { off });
 
+// ---- "Running on schedule or setting?" (device detail) ----
+export type RunSource = 'lock' | 'gridtie' | 'share' | 'schedule' | 'setting' | 'none';
+
+export interface RunValue {
+  cutoffV: number;
+  limitW: number;
+}
+
+export interface RunScheduleSlot {
+  index: number;
+  raw: string;
+  startUtc: string;
+  endUtc: string;
+  startVn: string;
+  endVn: string;
+  value: string;
+  decoded: RunValue | null;
+  placeholder: boolean;
+  active: boolean;
+}
+
+export interface RunSourceInfo {
+  now: string;
+  nowUtc: string;
+  nowVn: string;
+  firmwareVersion: string | null;
+  expected: {
+    source: RunSource;
+    slot: number | null;
+    value: RunValue | null;
+    note: string | null;
+  };
+  reported: { source: string; value: string; at: string } | null;
+  stm:
+    | (RunValue & {
+        at: string | null;
+        legacy: boolean;
+        matches: string[];
+        matchesExpected: boolean | null;
+      })
+    | null;
+  setting: { raw: string; value: RunValue | null; updatedAt: string | null } | null;
+  schedule: { raw: string | null; updatedAt: string | null; slots: RunScheduleSlot[] };
+  flags: {
+    blacklisted: boolean;
+    gridTieOff: boolean;
+    share: { enabled: boolean; groupName: string | null; computedW: number | null };
+  };
+}
+
+export const getRunSource = (id: string) => api.get<RunSourceInfo>(`/devices/${id}/run-source`);
+
 export const triggerStmUpdate = (id: string, force = false) =>
   api.post<{ success: boolean; targetVersion: string; crc32: string }>(
     `/devices/${id}/stm-update`,

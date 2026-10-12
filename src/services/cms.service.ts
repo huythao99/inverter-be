@@ -559,6 +559,57 @@ export class CmsService implements OnModuleInit {
    * CMS reads the lines itself over MQTT (cms_viewer can read inverter/#).
    */
   /** ESP32 <-> STM32 link protocol setting of one device (by _id). */
+  /**
+   * Raw inputs of the "running on schedule or setting?" check (by device _id):
+   * stored setting + schedule and the latest telemetry frame.
+   */
+  async getRunSourceData(id: string): Promise<{
+    userId: string;
+    deviceId: string;
+    firmwareVersion: string | null;
+    setting: { value: string; updatedAt: Date | null } | null;
+    schedule: { schedule: string; updatedAt: Date | null } | null;
+    data: { value: string; updatedAt: Date | null } | null;
+  }> {
+    const device = await this.inverterDeviceModel
+      .findById(id, { userId: 1, deviceId: 1, firmwareVersion: 1 })
+      .lean()
+      .exec();
+    if (!device) {
+      throw new NotFoundException(`Device with ID ${id} not found`);
+    }
+    const { userId, deviceId } = device;
+    const [setting, schedule, data] = await Promise.all([
+      this.inverterSettingModel
+        .findOne({ userId, deviceId }, { value: 1, updatedAt: 1 })
+        .lean()
+        .exec(),
+      this.inverterScheduleModel
+        .findOne({ userId, deviceId }, { schedule: 1, updatedAt: 1 })
+        .lean()
+        .exec(),
+      this.inverterDataModel
+        .findOne({ userId, deviceId }, { value: 1, updatedAt: 1 })
+        .sort({ updatedAt: -1 })
+        .lean()
+        .exec(),
+    ]);
+    return {
+      userId,
+      deviceId,
+      firmwareVersion: device.firmwareVersion ?? null,
+      setting: setting
+        ? { value: setting.value, updatedAt: setting.updatedAt ?? null }
+        : null,
+      schedule: schedule
+        ? { schedule: schedule.schedule, updatedAt: schedule.updatedAt ?? null }
+        : null,
+      data: data
+        ? { value: data.value, updatedAt: data.updatedAt ?? null }
+        : null,
+    };
+  }
+
   async getStmProtocolSetting(id: string): Promise<{
     userId: string;
     deviceId: string;
