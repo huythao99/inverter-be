@@ -48,6 +48,21 @@ export class DailyTotals {
   @Prop({ type: Number })
   lastA2?: number;
 
+  // Odometer devices only: energy of the day counted frame by frame
+  // (OdometerAccumulatorService: sum of the increases between consecutive
+  // readings, a counter going back/reset just starts a new baseline). Exact
+  // whatever the STM32 counter does. Absent on days before it existed.
+  @Prop({ type: Number })
+  energyA?: number;
+
+  @Prop({ type: Number })
+  energyA2?: number;
+
+  // energyA/energyA2 miss part of the day (Redis was down, or the day the
+  // feature was deployed): reads use the odometer formula for that day.
+  @Prop({ type: Boolean })
+  energyGap?: boolean;
+
   @Prop({ default: Date.now })
   createdAt: Date;
 

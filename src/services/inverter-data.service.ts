@@ -14,6 +14,7 @@ import {
 import { MqttService } from './mqtt.service';
 import { RedisDailyTotalsService } from './redis-daily-totals.service';
 import { DailyTotalsService } from './daily-totals.service';
+import { OdometerAccumulatorService } from './odometer-accumulator.service';
 
 /**
  * Energy (kWh) of one 10-number frame: its last two numbers are the energy of
@@ -102,6 +103,7 @@ export class InverterDataService implements OnModuleDestroy {
     private mqttService: MqttService,
     private redisDailyTotalsService: RedisDailyTotalsService,
     private dailyTotalsService: DailyTotalsService,
+    private odometerAccumulator: OdometerAccumulatorService,
   ) {
     // Start memory cleanup every 60 seconds (reduced CPU)
     this.cleanupTimer = setInterval(() => {
@@ -468,18 +470,15 @@ export class InverterDataService implements OnModuleDestroy {
 
       if (!this.isPlausibleOdometer(deviceKey, totalA, totalA2, now)) return;
 
-      const today = this.getTodayGMT7();
-      this.dailyTotalsService
-        .upsertOdometerReading(
-          payload.currentUid,
-          payload.wifiSsid,
-          today,
-          totalA,
-          totalA2,
-        )
-        .catch(() => {
-          // Write failed - next frame (3s later) carries the same odometer
-        });
+      // Counted frame by frame in Redis, flushed to MongoDB every minute
+      // (OdometerAccumulatorService); straight to MongoDB if Redis is down.
+      void this.odometerAccumulator.onReading(
+        payload.currentUid,
+        payload.wifiSsid,
+        this.getTodayGMT7(),
+        totalA,
+        totalA2,
+      );
       return;
     }
 

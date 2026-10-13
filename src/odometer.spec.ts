@@ -1,4 +1,4 @@
-import { odometerDayEnergies } from './utils/odometer';
+import { odometerDayDetails, odometerDayEnergies } from './utils/odometer';
 
 const r = (xs: number[]) => xs.map((x) => Math.round(x * 1000) / 1000);
 
@@ -87,5 +87,19 @@ describe('odometerDayEnergies', () => {
     expect(
       r(odometerDayEnergies([{ max: 50, start: 48, last: 50 }], null)),
     ).toEqual([2]);
+  });
+
+  it('GTIControl599 13/10: counter went back to 9.832 then climbed again', () => {
+    const days = [
+      { max: 11.26, start: 1.593, last: 11.26 }, // 12/10
+      { max: 18.396, start: 9.832, last: 18.396 }, // 13/10
+    ];
+    const prev = { max: 1.5, last: 1.5 };
+    const d = odometerDayDetails(days, prev);
+    expect(d[1].startDrop).toBe(true);
+    // untrusted (one counter only): end - previous end
+    expect(r(odometerDayEnergies(days, prev))[1]).toBe(7.136);
+    // trusted rollback (both counters dropped): at least end - lowest
+    expect(r(odometerDayEnergies(days, prev, [false, true]))[1]).toBe(8.564);
   });
 });

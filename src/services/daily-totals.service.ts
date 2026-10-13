@@ -9,7 +9,7 @@ import {
 import { CreateDailyTotalsDto } from '../dto/create-daily-totals.dto';
 import { UpdateDailyTotalsDto } from '../dto/update-daily-totals.dto';
 import { QueryDailyTotalsDto } from '../dto/query-daily-totals.dto';
-import { OdoDay, odometerDayEnergies } from '../utils/odometer';
+import { OdoDay, odometerDayDetails } from '../utils/odometer';
 
 /** Previous day's odometer: max + latest reading of each counter. */
 interface PrevDayReading {
@@ -101,6 +101,9 @@ export class DailyTotalsService {
         a: OdoDay;
         a2: OdoDay;
         lastAt: number;
+        /** Energy counted frame by frame (OdometerAccumulatorService). */
+        energy: { a: number; a2: number } | null;
+        gap: boolean;
       }
     >();
     for (const r of autoRecords) {
@@ -110,6 +113,10 @@ export class DailyTotalsService {
       const at = new Date(r.updatedAt ?? 0).getTime() || 0;
       const lastA = num(r.lastA);
       const lastA2 = num(r.lastA2);
+      const eA = num(r.energyA);
+      const eA2 = num(r.energyA2);
+      const energy = eA !== null && eA2 !== null ? { a: eA, a2: eA2 } : null;
+      const gap = !!r.energyGap;
       const cur = dayMap.get(key);
       if (!cur) {
         dayMap.set(key, {
@@ -117,9 +124,15 @@ export class DailyTotalsService {
           a: { max: a, start: num(r.odoStartA), last: lastA },
           a2: { max: a2, start: num(r.odoStartA2), last: lastA2 },
           lastAt: at,
+          energy,
+          gap,
         });
         continue;
       }
+      if (energy && (!cur.energy || energy.a > cur.energy.a)) {
+        cur.energy = energy;
+      }
+      cur.gap = cur.gap || gap;
       if (a > cur.a.max) {
         cur.a.max = a;
         cur.record = r;
@@ -137,20 +150,34 @@ export class DailyTotalsService {
 
     const keys = [...dayMap.keys()].sort((x, y) => x - y);
     const days = keys.map((k) => dayMap.get(k)!);
-    const eA = odometerDayEnergies(
-      days.map((d) => d.a),
-      baseline ? { max: baseline.totalA, last: baseline.lastA } : null,
+    const prevA = baseline
+      ? { max: baseline.totalA, last: baseline.lastA }
+      : null;
+    const prevA2 = baseline
+      ? { max: baseline.totalA2, last: baseline.lastA2 }
+      : null;
+    const daysA = days.map((d) => d.a);
+    const daysA2 = days.map((d) => d.a2);
+    // A rollback (counter back below the previous day's end) is trusted only
+    // when BOTH counters went back the same day: a single corrupted frame
+    // rarely lowers both.
+    const dropA = odometerDayDetails(daysA, prevA);
+    const dropA2 = odometerDayDetails(daysA2, prevA2);
+    const rollback = days.map(
+      (_, i) => dropA[i].startDrop && dropA2[i].startDrop,
     );
-    const eA2 = odometerDayEnergies(
-      days.map((d) => d.a2),
-      baseline ? { max: baseline.totalA2, last: baseline.lastA2 } : null,
-    );
-    return keys.map((k, i) => ({
-      dayStart: new Date(k),
-      record: days[i].record,
-      totalA: eA[i],
-      totalA2: eA2[i],
-    }));
+    const eA = odometerDayDetails(daysA, prevA, rollback);
+    const eA2 = odometerDayDetails(daysA2, prevA2, rollback);
+    return keys.map((k, i) => {
+      // Counted frame by frame for the whole day: exact, use it.
+      const exact = days[i].energy && !days[i].gap ? days[i].energy : null;
+      return {
+        dayStart: new Date(k),
+        record: days[i].record,
+        totalA: exact ? exact.a : eA[i].value,
+        totalA2: exact ? exact.a2 : eA2[i].value,
+      };
+    });
   }
 
   // Last reading of the GMT+7 day immediately before `dayStart`. Handles legacy
@@ -479,6 +506,9 @@ export class DailyTotalsService {
     date: string,
     totalA: number,
     totalA2: number,
+    // Written while the frame-by-frame energy (Redis) was unavailable: that
+    // day's energyA is incomplete, reads fall back to the odometer formula.
+    energyGap = false,
   ): Promise<void> {
     const { start } = this.getGMT7DateRange(date);
 
@@ -494,6 +524,7 @@ export class DailyTotalsService {
             // restarted from 0 during the day (max would hide it).
             lastA: totalA,
             lastA2: totalA2,
+            ...(energyGap ? { energyGap: true } : {}),
             autoCalculate: true,
             timezone: 'Asia/Ho_Chi_Minh',
             updatedAt: new Date(),
@@ -509,6 +540,93 @@ export class DailyTotalsService {
         { upsert: true },
       )
       .exec();
+  }
+
+  /**
+   * Flush of OdometerAccumulatorService: the day's readings and its energy
+   * counted frame by frame. Every value is a full snapshot ($set / $max /
+   * $min), so writing the same snapshot twice changes nothing.
+   */
+  async saveAccumulatedDay(
+    userId: string,
+    deviceId: string,
+    date: string,
+    d: {
+      maxA: number;
+      maxA2: number;
+      minA: number;
+      minA2: number;
+      lastA: number;
+      lastA2: number;
+      energyA: number;
+      energyA2: number;
+      gap: boolean;
+    },
+  ): Promise<void> {
+    const { start } = this.getGMT7DateRange(date);
+    await this.dailyTotalsModel
+      .updateOne(
+        { userId, deviceId, date: start },
+        {
+          $max: { totalA: d.maxA, totalA2: d.maxA2 },
+          $min: { odoStartA: d.minA, odoStartA2: d.minA2 },
+          $set: {
+            lastA: d.lastA,
+            lastA2: d.lastA2,
+            energyA: d.energyA,
+            energyA2: d.energyA2,
+            ...(d.gap ? { energyGap: true } : {}),
+            autoCalculate: true,
+            timezone: 'Asia/Ho_Chi_Minh',
+            updatedAt: new Date(),
+            deletedAt: null,
+          },
+          $setOnInsert: {
+            userId,
+            deviceId,
+            date: start,
+            createdAt: new Date(),
+          },
+        },
+        { upsert: true },
+      )
+      .exec();
+  }
+
+  /**
+   * Seed of OdometerAccumulatorService for a device it has no state for
+   * (first frame after deploy, or Redis lost its data): the latest odometer
+   * record. `today` = that record is the given day.
+   */
+  async latestOdometerRecord(
+    userId: string,
+    deviceId: string,
+    date: string,
+  ): Promise<{
+    lastA: number;
+    lastA2: number;
+    today: boolean;
+    energyA: number | null;
+    energyA2: number | null;
+    energyGap: boolean;
+  } | null> {
+    const r = await this.dailyTotalsModel
+      .findOne({ userId, deviceId, autoCalculate: true, deletedAt: null })
+      .sort({ date: -1 })
+      .lean()
+      .exec();
+    if (!r) return null;
+    const { start } = this.getGMT7DateRange(date);
+    const n = (v: unknown): number | null =>
+      typeof v === 'number' && isFinite(v) ? v : null;
+    return {
+      lastA: n(r.lastA) ?? n(r.totalA) ?? 0,
+      lastA2: n(r.lastA2) ?? n(r.totalA2) ?? 0,
+      today: new Date(r.date).getTime() === start.getTime(),
+      energyA: n(r.energyA),
+      energyA2: n(r.energyA2),
+      energyGap: !!r.energyGap,
+    };
   }
 
   async incrementTotals(

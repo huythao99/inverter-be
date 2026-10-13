@@ -34,11 +34,29 @@ export interface OdoPrev {
 
 const dropped = (from: number, to: number) => from - to > RESET_DROP_KWH;
 
-/** Energy of each day (same order as `days`, oldest first). */
-export function odometerDayEnergies(
+export interface OdoDayResult {
+  /** Energy of the day (kWh). */
+  value: number;
+  /**
+   * The day's lowest reading is below the previous day's end: the counter
+   * went back (STM32 restart restoring an older saved value, or a reset)
+   * somewhere in the day, even if it climbed above the previous end again.
+   */
+  startDrop: boolean;
+}
+
+/**
+ * Same as odometerDayEnergies, with per-day details. `rollback[i]` = trust a
+ * start drop of day i as a real counter rollback (the caller checks that BOTH
+ * counters dropped, so one corrupted frame is not enough): the day then
+ * counts at least end - lowest reading, the energy since the rollback (the
+ * plain end - previous end would miss what was lost by going back).
+ */
+export function odometerDayDetails(
   days: OdoDay[],
   prev: OdoPrev | null,
-): number[] {
+  rollback?: boolean[],
+): OdoDayResult[] {
   const endOf = (i: number): number => {
     const d = days[i];
     if (d.last !== null && isFinite(d.last)) return d.last;
@@ -61,10 +79,11 @@ export function odometerDayEnergies(
     } else p = prev.max;
   }
 
-  const out: number[] = [];
+  const out: OdoDayResult[] = [];
   for (let i = 0; i < days.length; i++) {
     const { max: m, start: s } = days[i];
     const e = endOf(i);
+    const startDrop = p !== null && s !== null && dropped(p, s);
     let v: number;
     if (dropped(m, e)) {
       // Reset during the day.
@@ -76,14 +95,28 @@ export function odometerDayEnergies(
       v = s !== null && e >= s ? e - s : e;
     } else if (!dropped(p, e)) {
       v = Math.max(e - p, 0);
+      // Went back below the previous end and climbed above it again: at
+      // least the climb from the lowest reading was produced today.
+      if (startDrop && rollback?.[i] && s !== null && e >= s) {
+        v = Math.max(v, e - s);
+      }
     } else {
       // Reset between the previous reading and this day's readings.
       v = e;
     }
-    out.push(round6(v));
+    out.push({ value: round6(v), startDrop });
     p = e;
   }
   return out;
+}
+
+/** Energy of each day (same order as `days`, oldest first). */
+export function odometerDayEnergies(
+  days: OdoDay[],
+  prev: OdoPrev | null,
+  rollback?: boolean[],
+): number[] {
+  return odometerDayDetails(days, prev, rollback).map((r) => r.value);
 }
 
 const round6 = (n: number) => Math.round(n * 1e6) / 1e6;

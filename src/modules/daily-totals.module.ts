@@ -4,6 +4,7 @@ import { DailyTotalsController } from '../controllers/daily-totals.controller';
 import { DailyTotalsService } from '../services/daily-totals.service';
 import { RedisDailyTotalsService } from '../services/redis-daily-totals.service';
 import { RedisConfig } from '../config/redis.config';
+import { OdometerAccumulatorService } from '../services/odometer-accumulator.service';
 import { DailyTotals, DailyTotalsSchema } from '../models/daily-totals.schema';
 
 @Module({
@@ -13,7 +14,16 @@ import { DailyTotals, DailyTotalsSchema } from '../models/daily-totals.schema';
     ]),
   ],
   controllers: [DailyTotalsController],
-  providers: [DailyTotalsService, RedisDailyTotalsService, RedisConfig],
-  exports: [DailyTotalsService, RedisDailyTotalsService],
+  providers: [
+    DailyTotalsService,
+    RedisDailyTotalsService,
+    RedisConfig,
+    OdometerAccumulatorService,
+  ],
+  exports: [
+    DailyTotalsService,
+    RedisDailyTotalsService,
+    OdometerAccumulatorService,
+  ],
 })
 export class DailyTotalsModule {}
