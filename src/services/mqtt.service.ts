@@ -36,7 +36,14 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MqttService.name);
   private client: mqtt.MqttClient;
   private isInitialized = false;
-  private messageHandlers = new Map<string, number>();
+  // Rate-limit state: key ("data:uid-dev", "charger:uid-dev-data", ...) -> time
+  // the last frame for that key was processed. Pruned by a timer (see
+  // pruneLastProcessed), never on the message path.
+  private lastProcessedAt = new Map<string, number>();
+  private pruneTimer?: NodeJS.Timeout;
+  // Entries idle longer than this are dropped. Must stay well above every
+  // rate-limit window (2.5-5s) so pruning never changes which frames pass.
+  private readonly RATE_ENTRY_TTL_MS = 60_000;
   // Failed reconnects since the last successful connect (logging only: the
   // client must NEVER give up - every command to the devices and all device
   // data ingestion go through this connection).
@@ -62,6 +69,12 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     if (this.isInitialized) {
       return;
     }
+
+    this.pruneTimer = setInterval(
+      () => this.pruneLastProcessed(),
+      this.RATE_ENTRY_TTL_MS,
+    );
+    this.pruneTimer.unref();
 
     // All instances connect so they can publish (e.g. sync commands to ESP32).
     // Only the primary instance subscribes to device topics to prevent duplicate
@@ -228,20 +241,11 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     // display / storage / CMS. Energy of 10-number frames is not affected
     // (inverter.energy.received above).
     const now = Date.now();
-    const lastProcessed = this.messageHandlers.get(deviceKey);
+    const lastProcessed = this.lastProcessedAt.get(deviceKey);
     if (lastProcessed && now - lastProcessed < this.DEVICE_RATE_LIMIT_MS) {
       return;
     }
-    this.messageHandlers.set(deviceKey, now);
-
-    // Cleanup expired entries (not all) - only when map is large
-    if (this.messageHandlers.size > 1000) {
-      for (const [key, timestamp] of this.messageHandlers.entries()) {
-        if (now - timestamp > 60000) {
-          this.messageHandlers.delete(key);
-        }
-      }
-    }
+    this.lastProcessedAt.set(deviceKey, now);
 
     if (isInverter && topicParts[3] === 'data') {
       void this.handleInverterMessage(currentUid, wifiSsid, 'data', messageStr);
@@ -309,9 +313,9 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     const rateKey = `charger:${uid}-${deviceId}-${kind}`;
     const now = Date.now();
     const windowMs = kind === 'data' ? 3000 : 5000;
-    const last = this.messageHandlers.get(rateKey);
+    const last = this.lastProcessedAt.get(rateKey);
     if (last && now - last < windowMs) return;
-    this.messageHandlers.set(rateKey, now);
+    this.lastProcessedAt.set(rateKey, now);
 
     const payloadStr = message.toString();
 
@@ -460,14 +464,24 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /** Drop rate-limit entries of devices that stopped sending (runs every minute). */
+  private pruneLastProcessed(now = Date.now()) {
+    for (const [key, at] of this.lastProcessedAt) {
+      if (now - at > this.RATE_ENTRY_TTL_MS) this.lastProcessedAt.delete(key);
+    }
+  }
+
   async onModuleDestroy() {
+    if (this.pruneTimer) {
+      clearInterval(this.pruneTimer);
+      this.pruneTimer = undefined;
+    }
     try {
       if (this.client) {
         // Remove all listeners to prevent memory leaks
         this.client.removeAllListeners();
 
-        // Clear message handlers
-        this.messageHandlers.clear();
+        this.lastProcessedAt.clear();
 
         // Gracefully close connection with timeout
         await Promise.race([

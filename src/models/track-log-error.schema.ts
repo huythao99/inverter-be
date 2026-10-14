@@ -25,7 +25,15 @@ export class TrackLogError {
 
 export const TrackLogErrorSchema = SchemaFactory.createForClass(TrackLogError);
 
+/** Device logs are only useful for a while; Mongo's TTL monitor removes older ones. */
+export const TRACK_LOG_TTL_SECONDS = 7 * 24 * 3600;
+
+// {userId, deviceId} also serves userId-only queries (index prefix), so a separate
+// {userId: 1} index is not needed. The TTL index on createdAt also serves sorting
+// by createdAt in either direction.
 TrackLogErrorSchema.index({ userId: 1, deviceId: 1 });
-TrackLogErrorSchema.index({ createdAt: -1 });
-TrackLogErrorSchema.index({ userId: 1 });
+TrackLogErrorSchema.index(
+  { createdAt: 1 },
+  { expireAfterSeconds: TRACK_LOG_TTL_SECONDS },
+);
 TrackLogErrorSchema.index({ deviceId: 1 });

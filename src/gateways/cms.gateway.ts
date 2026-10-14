@@ -31,6 +31,9 @@ export class CmsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private readonly logger = new Logger(CmsGateway.name);
   private clientSubscriptions = new Map<string, Set<string>>(); // clientId -> Set of "userId:deviceId"
+  // Reverse index: "userId:deviceId" -> Set of clientId. Lets each device frame
+  // reach its subscribers with one lookup instead of scanning every client.
+  private subscribers = new Map<string, Set<string>>();
 
   constructor(
     private jwtService: JwtService,
@@ -74,6 +77,9 @@ export class CmsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   handleDisconnect(client: Socket) {
+    for (const key of this.clientSubscriptions.get(client.id) ?? []) {
+      this.removeSubscriber(key, client.id);
+    }
     this.clientSubscriptions.delete(client.id);
     this.logger.log(`CMS client disconnected: ${client.id}`);
   }
@@ -89,6 +95,12 @@ export class CmsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const subscriptions = this.clientSubscriptions.get(client.id);
     if (subscriptions) {
       subscriptions.add(subscriptionKey);
+      let clients = this.subscribers.get(subscriptionKey);
+      if (!clients) {
+        clients = new Set();
+        this.subscribers.set(subscriptionKey, clients);
+      }
+      clients.add(client.id);
       this.logger.log(`Client ${client.id} subscribed to ${subscriptionKey}`);
 
       return { success: true, subscribed: subscriptionKey };
@@ -108,6 +120,7 @@ export class CmsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const subscriptions = this.clientSubscriptions.get(client.id);
     if (subscriptions) {
       subscriptions.delete(subscriptionKey);
+      this.removeSubscriber(subscriptionKey, client.id);
       this.logger.log(
         `Client ${client.id} unsubscribed from ${subscriptionKey}`,
       );
@@ -125,36 +138,29 @@ export class CmsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     wifiSsid: string;
     data: { value: string; totalACapacity: number; totalA2Capacity: number };
   }) {
-    const subscriptionKey = `${payload.currentUid}:${payload.wifiSsid}`;
+    const clients = this.subscribers.get(
+      `${payload.currentUid}:${payload.wifiSsid}`,
+    );
+    if (!clients?.size) return;
 
-    // Find all clients subscribed to this device
-    for (const [
-      clientId,
-      subscriptions,
-    ] of this.clientSubscriptions.entries()) {
-      if (subscriptions.has(subscriptionKey)) {
-        const client = this.server.sockets.sockets.get(clientId);
-        if (client) {
-          // Parse the value JSON if possible
-          let parsedValue: any = null;
-          try {
-            parsedValue = JSON.parse(payload.data.value);
-          } catch {
-            // Value is not JSON, keep as string
-          }
-
-          client.emit('deviceData', {
-            userId: payload.currentUid,
-            deviceId: payload.wifiSsid,
-            data: {
-              ...payload.data,
-              parsedValue,
-            },
-            timestamp: new Date().toISOString(),
-          });
-        }
+    // Device frames are "a#b#c…" strings, not JSON; only parse when it looks
+    // like JSON (avoids a thrown exception on every frame).
+    let parsedValue: unknown = null;
+    const value = payload.data.value;
+    if (typeof value === 'string' && /^\s*[[{]/.test(value)) {
+      try {
+        parsedValue = JSON.parse(value);
+      } catch {
+        // keep null; clients fall back to the raw value
       }
     }
+
+    this.emitToClients(clients, 'deviceData', {
+      userId: payload.currentUid,
+      deviceId: payload.wifiSsid,
+      data: { ...payload.data, parsedValue },
+      timestamp: new Date().toISOString(),
+    });
   }
 
   // Listen to device message events
@@ -164,24 +170,12 @@ export class CmsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     wifiSsid: string;
     data: { deviceName: string };
   }) {
-    const subscriptionKey = `${payload.currentUid}:${payload.wifiSsid}`;
-
-    for (const [
-      clientId,
-      subscriptions,
-    ] of this.clientSubscriptions.entries()) {
-      if (subscriptions.has(subscriptionKey)) {
-        const client = this.server.sockets.sockets.get(clientId);
-        if (client) {
-          client.emit('deviceInfo', {
-            userId: payload.currentUid,
-            deviceId: payload.wifiSsid,
-            data: payload.data,
-            timestamp: new Date().toISOString(),
-          });
-        }
-      }
-    }
+    this.emitToSubscribers(payload.currentUid, payload.wifiSsid, 'deviceInfo', {
+      userId: payload.currentUid,
+      deviceId: payload.wifiSsid,
+      data: payload.data,
+      timestamp: new Date().toISOString(),
+    });
   }
 
   // ---- Charger realtime (separate firmware type) ----
@@ -249,18 +243,25 @@ export class CmsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     event: string,
     body: Record<string, unknown>,
   ) {
-    const subscriptionKey = `${userId}:${deviceId}`;
-    for (const [
-      clientId,
-      subscriptions,
-    ] of this.clientSubscriptions.entries()) {
-      if (subscriptions.has(subscriptionKey)) {
-        const client = this.server.sockets.sockets.get(clientId);
-        if (client) {
-          client.emit(event, body);
-        }
-      }
+    const clients = this.subscribers.get(`${userId}:${deviceId}`);
+    if (clients?.size) this.emitToClients(clients, event, body);
+  }
+
+  private emitToClients(
+    clients: Set<string>,
+    event: string,
+    body: Record<string, unknown>,
+  ) {
+    for (const clientId of clients) {
+      this.server.sockets.sockets.get(clientId)?.emit(event, body);
     }
+  }
+
+  private removeSubscriber(key: string, clientId: string) {
+    const clients = this.subscribers.get(key);
+    if (!clients) return;
+    clients.delete(clientId);
+    if (clients.size === 0) this.subscribers.delete(key);
   }
 
   // STM32 FOTA status (forwarded as 'stmOtaStatus')
@@ -273,14 +274,12 @@ export class CmsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     message?: string;
     timestamp: string;
   }) {
-    const subscriptionKey = `${payload.userId}:${payload.deviceId}`;
-    for (const [
-      clientId,
-      subscriptions,
-    ] of this.clientSubscriptions.entries()) {
-      if (!subscriptions.has(subscriptionKey)) continue;
-      this.server.sockets.sockets.get(clientId)?.emit('stmOtaStatus', payload);
-    }
+    this.emitToSubscribers(
+      payload.userId,
+      payload.deviceId,
+      'stmOtaStatus',
+      payload,
+    );
   }
 
   // Listen to OTA firmware update status events
@@ -293,25 +292,13 @@ export class CmsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     message?: string;
     timestamp: string;
   }) {
-    const subscriptionKey = `${payload.userId}:${payload.deviceId}`;
-
-    for (const [
-      clientId,
-      subscriptions,
-    ] of this.clientSubscriptions.entries()) {
-      if (subscriptions.has(subscriptionKey)) {
-        const client = this.server.sockets.sockets.get(clientId);
-        if (client) {
-          client.emit('otaStatus', {
-            userId: payload.userId,
-            deviceId: payload.deviceId,
-            status: payload.status,
-            progress: payload.progress,
-            message: payload.message,
-            timestamp: payload.timestamp,
-          });
-        }
-      }
-    }
+    this.emitToSubscribers(payload.userId, payload.deviceId, 'otaStatus', {
+      userId: payload.userId,
+      deviceId: payload.deviceId,
+      status: payload.status,
+      progress: payload.progress,
+      message: payload.message,
+      timestamp: payload.timestamp,
+    });
   }
 }
