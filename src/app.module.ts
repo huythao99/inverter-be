@@ -30,6 +30,7 @@ import { ChargerDataModule } from './modules/charger-data.module';
 import { ChargerFirmwareModule } from './modules/charger-firmware.module';
 import { CmsChargerModule } from './modules/cms-charger.module';
 import { UserChargerModule } from './modules/user-charger.module';
+import { HybridModule } from './modules/hybrid.module';
 import { AuditLogModule } from './modules/audit-log.module';
 import { DeviceHealthModule } from './modules/device-health.module';
 import { DeviceViewerModule } from './modules/device-viewer.module';
@@ -111,6 +112,7 @@ import { HassModule } from './modules/hass.module';
     ChargerFirmwareModule,
     CmsChargerModule,
     UserChargerModule,
+    HybridModule,
   ],
   controllers: [AppController, FirmwareController],
   providers: [AppService, FirmwareService],

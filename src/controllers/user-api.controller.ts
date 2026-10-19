@@ -221,6 +221,11 @@ export class UserApiController {
       };
     }
 
+    // OFF placeholder stored when grid-tie was turned off before any setting
+    // existed: not a real setting once grid-tie is back ON.
+    if (settings?.value === GRID_TIE_OFF_VALUE) {
+      return { ...settings, value: '' };
+    }
     return settings || { userId: user.uid, deviceId, value: '' };
   }
 

@@ -3,7 +3,7 @@ import { Document, Types } from 'mongoose';
 
 export type AuditLogDocument = AuditLog & Document;
 
-export type AuditDeviceKind = 'inverter' | 'charger';
+export type AuditDeviceKind = 'inverter' | 'charger' | 'hybrid';
 export type AuditAction = 'settings' | 'schedule' | 'grid-tie';
 /** Where the change came from. */
 export type AuditSource = 'app' | 'web' | 'cms' | 'api' | 'system';
@@ -26,7 +26,7 @@ export class AuditLog {
   @Prop({ required: true })
   deviceId: string;
 
-  @Prop({ required: true, enum: ['inverter', 'charger'] })
+  @Prop({ required: true, enum: ['inverter', 'charger', 'hybrid'] })
   kind: AuditDeviceKind;
 
   @Prop({ required: true, enum: ['settings', 'schedule', 'grid-tie'] })

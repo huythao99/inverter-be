@@ -22,6 +22,65 @@ export interface ChargerStatusEventPayload {
   status: string; // "online"
 }
 
+// Map the parsed frame's uppercase keys to the schema fields, keyed by the
+// frame `type` (TLM/CFG/INFO). Only fields present in the message are written.
+// Shared with HybridDataService (same STM32 frames).
+export function mapMpptFrame(data: Record<string, any>): Partial<ChargerData> {
+  const type = String(data.type ?? '').toUpperCase();
+  const update: Partial<ChargerData> = {
+    lastType: type ? type.toLowerCase() : undefined,
+  };
+
+  const s = (v: unknown): string | undefined => {
+    if (v === undefined || v === null) return undefined;
+    if (typeof v === 'string') return v;
+    if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+    return undefined;
+  };
+
+  if (type === 'TLM') {
+    update.st = s(data.ST);
+    update.flt = s(data.FLT);
+    update.lock = s(data.LOCK);
+    update.rtry = s(data.RTRY);
+    update.out = s(data.OUT);
+    update.temp = s(data.T);
+    update.mode = s(data.MODE);
+    update.ms = s(data.MS);
+    update.vpv = s(data.VPV);
+    update.ipv = s(data.IPV);
+    update.ppv = s(data.PPV);
+    update.vbat = s(data.VBAT);
+    update.ibat = s(data.IBAT);
+    update.il = s(data.IL);
+    update.duty = s(data.DUTY);
+    update.vref = s(data.VREF);
+    update.dev = s(data.DEV) ?? update.dev;
+  } else if (type === 'CFG') {
+    update.cfgVbat = s(data.VBAT);
+    update.cfgIbat = s(data.IBAT);
+    update.cfgPbat = s(data.PBAT);
+    update.cfgOut = s(data.OUT);
+    update.src = s(data.SRC);
+  } else if (type === 'INFO') {
+    update.dev = s(data.DEV);
+    update.proto = s(data.PROTO);
+    update.fw = s(data.FW);
+    update.hw = s(data.HW);
+  }
+
+  if (data.raw !== undefined) update.raw = s(data.raw);
+
+  // Drop undefined keys so upsert doesn't overwrite existing values with null.
+  Object.keys(update).forEach((k) => {
+    if ((update as Record<string, unknown>)[k] === undefined) {
+      delete (update as Record<string, unknown>)[k];
+    }
+  });
+
+  return update;
+}
+
 @Injectable()
 export class ChargerDataService {
   constructor(
@@ -83,67 +142,9 @@ export class ChargerDataService {
     return { deletedCount: result.deletedCount };
   }
 
-  // Map the parsed frame's uppercase keys to the schema fields, keyed by the
-  // frame `type` (TLM/CFG/INFO). Only fields present in the message are written.
-  private mapPayload(data: Record<string, any>): Partial<ChargerData> {
-    const type = String(data.type ?? '').toUpperCase();
-    const update: Partial<ChargerData> = {
-      lastType: type ? type.toLowerCase() : undefined,
-    };
-
-    const s = (v: unknown): string | undefined => {
-      if (v === undefined || v === null) return undefined;
-      if (typeof v === 'string') return v;
-      if (typeof v === 'number' || typeof v === 'boolean') return String(v);
-      return undefined;
-    };
-
-    if (type === 'TLM') {
-      update.st = s(data.ST);
-      update.flt = s(data.FLT);
-      update.lock = s(data.LOCK);
-      update.rtry = s(data.RTRY);
-      update.out = s(data.OUT);
-      update.temp = s(data.T);
-      update.mode = s(data.MODE);
-      update.ms = s(data.MS);
-      update.vpv = s(data.VPV);
-      update.ipv = s(data.IPV);
-      update.ppv = s(data.PPV);
-      update.vbat = s(data.VBAT);
-      update.ibat = s(data.IBAT);
-      update.il = s(data.IL);
-      update.duty = s(data.DUTY);
-      update.vref = s(data.VREF);
-      update.dev = s(data.DEV) ?? update.dev;
-    } else if (type === 'CFG') {
-      update.cfgVbat = s(data.VBAT);
-      update.cfgIbat = s(data.IBAT);
-      update.cfgPbat = s(data.PBAT);
-      update.cfgOut = s(data.OUT);
-      update.src = s(data.SRC);
-    } else if (type === 'INFO') {
-      update.dev = s(data.DEV);
-      update.proto = s(data.PROTO);
-      update.fw = s(data.FW);
-      update.hw = s(data.HW);
-    }
-
-    if (data.raw !== undefined) update.raw = s(data.raw);
-
-    // Drop undefined keys so upsert doesn't overwrite existing values with null.
-    Object.keys(update).forEach((k) => {
-      if ((update as Record<string, unknown>)[k] === undefined) {
-        delete (update as Record<string, unknown>)[k];
-      }
-    });
-
-    return update;
-  }
-
   @OnEvent('charger.data.received')
   handleChargerDataReceived(payload: ChargerDataEventPayload): void {
-    const update = this.mapPayload(payload.data ?? {});
+    const update = mapMpptFrame(payload.data ?? {});
     const now = new Date();
 
     this.chargerDataModel

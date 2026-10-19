@@ -68,6 +68,13 @@ export class InverterSettingController {
         };
       }
 
+      // A device turned OFF before it ever had a setting got the OFF command as
+      // its stored value (setGridTieOffInDb upsert). Once grid-tie is back ON
+      // that is not a real setting: serve none, so the device keeps its own.
+      if (result?.value === GRID_TIE_OFF_VALUE) {
+        return { ...result, value: '' };
+      }
+
       // For ESP32 calls, apply the power/energy share cap to the first field of
       // the setting value (min(computed, threshold), zero-padded). App calls get
       // the raw stored value.

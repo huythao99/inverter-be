@@ -112,7 +112,9 @@ export function buildAuditSummary(
   if (e.action === 'grid-tie') {
     return e.after === '1' ? 'Tắt hoà lưới' : 'Bật hoà lưới';
   }
-  if (e.kind === 'charger') return chargerSummary(e.before, e.after);
+  if (e.kind === 'charger' || e.kind === 'hybrid') {
+    return chargerSummary(e.before, e.after);
+  }
   if (e.action === 'schedule') return scheduleSummary(e.before, e.after);
   return inverterSettingsSummary(e.before, e.after);
 }
@@ -156,7 +158,7 @@ export class AuditLogService {
   async list(opts: {
     userId?: string;
     deviceId?: string;
-    kind?: 'inverter' | 'charger';
+    kind?: 'inverter' | 'charger' | 'hybrid';
     before?: string;
     limit?: number;
     withNetwork?: boolean;

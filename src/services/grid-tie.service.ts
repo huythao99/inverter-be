@@ -77,7 +77,14 @@ export class GridTieService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Persist the new status to MongoDB (source of truth), then refresh Redis.
+   * Refresh Redis FIRST, then persist to MongoDB (source of truth).
+   *
+   * Order matters: setGridTieOffInDb() publishes cmd/settings + cmd/schedule
+   * and the device re-fetches within ~100 ms. If Redis still held the old
+   * status, GET setting/schedule (isOff) answered with the stale state - e.g.
+   * the OFF value right after turning grid-tie back ON, which the firmware
+   * then cached as its setting and kept running (99.00 V / 1 W).
+   * If the DB write fails the cache entry is dropped (next read -> DB).
    */
   async setGridTie(
     userId: string,
@@ -85,14 +92,23 @@ export class GridTieService implements OnModuleInit, OnModuleDestroy {
     off: boolean,
     ctx?: AuditContext,
   ): Promise<InverterSetting | null> {
-    const setting = await this.inverterSettingService.setGridTieOffInDb(
-      userId,
-      deviceId,
-      off,
-      ctx,
-    );
-    await this.writeCache(this.getKey(userId, deviceId), off);
-    return setting;
+    const key = this.getKey(userId, deviceId);
+    await this.writeCache(key, off);
+    try {
+      return await this.inverterSettingService.setGridTieOffInDb(
+        userId,
+        deviceId,
+        off,
+        ctx,
+      );
+    } catch (e) {
+      try {
+        await this.redis.del(key);
+      } catch {
+        // Redis down: isOff() falls back to the DB anyway.
+      }
+      throw e;
+    }
   }
 
   private async writeCache(key: string, off: boolean): Promise<void> {

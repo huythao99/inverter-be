@@ -170,6 +170,9 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       'charger/+/+/data', // Charger telemetry/cfg/info
       'charger/+/+/status', // Charger heartbeat
       'charger/+/+/ota/status', // Charger OTA status
+      'hybrid/+/+/data', // Hybrid telemetry/cfg/info (same frames as charger)
+      'hybrid/+/+/status', // Hybrid heartbeat
+      'hybrid/+/+/ota/status', // Hybrid OTA status
     ];
     topics.forEach((topic) => this.client.subscribe(topic));
   }
@@ -183,7 +186,12 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     // Charger is a separate firmware type on its own topic namespace:
     // charger/{uid}/{deviceId}/(data|status|ota/status)
     if (topic.startsWith('charger/')) {
-      this.handleChargerTopic(topicParts, message);
+      this.handleChargerTopic(topicParts, message, 'charger');
+      return;
+    }
+    // Hybrid: own namespace, same message formats as the charger.
+    if (topic.startsWith('hybrid/')) {
+      this.handleChargerTopic(topicParts, message, 'hybrid');
       return;
     }
 
@@ -281,8 +289,13 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  // Route charger topics: charger/{uid}/{deviceId}/(data|status|ota/status)
-  private handleChargerTopic(topicParts: string[], message: Buffer) {
+  // Route charger / hybrid topics: {ns}/{uid}/{deviceId}/(data|status|ota/status).
+  // Emits `${ns}.data.received`, `${ns}.status.received`, `${ns}.ota.status.received`.
+  private handleChargerTopic(
+    topicParts: string[],
+    message: Buffer,
+    ns: 'charger' | 'hybrid',
+  ) {
     const uid = topicParts[1];
     const deviceId = topicParts[2];
     const kind = topicParts[3];
@@ -293,7 +306,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     if (kind === 'ota' && topicParts[4] === 'status') {
       try {
         const data = JSON.parse(message.toString()) as Record<string, unknown>;
-        this.eventEmitter.emit('charger.ota.status.received', {
+        this.eventEmitter.emit(`${ns}.ota.status.received`, {
           userId: uid,
           deviceId,
           status: data.status,
@@ -310,7 +323,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     if (kind !== 'data' && kind !== 'status') return;
 
     // Rate limit per device+kind. Telemetry every 3s, heartbeat every 5s.
-    const rateKey = `charger:${uid}-${deviceId}-${kind}`;
+    const rateKey = `${ns}:${uid}-${deviceId}-${kind}`;
     const now = Date.now();
     const windowMs = kind === 'data' ? 3000 : 5000;
     const last = this.lastProcessedAt.get(rateKey);
@@ -325,7 +338,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       // decoded object.
       const parsed = this.parseChargerFrame(payloadStr);
       if (!parsed) return;
-      this.eventEmitter.emit('charger.data.received', {
+      this.eventEmitter.emit(`${ns}.data.received`, {
         userId: uid,
         deviceId,
         data: parsed,
@@ -340,7 +353,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     } catch {
       // Not JSON; fall back to online.
     }
-    this.eventEmitter.emit('charger.status.received', {
+    this.eventEmitter.emit(`${ns}.status.received`, {
       userId: uid,
       deviceId,
       status: (statusData.status as string) || 'online',
@@ -647,6 +660,46 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   ): Promise<void> {
     await this.publishWithRetain(
       `charger/${userId}/${deviceId}/firmware/update`,
+      '',
+      true,
+    );
+  }
+
+  // ---- Hybrid triggers (hybrid/{uid}/{deviceId}/..., retained) ----
+
+  // "Setting changed, go pull it" (GET /api/hybrid-setting/data/...).
+  async emitSyncHybridSettings(
+    userId: string,
+    deviceId: string,
+  ): Promise<void> {
+    await this.publishWithRetain(
+      `hybrid/${userId}/${deviceId}/cmd/settings`,
+      {},
+      true,
+    );
+  }
+
+  // Grid-tie ("hoà lưới") state: {"off":true} -> STM32 OUT=BAT,
+  // {"off":false} -> OUT=INV. Retained: a device that was offline gets it on
+  // reconnect; the firmware keeps it in NVS.
+  async emitHybridGridTie(
+    userId: string,
+    deviceId: string,
+    off: boolean,
+  ): Promise<void> {
+    await this.publishWithRetain(
+      `hybrid/${userId}/${deviceId}/cmd/grid-tie`,
+      { off },
+      true,
+    );
+  }
+
+  async clearHybridFirmwareUpdate(
+    userId: string,
+    deviceId: string,
+  ): Promise<void> {
+    await this.publishWithRetain(
+      `hybrid/${userId}/${deviceId}/firmware/update`,
       '',
       true,
     );

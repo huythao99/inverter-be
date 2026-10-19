@@ -206,6 +206,62 @@ export class MqttAuthService implements OnModuleInit {
     return `chg_${deviceId}`;
   }
 
+  /** Broker username of a hybrid's own account. */
+  static hybridUsername(deviceId: string): string {
+    return `hyb_${deviceId}`;
+  }
+
+  /** Same as issueChargerCredentials, for a hybrid (kind 'hybrid'). */
+  async issueHybridCredentials(
+    userId: string,
+    deviceId: string,
+  ): Promise<{ username: string; password: string }> {
+    return this.issueDeviceCredentials(
+      'hybrid',
+      MqttAuthService.hybridUsername(deviceId),
+      userId,
+      deviceId,
+    );
+  }
+
+  /**
+   * Check a device's own broker account (kind charger / hybrid), used to
+   * authenticate the device's HTTP calls (Basic auth, same user/password as
+   * MQTT). Returns the owner + device of the account, or null.
+   */
+  async verifyDeviceCredentials(
+    kind: 'charger' | 'hybrid',
+    username: string,
+    password: string,
+  ): Promise<{ userId: string; deviceId: string } | null> {
+    if (!username || !password) return null;
+    const cred = await this.mqttCredentialModel
+      .findOne({ mqttUsername: username, kind, isActive: true })
+      .lean()
+      .exec();
+    if (!cred?.deviceId) return null;
+    const a = Buffer.from(cred.mqttPasswordHash, 'hex');
+    const b = Buffer.from(this.hashPassword(password), 'hex');
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+    return { userId: cred.userId, deviceId: cred.deviceId };
+  }
+
+  /** Same as revokeChargerCredentials, for a hybrid. */
+  async revokeHybridCredentials(
+    deviceId: string,
+    userId?: string,
+  ): Promise<void> {
+    const filter: Record<string, string> = {
+      mqttUsername: MqttAuthService.hybridUsername(deviceId),
+      kind: 'hybrid',
+    };
+    if (userId) filter.userId = userId;
+    const res = await this.mqttCredentialModel.deleteOne(filter).exec();
+    if (res.deletedCount) {
+      this.logger.log(`Revoked MQTT account of hybrid ${deviceId}`);
+    }
+  }
+
   /**
    * Issue (or re-issue) the broker account of one charger, owned by userId.
    * A new random password replaces any previous one, so the old owner / an
@@ -216,13 +272,26 @@ export class MqttAuthService implements OnModuleInit {
     userId: string,
     deviceId: string,
   ): Promise<{ username: string; password: string }> {
-    const mqttUsername = MqttAuthService.chargerUsername(deviceId);
+    return this.issueDeviceCredentials(
+      'charger',
+      MqttAuthService.chargerUsername(deviceId),
+      userId,
+      deviceId,
+    );
+  }
+
+  private async issueDeviceCredentials(
+    kind: 'charger' | 'hybrid',
+    mqttUsername: string,
+    userId: string,
+    deviceId: string,
+  ): Promise<{ username: string; password: string }> {
     const password = this.generatePassword(32);
     await this.mqttCredentialModel.findOneAndUpdate(
       { mqttUsername },
       {
         userId,
-        kind: 'charger',
+        kind,
         deviceId,
         mqttUsername,
         mqttPasswordHash: this.hashPassword(password),
@@ -459,12 +528,13 @@ export class MqttAuthService implements OnModuleInit {
     const userId = credential.userId;
     const kind = credential.kind ?? 'ha';
 
-    // Charger device account: only its own topics, fixed direction.
-    if (kind === 'charger') {
+    // Charger / hybrid device account: only its own topics, fixed direction.
+    if (kind === 'charger' || kind === 'hybrid') {
       if (!credential.deviceId) return false;
-      const base = `charger/${userId}/${credential.deviceId}/`;
+      const base = `${kind}/${userId}/${credential.deviceId}/`;
       const publishes = ['data', 'status', 'ota/status'];
       const receives = ['firmware/update', 'cmd/settings', 'blacklist'];
+      if (kind === 'hybrid') receives.push('cmd/grid-tie');
       const allowed = access === 'write' ? publishes : receives;
       if (allowed.some((t) => topic === base + t)) return true;
       this.logger.debug(`ACL denied: ${username} cannot ${access} ${topic}`);
@@ -476,10 +546,11 @@ export class MqttAuthService implements OnModuleInit {
       if (access === 'write') return false;
       const prefixes =
         kind === 'cms'
-          ? ['inverter/', 'charger/', 'devices/']
+          ? ['inverter/', 'charger/', 'hybrid/', 'devices/']
           : [
               `inverter/${userId}/`,
               `charger/${userId}/`,
+              `hybrid/${userId}/`,
               `devices/inverter/${userId}/`,
               `devices/charger/${userId}/`,
             ];

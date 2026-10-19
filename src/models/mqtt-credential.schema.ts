@@ -17,10 +17,16 @@ export class MqttCredential {
   // cms     = CMS live view (read-only, all devices); userId = '__cms__'
   // charger = one charger ESP32 (only its own charger/<uid>/<deviceId>/...
   //           topics); one per device, username chg_<deviceId>
-  @Prop({ type: String, enum: ['ha', 'app', 'cms', 'charger'], default: 'ha' })
-  kind: 'ha' | 'app' | 'cms' | 'charger';
+  // hybrid  = one hybrid ESP32 (only its own hybrid/<uid>/<deviceId>/...
+  //           topics); one per device, username hyb_<deviceId>
+  @Prop({
+    type: String,
+    enum: ['ha', 'app', 'cms', 'charger', 'hybrid'],
+    default: 'ha',
+  })
+  kind: 'ha' | 'app' | 'cms' | 'charger' | 'hybrid';
 
-  // kind 'charger' only: the device this account belongs to.
+  // kind 'charger' / 'hybrid' only: the device this account belongs to.
   @Prop({ type: String, index: true })
   deviceId?: string;
 
