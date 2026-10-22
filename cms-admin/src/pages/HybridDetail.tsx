@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import mqtt from 'mqtt';
 import { isAxiosError } from 'axios';
 import type { MqttClient } from 'mqtt';
@@ -9,7 +9,8 @@ import {
   triggerHybridFirmwareUpdate,
   type CmsHybridDetails,
 } from '../services/api';
-import VirtualList from '../components/VirtualList';
+import RawLogPanel from '../components/RawLogPanel';
+import { parseRawLog, type RawLogLine } from '../components/raw-log';
 import {
   Activity,
   AlertTriangle,
@@ -117,6 +118,7 @@ const tlmValue = (key: string, v: string | undefined) => {
 const HybridDetail: React.FC = () => {
   const { userId, deviceId } = useParams<{ userId: string; deviceId: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [details, setDetails] = useState<CmsHybridDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -125,9 +127,28 @@ const HybridDetail: React.FC = () => {
   );
   const [isUpdatingFirmware, setIsUpdatingFirmware] = useState(false);
   const [otaStatus, setOtaStatus] = useState<OtaStatus | null>(null);
+  // Set when the CMS sent the trigger: the panel stays visible from the click
+  // until success / failure, and warns when the device never answers.
+  const [otaSentAt, setOtaSentAt] = useState<number | null>(null);
+  const [otaTarget, setOtaTarget] = useState<string | null>(null);
+  const [nowTick, setNowTick] = useState(Date.now());
+  useEffect(() => {
+    if (otaSentAt === null) return;
+    const t = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [otaSentAt]);
 
   const [isConnected, setIsConnected] = useState(false);
-  const [frames, setFrames] = useState<FrameEntry[]>([]);
+  const [logLines, setLogLines] = useState<RawLogLine[]>([]);
+  const [logPaused, setLogPaused] = useState(false);
+  const pausedRef = useRef(false);
+  pausedRef.current = logPaused;
+  const lineIdRef = useRef(0);
+  const pushLog = (l: Omit<RawLogLine, 'id' | 'at'>) => {
+    if (pausedRef.current) return;
+    const entry: RawLogLine = { ...l, id: ++lineIdRef.current, at: new Date().toISOString() };
+    setLogLines((prev) => [entry, ...prev].slice(0, 5000));
+  };
   const [liveTlm, setLiveTlm] = useState<Record<string, string> | null>(null);
   const [liveCfg, setLiveCfg] = useState<Record<string, string> | null>(null);
   const [mqttAccount, setMqttAccount] = useState<{ username: string; password: string } | null>(null);
@@ -168,11 +189,16 @@ const HybridDetail: React.FC = () => {
     clientRef.current = client;
     const dataTopic = `hybrid/${userId}/${deviceId}/data`;
     const otaTopic = `hybrid/${userId}/${deviceId}/ota/status`;
+    const rawTopic = `hybrid/${userId}/${deviceId}/raw`;
+    const statusTopic = `hybrid/${userId}/${deviceId}/status`;
 
     client.on('connect', () => {
       setIsConnected(true);
       client.subscribe(dataTopic, { qos: 0 });
       client.subscribe(otaTopic, { qos: 1 });
+      client.subscribe(rawTopic, { qos: 0 });
+      client.subscribe(statusTopic, { qos: 0 });
+      pushLog({ dir: 'SYS', tag: 'MQTT', text: `subscribed ${dataTopic}, ${rawTopic}` });
     });
     client.on('disconnect', () => setIsConnected(false));
     client.on('offline', () => setIsConnected(false));
@@ -183,18 +209,32 @@ const HybridDetail: React.FC = () => {
         try {
           const p = JSON.parse(raw);
           setOtaStatus({ status: p.status, progress: p.progress, message: p.message });
+          pushLog({
+            dir: 'SYS',
+            tag: 'OTA',
+            text: `${p.status}${p.progress !== undefined ? ` ${p.progress}%` : ''}${p.message ? ` - ${p.message}` : ''}`,
+          });
           if (p.status === 'success' || p.status === 'failed') {
             setIsUpdatingFirmware(false);
-            if (p.status === 'success') setTimeout(() => window.location.reload(), 2000);
+            // Device reboots into the new build: reload details (new version).
+            if (p.status === 'success') setTimeout(() => load(), 15000);
           }
         } catch {
           // ignore
         }
         return;
       }
+      if (topic === rawTopic) {
+        pushLog(parseRawLog(raw));
+        return;
+      }
+      if (topic === statusTopic) {
+        pushLog({ dir: 'SYS', tag: 'STATUS', text: raw });
+        return;
+      }
+      pushLog({ dir: 'RX', tag: 'DATA', text: raw });
       const f = parseFrame(raw);
       if (!f) return;
-      setFrames((prev) => [f, ...prev].slice(0, 5000));
       if (f.type === 'TLM') setLiveTlm(f.items);
       if (f.type === 'CFG') setLiveCfg(f.items);
       if (f.type === 'CFG' || f.type === 'NAK') load();
@@ -203,22 +243,40 @@ const HybridDetail: React.FC = () => {
     return () => {
       client.unsubscribe(dataTopic);
       client.unsubscribe(otaTopic);
+      client.unsubscribe(rawTopic);
+      client.unsubscribe(statusTopic);
       client.end();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, deviceId, mqttAccount]);
 
-  const handleFirmwareUpdate = async () => {
+  const handleFirmwareUpdate = async (confirmed = false) => {
     if (!details?.device?._id) return;
-    if (!window.confirm(`Trigger firmware update for ${details.device.deviceName || deviceId}?`)) return;
+    if (!confirmed && !window.confirm(`Trigger firmware update for ${details.device.deviceName || deviceId}?`)) return;
     setIsUpdatingFirmware(true);
+    setOtaStatus(null);
     try {
-      await triggerHybridFirmwareUpdate(details.device._id);
+      const res = await triggerHybridFirmwareUpdate(details.device._id);
+      setOtaSentAt(Date.now());
+      setOtaTarget((res.data as { targetVersion?: string })?.targetVersion ?? null);
+      pushLog({ dir: 'SYS', tag: 'OTA', text: `trigger sent (target ${(res.data as { targetVersion?: string })?.targetVersion ?? '?'})` });
     } catch (err) {
       alert(errMessage(err, 'Failed to trigger firmware update'));
       setIsUpdatingFirmware(false);
     }
   };
+
+  // Opened from the Hybrids list "Update" (already confirmed there): start it
+  // once the live view is subscribed, so no ota/status message is missed.
+  const autoOtaDone = useRef(false);
+  useEffect(() => {
+    if (autoOtaDone.current || searchParams.get('ota') !== '1') return;
+    if (!details?.device?._id || !isConnected) return;
+    autoOtaDone.current = true;
+    setSearchParams({}, { replace: true });
+    handleFirmwareUpdate(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [details, isConnected, searchParams]);
 
   if (isLoading) return <div className="loading">Loading hybrid details...</div>;
   if (error) return <div className="error-state">{error}</div>;
@@ -312,7 +370,7 @@ const HybridDetail: React.FC = () => {
           </div>
           <button
             className="btn btn-primary btn-sm"
-            onClick={handleFirmwareUpdate}
+            onClick={() => handleFirmwareUpdate()}
             disabled={isUpdatingFirmware}
             title="Trigger firmware update via MQTT"
           >
@@ -331,22 +389,46 @@ const HybridDetail: React.FC = () => {
           </div>
         </div>
 
-        {otaStatus && isUpdatingFirmware && (
+        {otaSentAt !== null && (
           <div className="info-item ota-progress-container" style={{ gridColumn: '1 / -1' }}>
-            <div className="ota-progress">
+            <div className="ota-progress" style={{ width: '100%' }}>
               <div className="ota-progress-header">
                 <span className="ota-status">
-                  {otaStatus.status}
-                  {otaStatus.message ? `: ${otaStatus.message}` : ''}
+                  {!otaStatus
+                    ? `Đã gửi lệnh cập nhật${otaTarget ? ` lên ${otaTarget}` : ''} — chờ thiết bị phản hồi (${Math.round((nowTick - otaSentAt) / 1000)} s)…`
+                    : otaStatus.status === 'success'
+                      ? 'Cập nhật thành công, thiết bị đang khởi động lại'
+                      : otaStatus.status === 'failed'
+                        ? `Cập nhật thất bại: ${otaStatus.message || 'không rõ lỗi'}`
+                        : `${otaStatus.status === 'downloading' ? 'Đang tải' : otaStatus.status === 'installing' ? 'Đang cài' : otaStatus.status === 'starting' ? 'Bắt đầu' : otaStatus.status}${otaStatus.message ? ` — ${otaStatus.message}` : ''}`}
                 </span>
-                <span className="ota-percentage">{otaStatus.progress ?? 0}%</span>
+                <span className="ota-percentage">{otaStatus?.progress ?? 0}%</span>
               </div>
               <div className="ota-progress-bar">
                 <div
-                  className={`ota-progress-fill ${otaStatus.status === 'failed' ? 'error' : otaStatus.status === 'success' ? 'success' : ''}`}
-                  style={{ width: `${otaStatus.progress ?? 0}%` }}
+                  className={`ota-progress-fill ${otaStatus?.status === 'failed' ? 'error' : otaStatus?.status === 'success' ? 'success' : ''}`}
+                  style={{ width: `${otaStatus?.status === 'success' ? 100 : (otaStatus?.progress ?? 0)}%` }}
                 />
               </div>
+              {!otaStatus && nowTick - otaSentAt > 30000 && (
+                <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+                  Thiết bị chưa phản hồi sau 30 s. Kiểm tra: máy có Online không (heartbeat ở tab Raw UART), có đang
+                  chạy firmware hybrid có MQTT không (sketch cầu nối / firmware khác sẽ không nhận lệnh). Lệnh được giữ
+                  trên broker 10 phút, máy kết nối lại trong thời gian đó vẫn sẽ cập nhật.
+                </p>
+              )}
+              {(otaStatus?.status === 'failed' || otaStatus?.status === 'success') && (
+                <button
+                  className="btn btn-secondary btn-sm"
+                  style={{ marginTop: 6 }}
+                  onClick={() => {
+                    setOtaSentAt(null);
+                    setOtaStatus(null);
+                  }}
+                >
+                  Đóng
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -368,7 +450,7 @@ const HybridDetail: React.FC = () => {
         </button>
         <button className={`tab ${activeTab === 'realtime' ? 'active' : ''}`} onClick={() => setActiveTab('realtime')}>
           <Radio size={18} />
-          Real-time
+          Raw UART
           {isConnected && <span className="live-dot" />}
         </button>
       </div>
@@ -507,7 +589,7 @@ const HybridDetail: React.FC = () => {
         {activeTab === 'realtime' && (
           <div className="content-section">
             <div className="realtime-header">
-              <h3>Real-time frames</h3>
+              <h3>Bản tin UART (raw)</h3>
               <span className={`status-indicator ${isConnected ? 'connected' : 'disconnected'}`}>
                 {isConnected ? 'Connected' : 'Disconnected'}
               </span>
@@ -518,34 +600,13 @@ const HybridDetail: React.FC = () => {
                 <p>Not connected to MQTT broker.</p>
               </div>
             )}
-            {frames.length > 0 ? (
-              <div className="realtime-messages">
-                <h4>Messages ({frames.length})</h4>
-                <VirtualList
-                  items={frames}
-                  itemHeight={110}
-                  height={600}
-                  renderItem={(item, index) => (
-                    <div className={`message-item ${index === 0 ? 'newest' : ''}`}>
-                      <div className="message-header">
-                        <span className="message-time">{new Date(item.timestamp).toLocaleString()}</span>
-                        <span className="history-capacity monospace">
-                          {item.type}
-                          {item.items.ST ? ` · ${item.items.ST}` : ''}
-                          {item.items.PINV ? ` · PINV=${item.items.PINV}` : ''}
-                          {item.items.ERR ? ` · ERR=${item.items.ERR}` : ''}
-                        </span>
-                      </div>
-                      <pre className="json-viewer" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                        {item.raw}
-                      </pre>
-                    </div>
-                  )}
-                />
-              </div>
-            ) : (
-              isConnected && <p className="no-data">Waiting for data from hybrid...</p>
-            )}
+            <RawLogPanel
+              lines={logLines}
+              paused={logPaused}
+              onPause={setLogPaused}
+              onClear={() => setLogLines([])}
+              deviceId={deviceId ?? ''}
+            />
           </div>
         )}
       </div>

@@ -122,7 +122,15 @@ const Hybrids: React.FC = () => {
     }
   };
 
+  // The list has no live view: send people to the detail page, where the
+  // update is started and its progress shown (MQTT ota/status).
   const handleFirmwareUpdate = async (id: string) => {
+    const h = hybrids?.data.find((x) => x._id === id);
+    if (h) {
+      setFirmwareUpdateConfirm(null);
+      navigate(`/hybrids/${h.userId}/${h.deviceId}?ota=1`);
+      return;
+    }
     setIsUpdatingFirmware(true);
     try {
       await triggerHybridFirmwareUpdate(id);

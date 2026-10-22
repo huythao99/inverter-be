@@ -200,6 +200,8 @@ describe('MqttAuthService ACL for a hybrid device account', () => {
     ['hybrid/u1/H1/cmd/settings', 'read', true],
     ['hybrid/u1/H1/firmware/update', 'subscribe', true],
     ['hybrid/u1/H1/cmd/action', 'write', false],
+    ['hybrid/u1/H1/raw', 'write', true],
+    ['charger/u1/H1/raw', 'write', false],
     ['hybrid/u1/H1/cmd/grid-tie', 'subscribe', false],
     ['hybrid/u1/H2/data', 'write', false],
     ['hybrid/u2/H1/data', 'write', false],

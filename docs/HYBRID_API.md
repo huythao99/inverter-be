@@ -38,6 +38,7 @@ Publishes:
   `$INFO,...`, `$NAK,...`. Only `$TLM` is rate-limited by the server (3 s).
 - `hybrid/{uid}/{deviceId}/status` - `{"updatedAt":"...","status":"online"}`
 - `hybrid/{uid}/{deviceId}/ota/status` - `{"status":..,"progress":..,"message":..}`
+- `hybrid/{uid}/{deviceId}/raw` - UART debug log for the CMS ("Raw UART" tab), plain text `"<RX|TX> <TAG> <line>"`: TX FRAME/LEGACY = sent to the STM32; RX NOFRAME / BADCRC / LONG / UNKNOWN / ACK = received but not forwarded to `data`; RX SILENT = no byte for >10 s. QoS 0, not retained, max 10 lines/s. Not processed by the server.
 
 Subscribes:
 
