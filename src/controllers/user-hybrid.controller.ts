@@ -5,6 +5,8 @@ import {
   Delete,
   Get,
   Header,
+  HttpCode,
+  HttpStatus,
   NotFoundException,
   Param,
   Patch,
@@ -23,15 +25,11 @@ import { HybridSettingService } from '../services/hybrid-setting.service';
 import { HybridDataService } from '../services/hybrid-data.service';
 import { HybridFirmwareService } from '../services/hybrid-firmware.service';
 import { AuditLogService } from '../services/audit-log.service';
-import { UpdateUserChargerSettingDto } from '../dto/update-user-charger-setting.dto';
-import { SetGridTieDto } from '../dto/set-grid-tie.dto';
 import {
-  decodeChargerValue,
-  encodeChargerValue,
-} from '../utils/charger-value.util';
-import {
-  hybridGridTieApplied,
-  hybridOutFor,
+  HYBRID_CONFIG_KEYS,
+  HYBRID_READONLY_KEYS,
+  hybridPendingKeys,
+  vnDay,
 } from '../constants/hybrid.constants';
 
 // End-user (app/web) hybrid API. Auth: Firebase JWT, like /api/user/chargers.
@@ -115,6 +113,10 @@ export class UserHybridController {
   ) {
     const removed = await this.devices.remove(user.uid, deviceId);
     if (!removed) throw new NotFoundException(`Hybrid ${deviceId} not found`);
+    await Promise.all([
+      this.data.removeDevice(user.uid, deviceId),
+      this.settings.remove(user.uid, deviceId),
+    ]).catch(() => {});
     return removed;
   }
 
@@ -135,52 +137,17 @@ export class UserHybridController {
     );
   }
 
+  /**
+   * Config view for the settings screen:
+   * - config: keys the user set (server-owned, the device enforces them)
+   * - cfg: the machine's latest $CFG (applied values + read-only keys)
+   * - pending: config keys the machine doesn't run yet
+   * - src: LOCAL = the machine refuses remote changes ("Cai dat tu = APP")
+   * - lastNak: last refused SET / CMD { of, err, key?, at }
+   */
   @Get(':deviceId/settings')
   @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
   async getSettings(
-    @CurrentFirebaseUser() user: FirebaseUser,
-    @Param('deviceId') deviceId: string,
-  ) {
-    await this.assertOwned(user.uid, deviceId);
-    const s = await this.settings.get(user.uid, deviceId);
-    return { ...s, ...(decodeChargerValue(s.value) ?? {}) };
-  }
-
-  // { value: "HHHHLLLL" } or { vbat, ibat }.
-  @Patch(':deviceId/settings')
-  async updateSettings(
-    @CurrentFirebaseUser() user: FirebaseUser,
-    @Param('deviceId') deviceId: string,
-    @Body() dto: UpdateUserChargerSettingDto,
-    @Req() req: Request,
-  ) {
-    await this.assertOwned(user.uid, deviceId);
-    let value: string;
-    if (dto.value) value = dto.value;
-    else if (dto.vbat !== undefined && dto.ibat !== undefined) {
-      value = encodeChargerValue(dto.vbat, dto.ibat);
-    } else {
-      throw new BadRequestException(
-        'Provide either "value" (HHHHLLLL) or both "vbat" and "ibat"',
-      );
-    }
-    const s = await this.settings.setValue(
-      user.uid,
-      deviceId,
-      value,
-      this.ctx(req, user),
-    );
-    return { ...s, ...(decodeChargerValue(value) ?? {}) };
-  }
-
-  /**
-   * Grid-tie ("hoà lưới") status. status: 1 = OFF, 0 = ON (same as the
-   * inverter API). `out` = what the device should run (INV / BAT);
-   * `applied` = whether the machine reports that OUT (null = no data yet).
-   */
-  @Get(':deviceId/grid-tie')
-  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
-  async getGridTie(
     @CurrentFirebaseUser() user: FirebaseUser,
     @Param('deviceId') deviceId: string,
   ) {
@@ -189,41 +156,94 @@ export class UserHybridController {
       this.settings.get(user.uid, deviceId),
       this.data.findLatest(user.uid, deviceId),
     ]);
-    return this.gridTieView(deviceId, s.gridTieOff, d);
+    return this.settingsView(s, d);
   }
 
-  // { status: 1 } = tắt hoà lưới (OUT=BAT), { status: 0 } = bật (OUT=INV).
-  @Patch(':deviceId/grid-tie')
-  async setGridTie(
+  // Partial config: { MODE?, PCHG?, PEXP?, PIMP?, VEXP?, VCUT?, VRES?, PMAX?, PCMAX? }
+  // (or the same under "config"). 400 { errors: [{ key, message }] } if invalid.
+  @Patch(':deviceId/settings')
+  async updateSettings(
     @CurrentFirebaseUser() user: FirebaseUser,
     @Param('deviceId') deviceId: string,
-    @Body() dto: SetGridTieDto,
+    @Body() body: Record<string, unknown>,
     @Req() req: Request,
   ) {
     await this.assertOwned(user.uid, deviceId);
-    const off = dto.status === 1;
-    await this.settings.setGridTie(
+    const input =
+      body && typeof body.config === 'object' && body.config !== null
+        ? (body.config as Record<string, unknown>)
+        : (body ?? {});
+    const d = await this.data.findLatest(user.uid, deviceId);
+    const s = await this.settings.update(
       user.uid,
       deviceId,
-      off,
+      input,
+      d?.cfg,
       this.ctx(req, user),
     );
-    const d = await this.data.findLatest(user.uid, deviceId);
-    return this.gridTieView(deviceId, off, d);
+    return this.settingsView(s, d);
   }
 
-  private gridTieView(
-    deviceId: string,
-    off: boolean,
-    d: { cfgOut?: string; out?: string } | null,
+  private settingsView(
+    s: Awaited<ReturnType<HybridSettingService['get']>>,
+    d: Awaited<ReturnType<HybridDataService['findLatest']>>,
   ) {
+    const cfg = d?.cfg ?? null;
     return {
-      deviceId,
-      status: off ? 1 : 0,
-      gridTieOff: off,
-      out: hybridOutFor(off),
-      currentOut: d?.cfgOut || d?.out || null,
-      applied: hybridGridTieApplied(off, d),
+      ...s,
+      keys: HYBRID_CONFIG_KEYS,
+      readonlyKeys: HYBRID_READONLY_KEYS,
+      cfg,
+      cfgAt: d?.cfgAt ?? null,
+      src: cfg?.SRC ?? d?.tlm?.SRC ?? null,
+      pending: hybridPendingKeys(s.config, cfg),
+      lastNak: d?.lastNak ?? null,
+      status: d?.status ?? 'offline',
+    };
+  }
+
+  // { cmd: "FAULT_RST" | "STOP" | "RUN" } -> hybrid/{uid}/{dev}/cmd/action.
+  @Post(':deviceId/command')
+  @HttpCode(HttpStatus.OK)
+  async command(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('deviceId') deviceId: string,
+    @Body('cmd') cmd: string,
+    @Req() req: Request,
+  ) {
+    await this.assertOwned(user.uid, deviceId);
+    return this.settings.command(user.uid, deviceId, cmd, this.ctx(req, user));
+  }
+
+  /**
+   * Daily energy (Wh, VN days): ?from=YYYY-MM-DD&to=YYYY-MM-DD (default:
+   * last 30 days). edis/echg = battery discharge/charge, eimp/eexp = grid
+   * import/export.
+   */
+  @Get(':deviceId/energy')
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
+  async energy(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('deviceId') deviceId: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    await this.assertOwned(user.uid, deviceId);
+    const re = /^\d{4}-\d{2}-\d{2}$/;
+    const today = vnDay();
+    const end = to && re.test(to) ? to : today;
+    const start =
+      from && re.test(from)
+        ? from
+        : vnDay(new Date(Date.now() - 29 * 24 * 3600_000));
+    if (start > end) throw new BadRequestException('from must be <= to');
+    const days = await this.data.energy(user.uid, deviceId, start, end);
+    const zero = { day: today, edis: 0, echg: 0, eimp: 0, eexp: 0 };
+    return {
+      from: start,
+      to: end,
+      today: days.find((x) => x.day === today) ?? zero,
+      days,
     };
   }
 

@@ -12,6 +12,10 @@ import {
 } from '../models/hybrid-setting.schema';
 import { HybridData, HybridDataSchema } from '../models/hybrid-data.schema';
 import {
+  HybridEnergy,
+  HybridEnergySchema,
+} from '../models/hybrid-energy.schema';
+import {
   ChargerClaim,
   ChargerClaimSchema,
 } from '../models/charger-claim.schema';
@@ -33,6 +37,7 @@ import { MqttAuthModule } from './mqtt-auth.module';
       { name: HybridDevice.name, schema: HybridDeviceSchema },
       { name: HybridSetting.name, schema: HybridSettingSchema },
       { name: HybridData.name, schema: HybridDataSchema },
+      { name: HybridEnergy.name, schema: HybridEnergySchema },
       { name: ChargerClaim.name, schema: ChargerClaimSchema },
     ]),
     MqttAuthModule,

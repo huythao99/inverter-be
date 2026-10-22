@@ -534,7 +534,7 @@ export class MqttAuthService implements OnModuleInit {
       const base = `${kind}/${userId}/${credential.deviceId}/`;
       const publishes = ['data', 'status', 'ota/status'];
       const receives = ['firmware/update', 'cmd/settings', 'blacklist'];
-      if (kind === 'hybrid') receives.push('cmd/grid-tie');
+      if (kind === 'hybrid') receives.push('cmd/action');
       const allowed = access === 'write' ? publishes : receives;
       if (allowed.some((t) => topic === base + t)) return true;
       this.logger.debug(`ACL denied: ${username} cannot ${access} ${topic}`);

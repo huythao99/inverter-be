@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Model } from 'mongoose';
@@ -8,22 +8,36 @@ import {
 } from '../models/hybrid-setting.schema';
 import { MqttService } from './mqtt.service';
 import { AUDIT_EVENT, AuditContext, AuditEvent } from '../utils/audit-context';
+import {
+  HYBRID_COMMANDS,
+  HybridCommand,
+  HybridConfig,
+  hybridConfigFromCfg,
+  hybridSetBody,
+  mergeHybridConfig,
+  num,
+  parseHybridPatch,
+} from '../constants/hybrid.constants';
 
 export interface HybridSettingView {
   userId: string;
   deviceId: string;
-  value: string;
-  gridTieOff: boolean;
+  /** Keys the user set (server-owned). The firmware enforces these. */
+  config: HybridConfig;
+  /** Same as the SET item list the firmware receives. */
+  set: string;
+  updatedAt: Date | null;
 }
 
 /**
- * Setting (VBAT/IBAT, 8 digits like the charger) + grid-tie state of a hybrid.
+ * Desired config of a hybrid (HINVLF v1, 9 writable keys) + one-shot commands.
  *
- * Both reach the device two ways:
- * - retained triggers on hybrid/{uid}/{dev}/cmd/settings (pull the setting)
- *   and hybrid/{uid}/{dev}/cmd/grid-tie {"off":bool};
- * - GET /api/hybrid-setting/data/{uid}/{dev}?source=hardware, which the
- *   firmware calls on boot, on cmd/settings and every 60 s.
+ * The config reaches the device by the retained trigger
+ * hybrid/{uid}/{dev}/cmd/settings ("go pull it") and
+ * GET /api/hybrid-setting/data/{uid}/{dev}?source=hardware -> { set }, which
+ * the firmware also calls on boot and every 60 s. The firmware $SETs the
+ * keys that differ from the STM32's $CFG and re-applies them after an STM32
+ * reboot. Commands go on hybrid/{uid}/{dev}/cmd/action (not retained).
  */
 @Injectable()
 export class HybridSettingService {
@@ -35,73 +49,97 @@ export class HybridSettingService {
   ) {}
 
   async get(userId: string, deviceId: string): Promise<HybridSettingView> {
-    const doc = await this.model
+    const doc = (await this.model
       .findOne({ userId, deviceId })
       .lean()
       .maxTimeMS(2000)
-      .exec();
+      .exec()) as (HybridSetting & { updatedAt?: Date }) | null;
+    const config = doc?.config ?? {};
     return {
       userId,
       deviceId,
-      value: doc?.value ?? '',
-      gridTieOff: doc?.gridTieOff === true,
+      config,
+      set: hybridSetBody(config),
+      updatedAt: doc?.updatedAt ?? null,
     };
   }
 
-  async setValue(
+  /**
+   * Validate + store a partial config. `cfg` = the machine's latest $CFG
+   * (baseline for keys never set, and the VCV / VBMAX limits).
+   * Throws 400 { message, errors: [{ key, message }] }.
+   */
+  async update(
     userId: string,
     deviceId: string,
-    value: string,
+    input: Record<string, unknown>,
+    cfg: Record<string, string> | null | undefined,
     ctx?: AuditContext,
   ): Promise<HybridSettingView> {
+    const { patch, errors: parseErrors } = parseHybridPatch(input);
+    if (parseErrors.length) {
+      throw new BadRequestException({
+        message: 'Cài đặt không hợp lệ',
+        errors: parseErrors,
+      });
+    }
+    if (Object.keys(patch).length === 0) {
+      throw new BadRequestException('Không có tham số nào để lưu');
+    }
     const before = await this.get(userId, deviceId);
+    const base = { ...hybridConfigFromCfg(cfg), ...before.config };
+    const limits = { VCV: num(cfg?.VCV), VBMAX: num(cfg?.VBMAX) };
+    const { changes, errors } = mergeHybridConfig(base, patch, limits);
+    if (errors.length) {
+      throw new BadRequestException({
+        message: 'Cài đặt không hợp lệ',
+        errors,
+      });
+    }
+    const config: HybridConfig = { ...before.config, ...changes };
+    const now = new Date();
     await this.model
-      .findOneAndUpdate(
+      .updateOne(
         { userId, deviceId },
-        { $set: { value, updatedAt: new Date() } },
+        { $set: { config, updatedAt: now } },
         { upsert: true },
       )
       .exec();
     void this.mqtt.emitSyncHybridSettings(userId, deviceId).catch(() => {});
-    this.audit(ctx, userId, deviceId, 'settings', before.value || null, value);
-    return { ...before, value };
+    const after = hybridSetBody(config);
+    if (after !== before.set) {
+      this.audit(ctx, userId, deviceId, 'settings', before.set || null, after);
+    }
+    return { userId, deviceId, config, set: after, updatedAt: now };
   }
 
-  async setGridTie(
+  /** FAULT_RST / STOP / RUN -> cmd/action (QoS1, not retained). */
+  async command(
     userId: string,
     deviceId: string,
-    off: boolean,
+    cmd: string,
     ctx?: AuditContext,
-  ): Promise<HybridSettingView> {
-    const before = await this.get(userId, deviceId);
-    await this.model
-      .findOneAndUpdate(
-        { userId, deviceId },
-        { $set: { gridTieOff: off, updatedAt: new Date() } },
-        { upsert: true },
-      )
-      .exec();
-    // Dedicated retained command + a settings pull (the API also carries it).
-    await this.mqtt.emitHybridGridTie(userId, deviceId, off).catch(() => {});
-    void this.mqtt.emitSyncHybridSettings(userId, deviceId).catch(() => {});
-    if (before.gridTieOff !== off) {
-      this.audit(
-        ctx,
-        userId,
-        deviceId,
-        'grid-tie',
-        before.gridTieOff ? '1' : '0',
-        off ? '1' : '0',
+  ): Promise<{ cmd: HybridCommand; sentAt: Date }> {
+    const c = String(cmd ?? '').toUpperCase();
+    if (!(HYBRID_COMMANDS as readonly string[]).includes(c)) {
+      throw new BadRequestException(
+        `cmd must be one of ${HYBRID_COMMANDS.join(', ')}`,
       );
     }
-    return { ...before, gridTieOff: off };
+    await this.mqtt.emitHybridCommand(userId, deviceId, c);
+    this.audit(ctx, userId, deviceId, 'command', null, c);
+    return { cmd: c as HybridCommand, sentAt: new Date() };
+  }
+
+  async remove(userId: string, deviceId: string): Promise<void> {
+    await this.model.deleteOne({ userId, deviceId }).exec();
   }
 
   private audit(
     ctx: AuditContext | undefined,
     userId: string,
     deviceId: string,
-    action: 'settings' | 'grid-tie',
+    action: 'settings' | 'command',
     before: string | null,
     after: string | null,
   ) {

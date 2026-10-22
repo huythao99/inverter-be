@@ -1,8 +1,15 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import { Document, Types, SchemaTypes } from 'mongoose';
+import type { HybridConfig } from '../constants/hybrid.constants';
 
 export type HybridSettingDocument = HybridSetting & Document;
 
+/**
+ * Desired inverter config of a hybrid (HINVLF v1 writable keys: MODE PCHG
+ * PEXP PIMP VEXP VCUT VRES PMAX PCMAX). Only keys the user has set are
+ * stored; the firmware $SETs the ones that differ from the machine's $CFG
+ * and re-applies them after an STM32 reboot (SET is RAM-only there).
+ */
 @Schema({ timestamps: true })
 export class HybridSetting {
   _id: Types.ObjectId;
@@ -13,16 +20,8 @@ export class HybridSetting {
   @Prop({ required: true })
   deviceId: string;
 
-  // 8-digit "HHHHLLLL" (same as the charger): HHHH = VBAT*10, LLLL = IBAT*10.
-  // Empty until the user saves one.
-  @Prop({ type: String, default: '' })
-  value: string;
-
-  // Grid-tie ("hoà lưới") OFF: the device runs OUT=BAT (charge the battery
-  // only). false = grid-tie ON: OUT=INV (feed the inverter / grid).
-  // A status only: `value` is never changed by it.
-  @Prop({ type: Boolean, default: false })
-  gridTieOff: boolean;
+  @Prop({ type: SchemaTypes.Mixed, default: {} })
+  config: HybridConfig;
 
   @Prop({ default: Date.now })
   updatedAt: Date;

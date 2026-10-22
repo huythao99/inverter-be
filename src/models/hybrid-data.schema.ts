@@ -1,17 +1,65 @@
-import { Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
-import { ChargerData } from './charger-data.schema';
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Document, SchemaTypes } from 'mongoose';
+import type { HybridEnergyRef } from '../constants/hybrid.constants';
 
 export type HybridDataDocument = HybridData & Document;
 
+export interface HybridNak {
+  /** SET / CMD (what was refused). */
+  of: string;
+  err: string;
+  key?: string;
+  raw: string;
+  at: Date;
+}
+
 /**
- * Latest known state of a hybrid (merged tlm / cfg / info frames + status
- * heartbeat). Same fields as ChargerData (same STM32 frames), own collection.
- * `out` / `cfgOut` show the grid-tie state the machine actually runs:
- * INV = feeding the inverter / grid, BAT = charging the battery only.
+ * Latest state of a hybrid (HINVLF v1): the last $TLM / $CFG / $INFO as
+ * KEY -> VALUE maps (strings, exactly as the STM32 sent them), the last
+ * $NAK and the status heartbeat.
  */
 @Schema({ timestamps: true })
-export class HybridData extends ChargerData {}
+export class HybridData {
+  @Prop({ required: true })
+  userId: string;
+
+  @Prop({ required: true })
+  deviceId: string;
+
+  @Prop({ type: SchemaTypes.Mixed })
+  tlm?: Record<string, string>;
+
+  @Prop()
+  tlmAt?: Date;
+
+  @Prop({ type: SchemaTypes.Mixed })
+  cfg?: Record<string, string>;
+
+  @Prop()
+  cfgAt?: Date;
+
+  @Prop({ type: SchemaTypes.Mixed })
+  info?: Record<string, string>;
+
+  @Prop()
+  infoAt?: Date;
+
+  @Prop({ type: SchemaTypes.Mixed })
+  lastNak?: HybridNak;
+
+  // Counters of the last $TLM used for energy (survives a backend restart).
+  @Prop({ type: SchemaTypes.Mixed, select: false })
+  energyRef?: HybridEnergyRef & { at: Date };
+
+  @Prop()
+  status?: string;
+
+  @Prop()
+  lastSeenAt?: Date;
+
+  @Prop()
+  updatedAt?: Date;
+}
 
 export const HybridDataSchema = SchemaFactory.createForClass(HybridData);
 

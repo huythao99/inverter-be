@@ -106,15 +106,64 @@ function chargerSummary(before: string | null, after: string | null) {
   return `${d(before)} → ${d(after)}`;
 }
 
+const HYBRID_LABEL: Record<string, [string, string]> = {
+  MODE: ['Chế độ', ''],
+  PCHG: ['CS sạc pin', 'W'],
+  PEXP: ['CS đẩy lưới', 'W'],
+  PIMP: ['CS nhận lưới', 'W'],
+  VEXP: ['Áp ngừng đẩy', 'V'],
+  VCUT: ['Pin ngắt xả', 'V'],
+  VRES: ['Pin chạy lại', 'V'],
+  PMAX: ['CS tối đa', 'W'],
+  PCMAX: ['CS sạc tối đa', 'W'],
+};
+const HYBRID_MODE_LABEL: Record<string, string> = {
+  OFF: 'Tắt',
+  OFFGRID: 'Độc lập',
+  LOAD: 'Bám tải',
+  CHG: 'Sạc từ lưới',
+  EXPORT: 'Đẩy lưới',
+};
+const HYBRID_CMD_LABEL: Record<string, string> = {
+  FAULT_RST: 'Xóa lỗi',
+  STOP: 'Dừng máy',
+  RUN: 'Chạy máy',
+};
+
+function hybridSettingsSummary(before: string | null, after: string | null) {
+  const parse = (v: string | null) =>
+    Object.fromEntries(
+      (v ?? '')
+        .split(',')
+        .map((it) => it.split('='))
+        .filter((kv) => kv.length === 2 && kv[0]),
+    ) as Record<string, string>;
+  const a = parse(before);
+  const b = parse(after);
+  const fmt = (k: string, v: string | undefined) => {
+    if (v === undefined) return '—';
+    if (k === 'MODE') return HYBRID_MODE_LABEL[v] ?? v;
+    return `${v} ${HYBRID_LABEL[k]?.[1] ?? ''}`.trim();
+  };
+  const changed = Object.keys(HYBRID_LABEL)
+    .filter((k) => a[k] !== b[k])
+    .map((k) => `${HYBRID_LABEL[k][0]}: ${fmt(k, a[k])} → ${fmt(k, b[k])}`);
+  return changed.length ? changed.join('; ') : 'Không đổi';
+}
+
 export function buildAuditSummary(
   e: Pick<AuditEvent, 'kind' | 'action' | 'before' | 'after'>,
 ): string {
   if (e.action === 'grid-tie') {
     return e.after === '1' ? 'Tắt hoà lưới' : 'Bật hoà lưới';
   }
-  if (e.kind === 'charger' || e.kind === 'hybrid') {
-    return chargerSummary(e.before, e.after);
+  if (e.kind === 'hybrid') {
+    if (e.action === 'command') {
+      return HYBRID_CMD_LABEL[e.after ?? ''] ?? `Lệnh ${e.after ?? ''}`;
+    }
+    return hybridSettingsSummary(e.before, e.after);
   }
+  if (e.kind === 'charger') return chargerSummary(e.before, e.after);
   if (e.action === 'schedule') return scheduleSummary(e.before, e.after);
   return inverterSettingsSummary(e.before, e.after);
 }

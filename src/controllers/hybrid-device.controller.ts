@@ -17,8 +17,6 @@ import { HybridDeviceService } from '../services/hybrid-device.service';
 import { HybridSettingService } from '../services/hybrid-setting.service';
 import { HybridFirmwareService } from '../services/hybrid-firmware.service';
 import { ProvisionChargerDto } from '../dto/provision-charger.dto';
-import { decodeChargerValue } from '../utils/charger-value.util';
-import { hybridOutFor } from '../constants/hybrid.constants';
 
 // Routes called by the hybrid FIRMWARE (no user session), same shape as the
 // charger's. Everything the app/web needs is under /api/user/hybrids.
@@ -61,11 +59,9 @@ export class HybridDeviceController {
   }
 
   /**
-   * Setting + grid-tie for the device:
-   *   { value: "HHHHLLLL" | "", gridTieOff: bool, out: "INV" | "BAT" }
-   * `out` is what the STM32 must run ($SET,OUT=...): INV = grid-tie ON,
-   * BAT = grid-tie OFF. Without ?source=hardware the decoded vbat/ibat are
-   * added for display.
+   * Desired config for the firmware: { set: "MODE=EXPORT,PEXP=1500,..." }
+   * ("" = nothing set yet: the machine keeps its own values). Without
+   * ?source=hardware the stored config is added for display.
    */
   @Get('hybrid-setting/data/:userId/:deviceId')
   @UseGuards(HybridDeviceAuthGuard)
@@ -75,18 +71,8 @@ export class HybridDeviceController {
     @Query('source') source?: string,
   ) {
     const s = await this.settings.get(userId, deviceId);
-    const base = {
-      value: s.value,
-      gridTieOff: s.gridTieOff,
-      out: hybridOutFor(s.gridTieOff),
-    };
-    if (source === 'hardware') return base;
-    return {
-      userId,
-      deviceId,
-      ...base,
-      ...(decodeChargerValue(s.value) ?? {}),
-    };
+    if (source === 'hardware') return { set: s.set };
+    return s;
   }
 
   // OTA: the firmware calls this after the firmware/update trigger.

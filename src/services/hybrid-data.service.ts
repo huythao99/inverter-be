@@ -1,24 +1,102 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { OnEvent } from '@nestjs/event-emitter';
 import { Model } from 'mongoose';
-import { HybridData, HybridDataDocument } from '../models/hybrid-data.schema';
+import {
+  HybridData,
+  HybridDataDocument,
+  HybridNak,
+} from '../models/hybrid-data.schema';
+import {
+  HybridEnergy,
+  HybridEnergyDocument,
+} from '../models/hybrid-energy.schema';
 import {
   ChargerDataEventPayload,
   ChargerStatusEventPayload,
-  mapMpptFrame,
 } from './charger-data.service';
+import {
+  HYBRID_ENERGY_KEYS,
+  HybridEnergyKey,
+  HybridEnergyRef,
+  hybridEnergyDelta,
+  hybridEnergyRef,
+  vnDay,
+} from '../constants/hybrid.constants';
 
 // Offline when no message arrived within this window (same as the charger).
 const OFFLINE_THRESHOLD_MS = 15000;
+const ENERGY_FLUSH_MS = 60_000;
 
-/** Latest merged state of each hybrid, from hybrid/{uid}/{dev}/(data|status). */
+/** "$NAK,SET,ERR=RANGE,KEY=PEXP*xx" -> { type, words, items }. */
+export function parseHinvlfFrame(raw: string): {
+  type: string;
+  words: string[];
+  items: Record<string, string>;
+} | null {
+  const t = (raw ?? '').trim();
+  const dollar = t.indexOf('$');
+  if (dollar < 0) return null;
+  const star = t.lastIndexOf('*');
+  const body = star > dollar ? t.slice(dollar + 1, star) : t.slice(dollar + 1);
+  const [type, ...rest] = body.split(',');
+  if (!type) return null;
+  const words: string[] = [];
+  const items: Record<string, string> = {};
+  for (const it of rest) {
+    const eq = it.indexOf('=');
+    if (eq > 0) items[it.slice(0, eq)] = it.slice(eq + 1);
+    else if (it) words.push(it);
+  }
+  return { type: type.toUpperCase(), words, items };
+}
+
+type EnergyTotals = Record<HybridEnergyKey, number>;
+
+export interface HybridEnergyDay {
+  day: string;
+  edis: number;
+  echg: number;
+  eimp: number;
+  eexp: number;
+}
+
+/**
+ * Latest state of each hybrid (hybrid/{uid}/{dev}/(data|status)) + daily
+ * energy from the $TLM counters (accumulated in memory, flushed every 60 s).
+ */
 @Injectable()
-export class HybridDataService {
+export class HybridDataService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(HybridDataService.name);
+  /** uid|dev -> counters of the last $TLM. */
+  private readonly refs = new Map<string, HybridEnergyRef & { at: number }>();
+  /** uid|dev|day -> energy not yet written. */
+  private readonly pending = new Map<string, EnergyTotals>();
+  /** Per-device chain so two frames never race on the same ref. */
+  private readonly chains = new Map<string, Promise<void>>();
+  private timer?: NodeJS.Timeout;
+
   constructor(
     @InjectModel(HybridData.name)
     private readonly model: Model<HybridDataDocument>,
+    @InjectModel(HybridEnergy.name)
+    private readonly energyModel: Model<HybridEnergyDocument>,
   ) {}
+
+  onModuleInit() {
+    this.timer = setInterval(() => void this.flushEnergy(), ENERGY_FLUSH_MS);
+    this.timer.unref?.();
+  }
+
+  async onModuleDestroy() {
+    if (this.timer) clearInterval(this.timer);
+    await this.flushEnergy();
+  }
 
   async findLatest(
     userId: string,
@@ -37,32 +115,185 @@ export class HybridDataService {
 
   @OnEvent('hybrid.data.received')
   onData(payload: ChargerDataEventPayload): void {
-    const update = mapMpptFrame(payload.data ?? {});
-    const now = new Date();
-    this.model
-      .findOneAndUpdate(
-        { userId: payload.userId, deviceId: payload.deviceId },
-        {
-          $set: {
-            ...update,
-            userId: payload.userId,
-            deviceId: payload.deviceId,
-            status: 'online',
-            lastSeenAt: now,
-            updatedAt: now,
-          },
-        },
-        { upsert: true },
+    const raw = typeof payload.data?.raw === 'string' ? payload.data.raw : '';
+    const frame = parseHinvlfFrame(raw);
+    if (!frame) return;
+    const key = `${payload.userId}|${payload.deviceId}`;
+    const prev = this.chains.get(key) ?? Promise.resolve();
+    const next = prev
+      .then(() =>
+        this.handleFrame(payload.userId, payload.deviceId, frame, raw),
       )
-      .exec()
-      .catch(() => {});
+      .catch((e: unknown) =>
+        this.logger.warn(`hybrid frame ${key}: ${String(e)}`),
+      );
+    this.chains.set(key, next);
+    void next.then(() => {
+      if (this.chains.get(key) === next) this.chains.delete(key);
+    });
+  }
+
+  private async handleFrame(
+    userId: string,
+    deviceId: string,
+    frame: NonNullable<ReturnType<typeof parseHinvlfFrame>>,
+    raw: string,
+  ): Promise<void> {
+    const now = new Date();
+    const set: Record<string, unknown> = {
+      userId,
+      deviceId,
+      status: 'online',
+      lastSeenAt: now,
+      updatedAt: now,
+    };
+
+    if (frame.type === 'TLM') {
+      set.tlm = frame.items;
+      set.tlmAt = now;
+      const ref = hybridEnergyRef(frame.items);
+      if (ref) {
+        await this.addEnergy(userId, deviceId, ref, now);
+        set.energyRef = { ...ref, at: now };
+      }
+    } else if (frame.type === 'CFG') {
+      set.cfg = frame.items;
+      set.cfgAt = now;
+    } else if (frame.type === 'INFO') {
+      set.info = frame.items;
+      set.infoAt = now;
+    } else if (frame.type === 'NAK') {
+      const nak: HybridNak = {
+        of: frame.words.join(' ') || '?',
+        err: frame.items.ERR ?? '?',
+        raw,
+        at: now,
+      };
+      if (frame.items.KEY) nak.key = frame.items.KEY;
+      set.lastNak = nak;
+    } else {
+      return;
+    }
+
+    await this.model
+      .updateOne({ userId, deviceId }, { $set: set }, { upsert: true })
+      .exec();
+  }
+
+  private async addEnergy(
+    userId: string,
+    deviceId: string,
+    ref: HybridEnergyRef,
+    now: Date,
+  ): Promise<void> {
+    const key = `${userId}|${deviceId}`;
+    let prev = this.refs.get(key);
+    if (!prev) {
+      // Backend restarted: continue from the counters stored with the data.
+      const doc = (await this.model
+        .findOne({ userId, deviceId })
+        .select('+energyRef')
+        .lean()
+        .exec()) as { energyRef?: HybridEnergyRef & { at: Date } } | null;
+      if (doc?.energyRef) {
+        prev = { ...doc.energyRef, at: new Date(doc.energyRef.at).getTime() };
+      }
+    }
+    this.refs.set(key, { ...ref, at: now.getTime() });
+    if (!prev) return; // first frame ever: nothing to add yet
+
+    const elapsedSec = (now.getTime() - prev.at) / 1000;
+    const delta = hybridEnergyDelta(prev, ref, elapsedSec);
+    if (HYBRID_ENERGY_KEYS.every((k) => delta[k] === 0)) return;
+    const pkey = `${key}|${vnDay(now)}`;
+    const acc =
+      this.pending.get(pkey) ??
+      ({ EDIS: 0, ECHG: 0, EIMP: 0, EEXP: 0 } as EnergyTotals);
+    for (const k of HYBRID_ENERGY_KEYS) acc[k] += delta[k];
+    this.pending.set(pkey, acc);
+  }
+
+  /** Write the accumulated energy ($inc per device and day). */
+  async flushEnergy(): Promise<void> {
+    if (this.pending.size === 0) return;
+    const entries = [...this.pending.entries()];
+    this.pending.clear();
+    const ops = entries.map(([pkey, e]) => {
+      const [userId, deviceId, day] = pkey.split('|');
+      return {
+        updateOne: {
+          filter: { userId, deviceId, day },
+          update: {
+            $inc: { edis: e.EDIS, echg: e.ECHG, eimp: e.EIMP, eexp: e.EEXP },
+          },
+          upsert: true,
+        },
+      };
+    });
+    try {
+      await this.energyModel.bulkWrite(ops, { ordered: false });
+    } catch (e) {
+      // Put it back so the next flush retries.
+      for (const [pkey, v] of entries) {
+        const acc = this.pending.get(pkey);
+        if (!acc) this.pending.set(pkey, v);
+        else for (const k of HYBRID_ENERGY_KEYS) acc[k] += v[k];
+      }
+      this.logger.warn(`hybrid energy flush failed: ${String(e)}`);
+    }
+  }
+
+  /** Daily energy (Wh) between two VN days inclusive, including unflushed. */
+  async energy(
+    userId: string,
+    deviceId: string,
+    from: string,
+    to: string,
+  ): Promise<HybridEnergyDay[]> {
+    const docs = (await this.energyModel
+      .find({ userId, deviceId, day: { $gte: from, $lte: to } })
+      .sort({ day: 1 })
+      .lean()
+      .exec()) as HybridEnergyDay[];
+    const byDay = new Map<string, HybridEnergyDay>(
+      docs.map((d) => [
+        d.day,
+        { day: d.day, edis: d.edis, echg: d.echg, eimp: d.eimp, eexp: d.eexp },
+      ]),
+    );
+    const prefix = `${userId}|${deviceId}|`;
+    for (const [pkey, e] of this.pending) {
+      if (!pkey.startsWith(prefix)) continue;
+      const day = pkey.slice(prefix.length);
+      if (day < from || day > to) continue;
+      const d = byDay.get(day) ?? { day, edis: 0, echg: 0, eimp: 0, eexp: 0 };
+      d.edis += e.EDIS;
+      d.echg += e.ECHG;
+      d.eimp += e.EIMP;
+      d.eexp += e.EEXP;
+      byDay.set(day, d);
+    }
+    return [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day));
+  }
+
+  /** Forget a removed device (data + energy). */
+  async removeDevice(userId: string, deviceId: string): Promise<void> {
+    const key = `${userId}|${deviceId}`;
+    this.refs.delete(key);
+    for (const pkey of [...this.pending.keys()]) {
+      if (pkey.startsWith(`${key}|`)) this.pending.delete(pkey);
+    }
+    await Promise.all([
+      this.model.deleteOne({ userId, deviceId }).exec(),
+      this.energyModel.deleteMany({ userId, deviceId }).exec(),
+    ]);
   }
 
   @OnEvent('hybrid.status.received')
   onStatus(payload: ChargerStatusEventPayload): void {
     const now = new Date();
     this.model
-      .findOneAndUpdate(
+      .updateOne(
         { userId: payload.userId, deviceId: payload.deviceId },
         {
           $set: {

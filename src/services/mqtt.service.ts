@@ -170,7 +170,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       'charger/+/+/data', // Charger telemetry/cfg/info
       'charger/+/+/status', // Charger heartbeat
       'charger/+/+/ota/status', // Charger OTA status
-      'hybrid/+/+/data', // Hybrid telemetry/cfg/info (same frames as charger)
+      'hybrid/+/+/data', // Hybrid $TLM / $CFG / $INFO / $NAK frames
       'hybrid/+/+/status', // Hybrid heartbeat
       'hybrid/+/+/ota/status', // Hybrid OTA status
     ];
@@ -189,7 +189,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       this.handleChargerTopic(topicParts, message, 'charger');
       return;
     }
-    // Hybrid: own namespace, same message formats as the charger.
+    // Hybrid: own namespace, same framing as the charger (HINVLF v1 frames).
     if (topic.startsWith('hybrid/')) {
       this.handleChargerTopic(topicParts, message, 'hybrid');
       return;
@@ -322,15 +322,20 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
 
     if (kind !== 'data' && kind !== 'status') return;
 
-    // Rate limit per device+kind. Telemetry every 3s, heartbeat every 5s.
-    const rateKey = `${ns}:${uid}-${deviceId}-${kind}`;
-    const now = Date.now();
-    const windowMs = kind === 'data' ? 3000 : 5000;
-    const last = this.lastProcessedAt.get(rateKey);
-    if (last && now - last < windowMs) return;
-    this.lastProcessedAt.set(rateKey, now);
-
     const payloadStr = message.toString();
+
+    // Rate limit per device+kind: $TLM every 3 s, heartbeat every 5 s.
+    // $CFG / $INFO / $NAK are rare and must never be dropped (they carry the
+    // applied config and the reason a SET was refused).
+    const throttled = kind === 'status' || payloadStr.startsWith('$TLM');
+    if (throttled) {
+      const rateKey = `${ns}:${uid}-${deviceId}-${kind}`;
+      const now = Date.now();
+      const windowMs = kind === 'data' ? 3000 : 5000;
+      const last = this.lastProcessedAt.get(rateKey);
+      if (last && now - last < windowMs) return;
+      this.lastProcessedAt.set(rateKey, now);
+    }
 
     if (kind === 'data') {
       // `data` is a RAW STM32 frame string ("$TYPE,KEY=VALUE,...*CRC"),
@@ -679,18 +684,18 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  // Grid-tie ("hoà lưới") state: {"off":true} -> STM32 OUT=BAT,
-  // {"off":false} -> OUT=INV. Retained: a device that was offline gets it on
-  // reconnect; the firmware keeps it in NVS.
-  async emitHybridGridTie(
+  // One-shot command to the STM32 (FAULT_RST / STOP / RUN). NOT retained: a
+  // device that is offline must not run it later; the firmware also drops
+  // one older than 120 s.
+  async emitHybridCommand(
     userId: string,
     deviceId: string,
-    off: boolean,
+    cmd: string,
   ): Promise<void> {
     await this.publishWithRetain(
-      `hybrid/${userId}/${deviceId}/cmd/grid-tie`,
-      { off },
-      true,
+      `hybrid/${userId}/${deviceId}/cmd/action`,
+      { cmd, ts: Date.now() },
+      false,
     );
   }
 
