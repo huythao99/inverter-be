@@ -4,10 +4,9 @@ import { Document, Types } from 'mongoose';
 export type HybridDeviceDocument = HybridDevice & Document;
 
 /**
- * A hybrid unit (ESP32 + STM32 MPPT that can charge the battery or feed the
- * inverter / grid). Separate device type with its own collections and MQTT
- * namespace (hybrid/{uid}/{deviceId}/...); the STM32 frames are the same as
- * the charger's (PROTOCOL_MPPT_V1_1.md).
+ * A hybrid unit (ESP32 + STM32 hybrid low-frequency inverter, HINVLF v1).
+ * Separate device type with its own collections and MQTT namespace
+ * (hybrid/{uid}/{deviceId}/...).
  */
 @Schema({ timestamps: true })
 export class HybridDevice {

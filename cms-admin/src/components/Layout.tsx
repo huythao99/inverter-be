@@ -15,6 +15,7 @@ import {
   X,
   HeartPulse,
   Rocket,
+  Shuffle,
 } from 'lucide-react';
 
 const Layout: React.FC = () => {
@@ -32,6 +33,7 @@ const Layout: React.FC = () => {
     { to: '/devices', icon: Cpu, label: 'Devices' },
     { to: '/health', icon: HeartPulse, label: 'Device Health' },
     { to: '/chargers', icon: BatteryCharging, label: 'Chargers' },
+    { to: '/hybrids', icon: Shuffle, label: 'Hybrids' },
     { to: '/blacklist', icon: ShieldOff, label: 'Blacklist' },
     { to: '/beta-firmware', icon: FlaskConical, label: 'Beta Firmware' },
     { to: '/esp-firmware', icon: HardDriveUpload, label: 'ESP32 Firmware' },

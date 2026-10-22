@@ -26,9 +26,13 @@ import { HybridFirmwareService } from '../services/hybrid-firmware.service';
 import { HybridDeviceController } from '../controllers/hybrid-device.controller';
 import { UserHybridController } from '../controllers/user-hybrid.controller';
 import { MqttAuthModule } from './mqtt-auth.module';
+import { CmsHybridController } from '../controllers/cms-hybrid.controller';
+import { CmsHybridService } from '../services/cms-hybrid.service';
+import { UserEmailService } from '../services/user-email.service';
+import { FirebaseConfig } from '../config/firebase.config';
 
-// Hybrid devices: firmware API (/api/hybrid-*) + end-user API
-// (/api/user/hybrids). MQTT namespace hybrid/{uid}/{deviceId}/...
+// Hybrid devices: firmware API (/api/hybrid-*), end-user API
+// (/api/user/hybrids) and admin API (/api/cms/hybrid). MQTT namespace hybrid/{uid}/{deviceId}/...
 @Module({
   imports: [
     ConfigModule,
@@ -42,12 +46,19 @@ import { MqttAuthModule } from './mqtt-auth.module';
     ]),
     MqttAuthModule,
   ],
-  controllers: [HybridDeviceController, UserHybridController],
+  controllers: [
+    HybridDeviceController,
+    UserHybridController,
+    CmsHybridController,
+  ],
   providers: [
     HybridDeviceService,
     HybridSettingService,
     HybridDataService,
     HybridFirmwareService,
+    CmsHybridService,
+    UserEmailService,
+    FirebaseConfig,
   ],
   exports: [HybridDeviceService, HybridSettingService, HybridDataService],
 })

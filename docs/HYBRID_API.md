@@ -70,4 +70,17 @@ an STM32 reboot, and flushes daily totals every 60 s.
 
 The app MQTT account (`app_<uid>`) may read `hybrid/{uid}/...` (live frames).
 
-Not yet for hybrids: sharing to viewers, Home Assistant, CMS pages.
+## CMS (admin JWT) - `/api/cms/hybrid`
+
+Same shape as `/api/cms/charger`, so the CMS pages can be shared.
+
+| Call | |
+|---|---|
+| `GET /dashboard` | `{totalDevices, onlineDevices, offlineDevices, faultDevices, localSourceDevices, devicesAddedToday, devicesAddedThisWeek}` |
+| `GET /devices?search=&status=&page=&limit=&userId=&deviceId=` | `{data, total, page, totalPages}`. `search` = deviceId (HybridControl<N>) / name / description / userId / owner email. `status` = `online` \| `offline` \| `fault` (online, FLT ≠ 0) \| `local` (online, SRC=LOCAL). Each row has `ownerEmail` and `summary {online, lastSeenAt, st, mode, flt, lock, src, vbat, stmFw}` |
+| `GET /devices/{userId}/{deviceId}/details` | `{device, summary, data (tlm/cfg/info/lastNak), setting (config, set, pending), energy (30 days)}` |
+| `GET /devices/{id}`, `PUT /devices/{id}` `{deviceName?, firmwareVersion?}` | Mongo `_id` |
+| `DELETE /devices/{id}` | Remove from the owner, revoke the MQTT account, delete data / energy / settings |
+| `POST /devices/{id}/firmware-update` | ESP32 OTA to the active build (CMS -> ESP32 Firmware -> Hybrid) |
+
+Not yet for hybrids: sharing to viewers, Home Assistant, CMS pages (UI).

@@ -530,6 +530,89 @@ export const deleteCharger = (id: string) =>
 export const triggerChargerFirmwareUpdate = (id: string, targetVersion?: string) =>
   api.post(`/charger/devices/${id}/firmware-update`, targetVersion ? { targetVersion } : {});
 
+// ==================== Hybrids (HINVLF inverter, /api/cms/hybrid) ====================
+export type HybridStatusFilter = 'online' | 'offline' | 'fault' | 'local';
+
+export interface HybridSummary {
+  online: boolean;
+  lastSeenAt: string | null;
+  st: string | null;
+  mode: string | null;
+  flt: string | null;
+  lock: boolean;
+  src: string | null;
+  vbat: string | null;
+  stmFw: string | null;
+}
+
+export interface CmsHybrid {
+  _id: string;
+  userId: string;
+  ownerEmail?: string | null;
+  deviceId: string;
+  deviceName: string;
+  description?: string;
+  firmwareVersion: string;
+  updatedAt: string;
+  summary: HybridSummary;
+}
+
+export interface CmsHybridDashboard {
+  totalDevices: number;
+  onlineDevices: number;
+  offlineDevices: number;
+  faultDevices: number;
+  localSourceDevices: number;
+  devicesAddedToday: number;
+  devicesAddedThisWeek: number;
+}
+
+export interface CmsHybridDetails {
+  device: Omit<CmsHybrid, 'summary'>;
+  summary: HybridSummary;
+  data: {
+    tlm?: Record<string, string>;
+    tlmAt?: string;
+    cfg?: Record<string, string>;
+    cfgAt?: string;
+    info?: Record<string, string>;
+    lastNak?: { of: string; err: string; key?: string; at: string } | null;
+    status?: string;
+    lastSeenAt?: string;
+  } | null;
+  setting: {
+    config: Record<string, string | number>;
+    set: string;
+    updatedAt: string | null;
+    pending: string[];
+  };
+  energy: { day: string; edis: number; echg: number; eimp: number; eexp: number }[];
+}
+
+export const getHybridDashboard = () => api.get<CmsHybridDashboard>('/hybrid/dashboard');
+
+export const getHybrids = (params?: {
+  page?: number;
+  limit?: number;
+  search?: string;
+  status?: HybridStatusFilter;
+}) =>
+  api.get<{ data: CmsHybrid[]; total: number; page: number; totalPages: number }>(
+    '/hybrid/devices',
+    { params }
+  );
+
+export const getHybridDetails = (userId: string, deviceId: string) =>
+  api.get<CmsHybridDetails>(`/hybrid/devices/${userId}/${deviceId}/details`);
+
+export const updateHybrid = (id: string, data: { deviceName?: string; firmwareVersion?: string }) =>
+  api.put(`/hybrid/devices/${id}`, data);
+
+export const deleteHybrid = (id: string) => api.delete(`/hybrid/devices/${id}`);
+
+export const triggerHybridFirmwareUpdate = (id: string) =>
+  api.post(`/hybrid/devices/${id}/firmware-update`, {});
+
 export default api;
 
 // ==================== Device health ====================
