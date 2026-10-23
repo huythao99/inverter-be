@@ -70,6 +70,30 @@ export interface HybridEnergyDay {
  * Latest state of each hybrid (hybrid/{uid}/{dev}/(data|status)) + daily
  * energy from the $TLM counters (accumulated in memory, flushed every 60 s).
  */
+// lastNak is stored as-is and never cleared, so it is only shown while it
+// still means something:
+//  - a $CFG received after it = the device re-reported its settings (a SET is
+//    followed by $CFG once accepted) -> over;
+//  - BUSY (menu open on the machine), LOCAL, FLASH, CRC: the ESP32 retries by
+//    itself every few seconds -> only the last 2 minutes;
+//  - other errors (RANGE, VALUE, KEY, ...): 24 hours.
+const NAK_TRANSIENT = new Set(['BUSY', 'LOCAL', 'FLASH', 'CRC']);
+const NAK_TRANSIENT_MS = 2 * 60_000;
+const NAK_MAX_MS = 24 * 3600_000;
+
+export function activeHybridNak(
+  nak: HybridNak | undefined | null,
+  cfgAt?: Date | string | null,
+  now = Date.now(),
+): HybridNak | null {
+  if (!nak?.at) return null;
+  const at = new Date(nak.at).getTime();
+  if (!Number.isFinite(at)) return null;
+  if (cfgAt && new Date(cfgAt).getTime() > at) return null;
+  const maxAge = NAK_TRANSIENT.has(nak.err) ? NAK_TRANSIENT_MS : NAK_MAX_MS;
+  return now - at < maxAge ? nak : null;
+}
+
 @Injectable()
 export class HybridDataService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(HybridDataService.name);
@@ -110,7 +134,11 @@ export class HybridDataService implements OnModuleInit, OnModuleDestroy {
     if (!doc) return null;
     const lastSeen = doc.lastSeenAt ? new Date(doc.lastSeenAt).getTime() : 0;
     const online = Date.now() - lastSeen < OFFLINE_THRESHOLD_MS;
-    return { ...doc, status: online ? 'online' : 'offline' };
+    return {
+      ...doc,
+      lastNak: activeHybridNak(doc.lastNak, doc.cfgAt) ?? undefined,
+      status: online ? 'online' : 'offline',
+    };
   }
 
   @OnEvent('hybrid.data.received')

@@ -13,6 +13,7 @@ import {
 import {
   HybridDataService,
   parseHinvlfFrame,
+  activeHybridNak,
 } from './services/hybrid-data.service';
 import { AUDIT_EVENT } from './utils/audit-context';
 import { buildAuditSummary } from './services/audit-log.service';
@@ -544,5 +545,33 @@ describe('StmFirmwareService for hybrids', () => {
     expect(updates[0][0]).toMatchObject({ stmFwVersion: { $ne: '5.4.3' } });
     expect(updates[1][1].$set.stmFwVersion).toBe('5.4.3');
     expect(updates[1][1].$set.stmFwCrc).toBeUndefined();
+  });
+});
+
+describe('activeHybridNak', () => {
+  const at = new Date('2026-10-23T10:00:00Z');
+  const t0 = at.getTime();
+  const nak = (err: string) => ({ of: 'SET', err, raw: '', at });
+
+  it('BUSY is shown for 2 minutes only', () => {
+    expect(activeHybridNak(nak('BUSY'), null, t0 + 60_000)).not.toBeNull();
+    expect(activeHybridNak(nak('BUSY'), null, t0 + 3 * 60_000)).toBeNull();
+  });
+
+  it('a later $CFG ends any NAK', () => {
+    expect(
+      activeHybridNak(nak('RANGE'), new Date(t0 + 1000), t0 + 2000),
+    ).toBeNull();
+    expect(
+      activeHybridNak(nak('RANGE'), new Date(t0 - 1000), t0 + 2000),
+    ).not.toBeNull();
+  });
+
+  it('other errors last 24 h', () => {
+    expect(
+      activeHybridNak(nak('RANGE'), null, t0 + 23 * 3600_000),
+    ).not.toBeNull();
+    expect(activeHybridNak(nak('RANGE'), null, t0 + 25 * 3600_000)).toBeNull();
+    expect(activeHybridNak(null)).toBeNull();
   });
 });
