@@ -425,7 +425,7 @@ const DeviceDetail: React.FC = () => {
       <header className="page-header">
         <button className="btn-back" onClick={() => navigate('/devices')}>
           <ArrowLeft size={20} />
-          Back to Devices
+          Inverter
         </button>
         <div className="header-content">
           <h1>{data?.device?.deviceName || deviceId}</h1>

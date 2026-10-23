@@ -77,7 +77,7 @@ const Blacklist: React.FC = () => {
     <div className="page blacklist-page">
       <div className="page-header-actions">
         <div>
-          <h1>Blacklist Devices</h1>
+          <h1>Danh sách chặn</h1>
           <p>Devices in this list will have their MQTT messages ignored</p>
         </div>
         <button className="btn btn-primary" onClick={() => setShowForm(!showForm)}>

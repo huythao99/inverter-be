@@ -62,7 +62,7 @@ const Settings: React.FC = () => {
   return (
     <div className="page settings-page">
       <header className="page-header">
-        <h1>Settings</h1>
+        <h1>Cài đặt</h1>
         <p>System configuration and MQTT settings</p>
       </header>
 

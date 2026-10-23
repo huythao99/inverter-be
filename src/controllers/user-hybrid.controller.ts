@@ -5,7 +5,9 @@ import {
   Delete,
   Get,
   Header,
+  Headers,
   HttpCode,
+  HttpException,
   HttpStatus,
   NotFoundException,
   Param,
@@ -25,6 +27,14 @@ import { HybridSettingService } from '../services/hybrid-setting.service';
 import { HybridDataService } from '../services/hybrid-data.service';
 import { HybridFirmwareService } from '../services/hybrid-firmware.service';
 import { AuditLogService } from '../services/audit-log.service';
+import { EspFirmwareService } from '../services/esp-firmware.service';
+import { StmFirmwareService } from '../services/stm-firmware.service';
+import { BetaFirmwareDeviceService } from '../services/beta-firmware-device.service';
+import { MqttService } from '../services/mqtt.service';
+import { compareFirmwareVersions } from '../services/firmware.service';
+
+/** Between two user-triggered ESP32 updates of the same device. */
+const ESP_UPDATE_COOLDOWN_MS = 3 * 60 * 1000;
 import {
   HYBRID_CONFIG_KEYS,
   HYBRID_READONLY_KEYS,
@@ -42,7 +52,13 @@ export class UserHybridController {
     private readonly data: HybridDataService,
     private readonly firmware: HybridFirmwareService,
     private readonly audit: AuditLogService,
+    private readonly espFirmware: EspFirmwareService,
+    private readonly stm: StmFirmwareService,
+    private readonly beta: BetaFirmwareDeviceService,
+    private readonly mqtt: MqttService,
   ) {}
+
+  private readonly espUpdateAt = new Map<string, number>();
 
   private async assertOwned(userId: string, deviceId: string) {
     const device = await this.devices.findByUserIdAndDeviceId(userId, deviceId);
@@ -274,13 +290,114 @@ export class UserHybridController {
     return { firmwareVersion: device.firmwareVersion ?? null };
   }
 
-  // Start an ESP32 OTA (progress on hybrid/{uid}/{dev}/ota/status).
+  /**
+   * "Cập nhật" tab: both chips with their version, the version offered
+   * (stable, or beta for beta-list devices), whether an update is available
+   * and the release notes up to the offered version, newest first.
+   *   esp: ESP32 controller (OTA over WiFi, progress on .../ota/status)
+   *   stm: STM32 power board (flashed by the ESP32, .../stm/ota/status)
+   */
+  @Get(':deviceId/firmware')
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
+  async firmwareOverview(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('deviceId') deviceId: string,
+  ) {
+    const device = await this.assertOwned(user.uid, deviceId);
+    const current = device.firmwareVersion ?? '';
+    const target = this.firmware.getNewestFirmwareVersion(deviceId).version;
+    const hasTarget = !!target && target !== '0.0.0';
+    const espReleases = hasTarget
+      ? await this.espFirmware.releaseNotes('hybrid', target).catch(() => [])
+      : [];
+    const stmInfo = await this.stm.describeByUserDevice(
+      user.uid,
+      deviceId,
+      'hybrid',
+    );
+    const stmReleases = await this.stm
+      .releases('hybrid', stmInfo, this.beta.isBeta(deviceId, user.uid))
+      .catch(() => []);
+    return {
+      esp: {
+        currentVersion: current || null,
+        targetVersion: hasTarget ? target : null,
+        updateAvailable:
+          hasTarget &&
+          !!current &&
+          compareFirmwareVersions(current, target) < 0,
+        releases: espReleases.map((r) => ({
+          ...r,
+          installed: r.version === current,
+          isNew: !!current && compareFirmwareVersions(r.version, current) > 0,
+        })),
+      },
+      stm: { ...stmInfo, releases: stmReleases },
+    };
+  }
+
+  // Start an ESP32 OTA (progress on hybrid/{uid}/{dev}/ota/status). Only when
+  // a newer build is offered; one request per device per 3 min.
   @Post(':deviceId/firmware/update')
   async updateFirmware(
     @CurrentFirebaseUser() user: FirebaseUser,
     @Param('deviceId') deviceId: string,
   ) {
+    const device = await this.assertOwned(user.uid, deviceId);
+    const current = device.firmwareVersion ?? '';
+    const target = this.firmware.getNewestFirmwareVersion(deviceId).version;
+    if (!target || target === '0.0.0') {
+      throw new BadRequestException('Chưa có bản firmware cho thiết bị này');
+    }
+    if (current && compareFirmwareVersions(current, target) >= 0) {
+      throw new BadRequestException(
+        `Thiết bị đã ở phiên bản mới nhất (${current})`,
+      );
+    }
+    if (!this.mqtt.isConnected()) {
+      throw new HttpException(
+        'Máy chủ MQTT đang mất kết nối, vui lòng thử lại sau',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+    const key = `${user.uid}/${deviceId}`;
+    const now = Date.now();
+    const last = this.espUpdateAt.get(key) ?? 0;
+    if (now - last < ESP_UPDATE_COOLDOWN_MS) {
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.TOO_MANY_REQUESTS,
+          message: 'Đã gửi lệnh cập nhật, vui lòng chờ thiết bị cập nhật xong',
+          retryAfterSeconds: Math.ceil(
+            (ESP_UPDATE_COOLDOWN_MS - (now - last)) / 1000,
+          ),
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    if (this.espUpdateAt.size > 1000) this.espUpdateAt.clear();
+    this.espUpdateAt.set(key, now);
+    const r = await this.firmware.triggerFirmwareUpdate(user.uid, deviceId);
+    return {
+      success: true,
+      currentVersion: current || null,
+      targetVersion: target,
+      ...r,
+    };
+  }
+
+  // STM32 power-board update (the device stops producing power ~40 s).
+  @Post(':deviceId/stm/update')
+  @HttpCode(HttpStatus.OK)
+  async updateStm(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('deviceId') deviceId: string,
+    @Headers('x-client') client?: string,
+  ) {
     await this.assertOwned(user.uid, deviceId);
-    return this.firmware.triggerFirmwareUpdate(user.uid, deviceId);
+    return this.stm.trigger(user.uid, deviceId, {
+      kind: 'hybrid',
+      source: client === 'mobile' ? 'app' : 'web',
+    });
   }
 }

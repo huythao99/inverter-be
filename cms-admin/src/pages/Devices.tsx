@@ -24,6 +24,7 @@ import {
   Loader2,
   RefreshCw,
 } from 'lucide-react';
+import { DeviceTypeSwitch } from '../components/SectionNav';
 
 interface Device {
   _id: string;
@@ -240,10 +241,7 @@ const Devices: React.FC = () => {
 
   return (
     <div className="page devices-page">
-      <header className="page-header">
-        <h1>Devices</h1>
-        <p>Manage inverter devices</p>
-      </header>
+      <DeviceTypeSwitch subtitle="Inverter hoà lưới — tìm kiếm, cài đặt, firmware" />
 
       {/* Search Bar */}
       <form onSubmit={handleSearch} className="search-bar">

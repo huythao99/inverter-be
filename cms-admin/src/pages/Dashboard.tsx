@@ -72,7 +72,7 @@ const Dashboard: React.FC = () => {
   return (
     <div className="page dashboard-page">
       <header className="page-header">
-        <h1>Dashboard</h1>
+        <h1>Tổng quan</h1>
         <p>Overview of your inverter system</p>
       </header>
 

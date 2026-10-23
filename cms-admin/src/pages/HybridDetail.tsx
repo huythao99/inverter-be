@@ -300,7 +300,7 @@ const HybridDetail: React.FC = () => {
       <header className="page-header">
         <button className="btn-back" onClick={() => navigate('/hybrids')}>
           <ArrowLeft size={20} />
-          Back to Hybrids
+          Hybrid
         </button>
         <div className="header-content">
           <h1>{details.device.deviceName || deviceId}</h1>

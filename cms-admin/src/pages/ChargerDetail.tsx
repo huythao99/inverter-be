@@ -218,7 +218,7 @@ const ChargerDetail: React.FC = () => {
       <header className="page-header">
         <button className="btn-back" onClick={() => navigate('/chargers')}>
           <ArrowLeft size={20} />
-          Back to Chargers
+          Charger
         </button>
         <div className="header-content">
           <h1>{data?.device?.deviceName || deviceId}</h1>

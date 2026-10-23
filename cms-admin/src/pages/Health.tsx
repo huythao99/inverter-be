@@ -79,7 +79,7 @@ const Health: React.FC = () => {
     <div className="page health-page">
       <div className="page-header-actions">
         <div>
-          <h1>Device Health</h1>
+          <h1>Sức khoẻ inverter</h1>
           <p>
             Inverters with problems first. Built from telemetry and the reports devices already
             send; refreshes every minute.

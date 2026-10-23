@@ -9,7 +9,22 @@ import {
   deleteStmFirmware,
 } from '../services/api';
 import type { StmChannel, StmFirmware as StmFirmwareItem, StmProduct } from '../services/api';
-import { Plus, X, Trash2, Check, Loader2, ToggleLeft, ToggleRight, Upload } from 'lucide-react';
+import {
+  BatteryCharging,
+  Check,
+  Cpu,
+  Loader2,
+  Plus,
+  Shuffle,
+  ToggleLeft,
+  ToggleRight,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react';
+import { FirmwareTabs } from '../components/SectionNav';
+import { useSearchParams } from 'react-router-dom';
+import Segmented from '../components/Segmented';
 
 const emptyForm = {
   product: 'inverter' as StmProduct,
@@ -29,7 +44,19 @@ type AddMode = 'upload' | 'url';
  */
 const StmFirmware: React.FC = () => {
   const [items, setItems] = useState<StmFirmwareItem[]>([]);
-  const [product, setProduct] = useState<StmProduct>('inverter');
+  // Shared with the ESP32 page through ?product=.
+  const [params, setParams] = useSearchParams();
+  const qp = params.get('product');
+  const product: StmProduct = qp === 'charger' || qp === 'hybrid' ? qp : 'inverter';
+  const setProduct = (p: StmProduct) =>
+    setParams(
+      (prev) => {
+        const n = new URLSearchParams(prev);
+        n.set('product', p);
+        return n;
+      },
+      { replace: true },
+    );
   const [isLoading, setIsLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -196,9 +223,10 @@ const StmFirmware: React.FC = () => {
 
   return (
     <div className="page stm-firmware-page">
+      <FirmwareTabs />
       <div className="page-header-actions">
         <div>
-          <h1>STM32 Firmware</h1>
+          <h1>STM32</h1>
           <p>
             Images for the STM32 power board, flashed through the ESP32. Version format is
             major.voltage.patch — major = chip (3 = F303, 2 = G431), 2nd number = voltage
@@ -255,6 +283,7 @@ const StmFirmware: React.FC = () => {
                 >
                   <option value="inverter">Inverter (hoà lưới)</option>
                   <option value="charger">Charger (bộ sạc)</option>
+                  <option value="hybrid">Hybrid (HINVLF, ESP32 ≥ 1.1.0)</option>
                 </select>
               </div>
               <div className="form-group">
@@ -340,11 +369,12 @@ const StmFirmware: React.FC = () => {
             )}
             <div className="form-group">
               <label>
-                Notes <span className="optional">(optional)</span>
+                Release notes <span className="optional">(optional — shown to users in the app / web, one change per line)</span>
               </label>
-              <input
-                type="text"
+              <textarea
+                rows={3}
                 value={form.notes}
+                placeholder={'Sửa lỗi ...\nỔn định hơn khi ...'}
                 onChange={(e) => setForm({ ...form, notes: e.target.value })}
               />
             </div>
@@ -403,16 +433,17 @@ const StmFirmware: React.FC = () => {
         </p>
       )}
 
-      <div className="tabs">
-        {(['inverter', 'charger'] as StmProduct[]).map((p) => (
-          <button
-            key={p}
-            className={`tab ${product === p ? 'active' : ''}`}
-            onClick={() => setProduct(p)}
-          >
-            {p === 'inverter' ? 'Inverter' : 'Charger'}
-          </button>
-        ))}
+      <div className="product-switch">
+        <Segmented<StmProduct>
+          ariaLabel="Loại thiết bị"
+          value={product}
+          onChange={(p) => setProduct(p)}
+          options={[
+            { value: 'inverter', label: 'Inverter', icon: Cpu },
+            { value: 'charger', label: 'Charger', icon: BatteryCharging },
+            { value: 'hybrid', label: 'Hybrid', icon: Shuffle },
+          ]}
+        />
       </div>
 
       <div className="table-container">
@@ -440,7 +471,11 @@ const StmFirmware: React.FC = () => {
                     <a href={it.url} target="_blank" rel="noreferrer">
                       {it.version}
                     </a>
-                    {it.notes && <div className="muted">{it.notes}</div>}
+                    {it.notes && (
+                      <div className="muted" style={{ whiteSpace: 'pre-line' }}>
+                        {it.notes}
+                      </div>
+                    )}
                   </td>
                   <td>{it.major === 3 ? 'F303' : it.major === 2 ? 'G431' : `gen ${it.major}`}</td>
                   <td>{it.voltageCode * 12}V</td>

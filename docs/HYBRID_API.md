@@ -13,6 +13,8 @@ type (collections `hybriddevices`, `hybridsettings`, `hybriddatas`,
 | `PATCH /api/hybrid-device/data/{uid}/{deviceId}/firmware` `{firmwareVersion}` | Report the running version (Basic auth) |
 | `GET /api/hybrid-setting/data/{uid}/{deviceId}?source=hardware` | `{set: "MODE=EXPORT,PEXP=1500,VCUT=42.0"}` — `""` = nothing set (Basic auth) |
 | `GET /api/hybrid-firmware?deviceId=` | `{url}` of the active build (CMS -> ESP32 Firmware -> Hybrid) (Basic auth) |
+| `GET /api/hybrid-stm-firmware?deviceId=` | STM32 image to flash `{version, url, size, crc32, ...}` (404 = none) (Basic auth) |
+| `PATCH /api/hybrid-stm-firmware/info/{uid}/{deviceId}` `{version, crc32?}` | STM32 version after an update (Basic auth). The version also comes from each `$INFO FW` |
 
 **Basic auth** = `Authorization: Basic base64(hyb_<deviceId>:<mqtt password>)`, the
 account from provisioning (over HTTPS only). 401 = missing / wrong credentials,
@@ -38,6 +40,7 @@ Publishes:
   `$INFO,...`, `$NAK,...`. Only `$TLM` is rate-limited by the server (3 s).
 - `hybrid/{uid}/{deviceId}/status` - `{"updatedAt":"...","status":"online"}`
 - `hybrid/{uid}/{deviceId}/ota/status` - `{"status":..,"progress":..,"message":..}`
+- `hybrid/{uid}/{deviceId}/stm/ota/status` - STM32 update progress `{status, progress, message, version}`
 - `hybrid/{uid}/{deviceId}/raw` - UART debug log for the CMS ("Raw UART" tab), plain text `"<RX|TX> <TAG> <line>"`: TX FRAME/LEGACY = sent to the STM32; RX NOFRAME / BADCRC / LONG / UNKNOWN / ACK = received but not forwarded to `data`; RX SILENT = no byte for >10 s. QoS 0, not retained, max 10 lines/s. Not processed by the server.
 
 Subscribes:
@@ -45,6 +48,7 @@ Subscribes:
 - `hybrid/{uid}/{deviceId}/cmd/settings` (retained) - "pull the setting again"
 - `hybrid/{uid}/{deviceId}/cmd/action` (NOT retained) - `{"cmd":"FAULT_RST"|"STOP"|"RUN","ts":<ms>}`
 - `hybrid/{uid}/{deviceId}/firmware/update` (retained) - `{"ts": <epoch ms>}`, empty = cleared
+- `hybrid/{uid}/{deviceId}/stm/update` (NOT retained) - `{"action":"stm_update","version","crc32","force","ts"}`
 - `hybrid/{uid}/{deviceId}/blacklist` (retained) - `{"lock": bool}`
 
 ## App / web (Firebase auth) - `/api/user/hybrids`
@@ -60,7 +64,10 @@ Subscribes:
 | `POST /{id}/command` `{cmd}` | `FAULT_RST` (xóa lỗi / bỏ khóa), `STOP`, `RUN` → `cmd/action` |
 | `GET /{id}/energy?from=&to=` | `{from, to, today, days: [{day, edis, echg, eimp, eexp}]}` (Wh, VN days, default last 30) |
 | `GET /{id}/activity` | Settings / command history |
-| `GET /firmware/newest`, `GET /{id}/firmware/version`, `POST /{id}/firmware/update` | OTA |
+| `GET /{id}/firmware` | "Cập nhật" tab: `{esp: {currentVersion, targetVersion, updateAvailable, releases[]}, stm: {version, chip, voltage, supported, minEspVersion, target, updateAvailable, reason, lastOta, releases[]}}`; `releases` = `{version, notes, date, installed, isNew}` newest first, up to the offered version |
+| `POST /{id}/firmware/update` | ESP32 OTA (only when a newer build is offered; 1 per 3 min). Progress on `hybrid/{uid}/{id}/ota/status` |
+| `POST /{id}/stm/update` | STM32 update through the ESP32 (~40 s without power). Progress on `hybrid/{uid}/{id}/stm/ota/status` |
+| `GET /firmware/newest`, `GET /{id}/firmware/version` | Older OTA routes (kept) |
 
 `pending` = config keys the machine's `$CFG` doesn't show yet (offline,
 `SRC=LOCAL`, or refused — see `lastNak.err`: LOCAL / BUSY / RANGE / …).

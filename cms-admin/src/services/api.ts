@@ -82,7 +82,7 @@ export const setUartDebug = (id: string, minutes: number) =>
   );
 
 // ---- STM32 firmware (FOTA through the ESP32) ----
-export type StmProduct = 'inverter' | 'charger';
+export type StmProduct = 'inverter' | 'charger' | 'hybrid';
 export type StmChannel = 'stable' | 'beta';
 
 export interface StmFirmware {

@@ -17,6 +17,7 @@ import {
   Eye,
   Download,
 } from 'lucide-react';
+import { DeviceTypeSwitch } from '../components/SectionNav';
 
 interface Charger {
   _id: string;
@@ -119,10 +120,7 @@ const Chargers: React.FC = () => {
 
   return (
     <div className="page devices-page">
-      <header className="page-header">
-        <h1>Chargers</h1>
-        <p>Manage charger devices</p>
-      </header>
+      <DeviceTypeSwitch subtitle="Bộ sạc MPPT — tìm kiếm, cài đặt, firmware" />
 
       {/* Search Bar */}
       <form onSubmit={handleSearch} className="search-bar">

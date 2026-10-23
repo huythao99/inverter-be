@@ -30,6 +30,28 @@ export class HybridDevice {
 
   @Prop({ default: Date.now })
   updatedAt: Date;
+
+  // ---- STM32 (power board): version from $INFO FW / after an update ----
+  // "major.voltage.patch" (2nd number = voltage class). Null until reported.
+  @Prop({ type: String, default: null })
+  stmFwVersion: string | null;
+
+  @Prop({ type: String, default: null })
+  stmFwCrc: string | null; // "0xXXXXXXXX"
+
+  @Prop({ type: Date, default: null })
+  stmInfoAt: Date | null;
+
+  // Last STM32 FOTA state (trigger + stm/ota/status reports).
+  @Prop({ type: Object, default: null })
+  stmOta: {
+    status: string;
+    progress?: number;
+    message?: string;
+    targetVersion?: string;
+    source?: string;
+    at: Date;
+  } | null;
 }
 
 export const HybridDeviceSchema = SchemaFactory.createForClass(HybridDevice);

@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call */
 import { MqttAuthService } from './services/mqtt-auth.service';
 import { HybridSettingService } from './services/hybrid-setting.service';
 import { HybridDataSchema } from './models/hybrid-data.schema';
@@ -17,6 +17,7 @@ import {
 import { AUDIT_EVENT } from './utils/audit-context';
 import { buildAuditSummary } from './services/audit-log.service';
 import { HybridDeviceAuthGuard } from './auth/guards/hybrid-device-auth.guard';
+import { StmFirmwareService } from './services/stm-firmware.service';
 import * as crypto from 'crypto';
 
 const chain = (v: unknown) => ({
@@ -201,6 +202,9 @@ describe('MqttAuthService ACL for a hybrid device account', () => {
     ['hybrid/u1/H1/firmware/update', 'subscribe', true],
     ['hybrid/u1/H1/cmd/action', 'write', false],
     ['hybrid/u1/H1/raw', 'write', true],
+    ['hybrid/u1/H1/stm/ota/status', 'write', true],
+    ['hybrid/u1/H1/stm/update', 'read', true],
+    ['hybrid/u1/H1/stm/update', 'write', false],
     ['charger/u1/H1/raw', 'write', false],
     ['hybrid/u1/H1/cmd/grid-tie', 'subscribe', false],
     ['hybrid/u1/H2/data', 'write', false],
@@ -385,5 +389,131 @@ describe('hybrid audit summary', () => {
         after: 'FAULT_RST',
       }),
     ).toBe('Xóa lỗi');
+  });
+});
+
+describe('StmFirmwareService for hybrids', () => {
+  const q = (v: unknown) => {
+    const c: any = { lean: () => c, exec: () => Promise.resolve(v) };
+    return c;
+  };
+  function setup(device: any, images: any[]) {
+    const published: any[] = [];
+    const updates: any[] = [];
+    const stmModel = {
+      find: (f: any) =>
+        q(
+          images.filter(
+            (i) =>
+              i.product === f.product &&
+              i.major === f.major &&
+              i.voltageCode === f.voltageCode &&
+              i.enabled &&
+              f.channel.$in.includes(i.channel),
+          ),
+        ),
+    };
+    const hybModel = {
+      findOne: () => q(device),
+      updateOne: (f: any, u: any) => {
+        updates.push([f, u]);
+        return q({});
+      },
+      findOneAndUpdate: (f: any, u: any) => {
+        updates.push([f, u]);
+        return q({ ...device, ...u.$set });
+      },
+    };
+    const invModel = { findOne: () => q(null) };
+    const mqtt = {
+      isConnected: () => true,
+      publish: (t: string, p: any) => {
+        published.push([t, p]);
+        return Promise.resolve();
+      },
+    };
+    const beta = { isBeta: () => false };
+    const config = { get: (_k: string, d?: unknown) => d };
+    const svc = new StmFirmwareService(
+      stmModel as any,
+      invModel as any,
+      hybModel as any,
+      mqtt as any,
+      beta as any,
+      {} as any,
+      {} as any,
+      config as any,
+    );
+    return { svc, published, updates };
+  }
+  const img = (version: string, extra: any = {}) => ({
+    _id: version,
+    product: 'hybrid',
+    channel: 'stable',
+    enabled: true,
+    major: Number(version.split('.')[0]),
+    voltageCode: Number(version.split('.')[1]),
+    version,
+    url: `https://x/${version}/app.bin`,
+    size: 1000,
+    crc32: '0x0000000' + version.split('.')[2],
+    notes: `Sửa lỗi ${version}`,
+    createdAt: new Date('2026-10-01'),
+    ...extra,
+  });
+  const dev = {
+    userId: 'u1',
+    deviceId: 'H1',
+    firmwareVersion: '1.1.0',
+    stmFwVersion: '5.4.3',
+    stmFwCrc: null,
+    stmOta: null,
+  };
+
+  it('offers the newest hybrid image of the same chip + voltage, with notes', async () => {
+    const { svc } = setup(dev, [
+      img('5.4.3'),
+      img('5.4.5'),
+      img('5.3.9'),
+      img('5.4.6', { channel: 'beta' }),
+    ]);
+    const info = await svc.describeByUserDevice('u1', 'H1', 'hybrid');
+    expect(info.target?.version).toBe('5.4.5');
+    expect(info.updateAvailable).toBe(true);
+    const rel = await svc.releases('hybrid', info, false);
+    expect(rel.map((r: any) => [r.version, r.installed, r.isNew])).toEqual([
+      ['5.4.5', false, true],
+      ['5.4.3', true, false],
+    ]);
+  });
+
+  it('ESP32 too old for STM FOTA -> no target', async () => {
+    const { svc } = setup({ ...dev, firmwareVersion: '1.0.1' }, [img('5.4.5')]);
+    const info = await svc.describeByUserDevice('u1', 'H1', 'hybrid');
+    expect(info.reason).toBe('esp_firmware_too_old');
+    expect(info.minEspVersion).toBe('1.1.0');
+  });
+
+  it('trigger publishes on hybrid/{uid}/{id}/stm/update', async () => {
+    const { svc, published } = setup(dev, [img('5.4.5')]);
+    const r = await svc.trigger('u1', 'H1', { kind: 'hybrid', source: 'web' });
+    expect(r.targetVersion).toBe('5.4.5');
+    expect(published[0][0]).toBe('hybrid/u1/H1/stm/update');
+    expect(published[0][1]).toMatchObject({
+      action: 'stm_update',
+      version: '5.4.5',
+    });
+  });
+
+  it('$INFO FW sets the hybrid STM32 version (CRC kept while unchanged)', async () => {
+    const { svc, updates } = setup(dev, []);
+    await svc.onHybridFrame({
+      userId: 'u1',
+      deviceId: 'H1',
+      data: { type: 'INFO', DEV: 'HINVLF', FW: '5.4.3' },
+    });
+    expect(updates[0][0]).toMatchObject({ stmFwVersion: { $ne: '5.4.3' } });
+    expect(updates[1][1].$set.stmFwVersion).toBe('5.4.3');
+    expect(updates[1][1].$set.stmFwCrc).toBeUndefined();
   });
 });

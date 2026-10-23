@@ -3,7 +3,7 @@ import { Document, Types } from 'mongoose';
 
 export type StmFirmwareDocument = StmFirmware & Document;
 
-export type StmProduct = 'inverter' | 'charger';
+export type StmProduct = 'inverter' | 'charger' | 'hybrid';
 export type StmChannel = 'stable' | 'beta';
 
 /**
@@ -17,7 +17,7 @@ export class StmFirmware {
   _id: Types.ObjectId;
 
   // Which product's STM32 this image is for (inverter vs charger boards).
-  @Prop({ required: true, enum: ['inverter', 'charger'] })
+  @Prop({ required: true, enum: ['inverter', 'charger', 'hybrid'] })
   product: StmProduct;
 
   // stable = everyone; beta = devices on the CMS beta list only.

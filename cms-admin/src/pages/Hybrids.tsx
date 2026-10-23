@@ -27,6 +27,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { MODE_LABEL, ST_LABEL, fltText } from '../components/hybrid-labels';
+import { DeviceTypeSwitch } from '../components/SectionNav';
 
 interface HybridsResponse {
   data: CmsHybrid[];
@@ -166,10 +167,7 @@ const Hybrids: React.FC = () => {
 
   return (
     <div className="page devices-page">
-      <header className="page-header">
-        <h1>Hybrids</h1>
-        <p>Inverter hybrid (HINVLF) — tìm kiếm, trạng thái, lỗi</p>
-      </header>
+      <DeviceTypeSwitch subtitle="Inverter hybrid (HINVLF) — tìm kiếm, trạng thái, lỗi" />
 
       <div className="stats-grid">
         {statCard(<Shuffle size={24} />, 'blue', stats?.totalDevices, 'Tổng số máy', '')}

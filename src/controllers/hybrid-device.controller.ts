@@ -10,9 +10,15 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
-import { HybridDeviceAuthGuard } from '../auth/guards/hybrid-device-auth.guard';
+import type { Request } from 'express';
+import {
+  HybridDeviceAccount,
+  HybridDeviceAuthGuard,
+} from '../auth/guards/hybrid-device-auth.guard';
+import { StmFirmwareService } from '../services/stm-firmware.service';
 import { HybridDeviceService } from '../services/hybrid-device.service';
 import { HybridSettingService } from '../services/hybrid-setting.service';
 import { HybridFirmwareService } from '../services/hybrid-firmware.service';
@@ -28,6 +34,7 @@ export class HybridDeviceController {
     private readonly devices: HybridDeviceService,
     private readonly settings: HybridSettingService,
     private readonly firmware: HybridFirmwareService,
+    private readonly stm: StmFirmwareService,
   ) {}
 
   // Setup: exchange the one-time claim (from the app/web) for the device's
@@ -81,6 +88,29 @@ export class HybridDeviceController {
   getFirmwareUrl(@Query('deviceId') deviceId: string) {
     if (!deviceId) throw new BadRequestException('deviceId is required');
     return this.firmware.getFirmwareUrl(deviceId);
+  }
+
+  // ---- STM32 FOTA (stm_fota.cpp) ----
+
+  // Image the ESP32 should flash into the STM32: {version,url,size,crc32,...}
+  // (404 when none). Owner = the account of the Basic credentials.
+  @Get('hybrid-stm-firmware')
+  @UseGuards(HybridDeviceAuthGuard)
+  getStmTarget(@Req() req: Request & { hybridDevice?: HybridDeviceAccount }) {
+    const acct = req.hybridDevice;
+    if (!acct) throw new BadRequestException('deviceId is required');
+    return this.stm.targetForEsp(acct.userId, acct.deviceId, 'hybrid');
+  }
+
+  // After a successful update: { version: "a.b.c", crc32? }.
+  @Patch('hybrid-stm-firmware/info/:userId/:deviceId')
+  @UseGuards(HybridDeviceAuthGuard)
+  reportStmInfo(
+    @Param('userId') userId: string,
+    @Param('deviceId') deviceId: string,
+    @Body() body: { version?: unknown; crc32?: unknown },
+  ) {
+    return this.stm.reportInfo(userId, deviceId, body ?? {}, 'hybrid');
   }
 
   @Get('hybrid-firmware/newest')

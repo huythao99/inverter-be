@@ -28,6 +28,7 @@ import type {
   RolloutDeviceState,
 } from '../services/api';
 import { ago } from '../components/health-meta';
+import { FirmwareTabs } from '../components/SectionNav';
 
 const STATE_META: Record<RolloutDeviceState, { label: string; tone: string }> = {
   pushed: { label: 'Command sent', tone: 'info' },
@@ -132,9 +133,10 @@ const Rollout: React.FC = () => {
 
   return (
     <div className="page rollout-page">
+      <FirmwareTabs />
       <div className="page-header-actions">
         <div>
-          <h1>Staged Rollout</h1>
+          <h1>Rollout (inverter)</h1>
           <p>
             Release a new inverter ESP32 build to a growing share of devices (e.g. 5% → 25% → 50%
             → 100%). Devices report back; the rollout pauses by itself when too many fail. The

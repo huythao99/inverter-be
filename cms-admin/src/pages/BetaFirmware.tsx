@@ -5,6 +5,7 @@ import {
   removeBetaFirmwareDevice,
 } from '../services/api';
 import { Trash2, Plus, X, FlaskConical } from 'lucide-react';
+import { FirmwareTabs } from '../components/SectionNav';
 
 interface BetaFirmwareEntry {
   _id: string;
@@ -75,9 +76,10 @@ const BetaFirmware: React.FC = () => {
 
   return (
     <div className="page beta-firmware-page">
+      <FirmwareTabs />
       <div className="page-header-actions">
         <div>
-          <h1>Beta Firmware Devices</h1>
+          <h1>Beta list</h1>
           <p>Devices in this list will download the beta firmware build</p>
         </div>
         <button

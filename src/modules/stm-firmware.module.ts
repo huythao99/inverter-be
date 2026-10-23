@@ -6,6 +6,10 @@ import {
   InverterDevice,
   InverterDeviceSchema,
 } from '../models/inverter-device.schema';
+import {
+  HybridDevice,
+  HybridDeviceSchema,
+} from '../models/hybrid-device.schema';
 import { StmFirmwareService } from '../services/stm-firmware.service';
 import { StmFirmwareController } from '../controllers/stm-firmware.controller';
 
@@ -16,6 +20,7 @@ import { StmFirmwareController } from '../controllers/stm-firmware.controller';
     MongooseModule.forFeature([
       { name: StmFirmware.name, schema: StmFirmwareSchema },
       { name: InverterDevice.name, schema: InverterDeviceSchema },
+      { name: HybridDevice.name, schema: HybridDeviceSchema },
     ]),
   ],
   controllers: [StmFirmwareController],

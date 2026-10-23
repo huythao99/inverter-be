@@ -22,6 +22,38 @@ import {
   InverterDevice,
   InverterDeviceDocument,
 } from '../models/inverter-device.schema';
+import {
+  HybridDevice,
+  HybridDeviceDocument,
+} from '../models/hybrid-device.schema';
+
+/**
+ * Device types whose STM32 is updated through the ESP32. Their device
+ * documents carry the same stmFwVersion / stmFwCrc / stmInfoAt / stmOta
+ * fields; MQTT topics are {kind}/{uid}/{id}/stm/...
+ */
+export type StmDeviceKind = 'inverter' | 'hybrid';
+
+/** The STM32 fields of an inverter / hybrid device document. */
+export type StmDeviceDoc = Pick<
+  InverterDevice,
+  | 'userId'
+  | 'deviceId'
+  | 'firmwareVersion'
+  | 'stmFwVersion'
+  | 'stmFwCrc'
+  | 'stmInfoAt'
+  | 'stmOta'
+>;
+
+/** STM32 image with users' release notes (notes of the CMS entry). */
+export interface StmRelease {
+  version: string;
+  notes: string;
+  date: string | null;
+  installed: boolean;
+  isNew: boolean;
+}
 import { MqttService } from './mqtt.service';
 import { SpacesService } from './spaces.service';
 import { SpacesCleanupService } from './spaces-cleanup.service';
@@ -163,6 +195,7 @@ export class StmFirmwareService {
   private readonly logger = new Logger(StmFirmwareService.name);
   private readonly triggerAt = new Map<string, number>();
   readonly minEspVersion: string;
+  readonly minEspVersionHybrid: string;
   /**
    * STM32 images live next to the ESP32 firmware, one folder per version:
    *   {baseUrl}/{product}/{version}/app.bin (+ app.json)
@@ -179,6 +212,8 @@ export class StmFirmwareService {
     private readonly stmFirmwareModel: Model<StmFirmwareDocument>,
     @InjectModel(InverterDevice.name)
     private readonly inverterDeviceModel: Model<InverterDeviceDocument>,
+    @InjectModel(HybridDevice.name)
+    private readonly hybridDeviceModel: Model<HybridDeviceDocument>,
     private readonly mqttService: MqttService,
     private readonly betaFirmwareDeviceService: BetaFirmwareDeviceService,
     private readonly spaces: SpacesService,
@@ -189,6 +224,11 @@ export class StmFirmwareService {
     this.minEspVersion = configService.get<string>(
       'STM_FOTA_MIN_ESP_VERSION',
       '1.0.15',
+    );
+    // First hybrid ESP32 firmware with STM32 FOTA (stm_fota.cpp).
+    this.minEspVersionHybrid = configService.get<string>(
+      'STM_FOTA_MIN_ESP_VERSION_HYBRID',
+      '1.1.0',
     );
     this.baseUrl = configService
       .get<string>('STM_FIRMWARE_BASE_URL', `${FIRMWARE_BASE_URL}/stm`)
@@ -596,13 +636,27 @@ export class StmFirmwareService {
     return this.toTarget(list[0]);
   }
 
-  espSupportsStmFota(espVersion?: string | null): boolean {
+  private minEspFor(kind: StmDeviceKind): string {
+    return kind === 'hybrid' ? this.minEspVersionHybrid : this.minEspVersion;
+  }
+
+  /** Device collection of a kind (same STM32 fields in both). */
+  private devModel(kind: StmDeviceKind): Model<InverterDeviceDocument> {
+    return kind === 'hybrid'
+      ? (this.hybridDeviceModel as unknown as Model<InverterDeviceDocument>)
+      : this.inverterDeviceModel;
+  }
+
+  espSupportsStmFota(
+    espVersion?: string | null,
+    kind: StmDeviceKind = 'inverter',
+  ): boolean {
     if (!espVersion) return false;
-    return compareFirmwareVersions(espVersion, this.minEspVersion) >= 0;
+    return compareFirmwareVersions(espVersion, this.minEspFor(kind)) >= 0;
   }
 
   /** Device already runs the target image (or newer)? */
-  isUpToDate(device: InverterDevice, target: StmTarget): boolean {
+  isUpToDate(device: StmDeviceDoc, target: StmTarget): boolean {
     if (device.stmFwCrc && normalizeCrc32(device.stmFwCrc) === target.crc32) {
       return true;
     }
@@ -612,8 +666,11 @@ export class StmFirmwareService {
     );
   }
 
-  async describe(device: InverterDevice): Promise<DeviceStmInfo> {
-    const supported = this.espSupportsStmFota(device.firmwareVersion);
+  async describe(
+    device: StmDeviceDoc,
+    kind: StmDeviceKind = 'inverter',
+  ): Promise<DeviceStmInfo> {
+    const supported = this.espSupportsStmFota(device.firmwareVersion, kind);
     const current = parseStmVersion(device.stmFwVersion);
     let target: StmTarget | null = null;
     let reason: DeviceStmInfo['reason'] = null;
@@ -623,7 +680,7 @@ export class StmFirmwareService {
       reason = 'version_unknown';
     } else {
       target = await this.findTarget(
-        'inverter',
+        kind,
         current.major,
         current.voltageCode,
         this.betaFirmwareDeviceService.isBeta(device.deviceId, device.userId),
@@ -639,7 +696,7 @@ export class StmFirmwareService {
       crc32: device.stmFwCrc ?? null,
       reportedAt: device.stmInfoAt ?? null,
       supported,
-      minEspVersion: this.minEspVersion,
+      minEspVersion: this.minEspFor(kind),
       target,
       updateAvailable: !!target && !this.isUpToDate(device, target),
       reason,
@@ -647,32 +704,85 @@ export class StmFirmwareService {
     };
   }
 
-  private async findDevice(userId: string, deviceId: string) {
-    const device = await this.inverterDeviceModel
-      .findOne({ userId, deviceId })
+  /**
+   * Release notes of the STM32 images this device could run (same product,
+   * chip and voltage class, enabled, up to its target), newest first.
+   */
+  async releases(
+    kind: StmDeviceKind,
+    info: DeviceStmInfo,
+    beta: boolean,
+    limit = 10,
+  ): Promise<StmRelease[]> {
+    if (info.major === null || info.voltageCode === null) return [];
+    const channels: StmChannel[] = beta ? ['stable', 'beta'] : ['stable'];
+    const docs = await this.stmFirmwareModel
+      .find({
+        product: kind,
+        major: info.major,
+        voltageCode: info.voltageCode,
+        enabled: true,
+        channel: { $in: channels },
+      })
       .lean()
       .exec();
+    const upTo = info.target?.version ?? info.version;
+    return docs
+      .filter((d) => !upTo || compareFirmwareVersions(d.version, upTo) <= 0)
+      .sort((a, b) => compareFirmwareVersions(b.version, a.version))
+      .slice(0, limit)
+      .map((d) => ({
+        version: d.version,
+        notes: (d.notes ?? '').trim(),
+        date: d.createdAt ? new Date(d.createdAt).toISOString() : null,
+        installed: d.version === info.version,
+        isNew:
+          !!info.version &&
+          compareFirmwareVersions(d.version, info.version) > 0,
+      }));
+  }
+
+  private async findDevice(
+    userId: string,
+    deviceId: string,
+    kind: StmDeviceKind = 'inverter',
+  ): Promise<StmDeviceDoc> {
+    const device = (await this.devModel(kind)
+      .findOne({ userId, deviceId })
+      .lean()
+      .exec()) as StmDeviceDoc | null;
     if (!device) throw new NotFoundException(`Device ${deviceId} not found`);
     return device;
   }
 
-  async describeByUserDevice(userId: string, deviceId: string) {
-    return this.describe(await this.findDevice(userId, deviceId));
+  async describeByUserDevice(
+    userId: string,
+    deviceId: string,
+    kind: StmDeviceKind = 'inverter',
+  ) {
+    return this.describe(await this.findDevice(userId, deviceId, kind), kind);
   }
 
-  async describeById(id: string) {
-    const device = await this.inverterDeviceModel.findById(id).lean().exec();
+  async describeById(id: string, kind: StmDeviceKind = 'inverter') {
+    const device = (await this.devModel(kind)
+      .findById(id)
+      .lean()
+      .exec()) as StmDeviceDoc | null;
     if (!device) throw new NotFoundException(`Device with ID ${id} not found`);
     return {
       userId: device.userId,
       deviceId: device.deviceId,
-      ...(await this.describe(device)),
+      ...(await this.describe(device, kind)),
     };
   }
 
   /** ESP32: image to download for this device (404 when none). */
-  async targetForEsp(userId: string, deviceId: string): Promise<StmTarget> {
-    const info = await this.describeByUserDevice(userId, deviceId);
+  async targetForEsp(
+    userId: string,
+    deviceId: string,
+    kind: StmDeviceKind = 'inverter',
+  ): Promise<StmTarget> {
+    const info = await this.describeByUserDevice(userId, deviceId, kind);
     if (!info.target) {
       throw new NotFoundException(
         `No STM32 firmware for this device (${info.reason ?? 'unknown'})`,
@@ -687,6 +797,7 @@ export class StmFirmwareService {
     userId: string,
     deviceId: string,
     info: { version?: unknown; crc32?: unknown },
+    kind: StmDeviceKind = 'inverter',
   ) {
     const parsed = parseStmVersion(info.version);
     if (!parsed) {
@@ -695,14 +806,25 @@ export class StmFirmwareService {
       );
     }
     const crc = normalizeCrc32(info.crc32);
+    const model = this.devModel(kind);
 
-    const device = await this.inverterDeviceModel
+    // No CRC in the report (e.g. a hybrid $INFO): keep the stored one while
+    // the version is unchanged, forget it when the version changed.
+    if (!crc) {
+      await model
+        .updateOne(
+          { userId, deviceId, stmFwVersion: { $ne: parsed.version } },
+          { $set: { stmFwCrc: null } },
+        )
+        .exec();
+    }
+    const device = await model
       .findOneAndUpdate(
         { userId, deviceId },
         {
           $set: {
             stmFwVersion: parsed.version,
-            stmFwCrc: crc,
+            ...(crc ? { stmFwCrc: crc } : {}),
             stmInfoAt: new Date(),
           },
         },
@@ -731,6 +853,28 @@ export class StmFirmwareService {
     }
   }
 
+  /** Hybrid: the STM32 version comes with each $INFO frame (FW=a.b.c). */
+  @OnEvent('hybrid.data.received')
+  async onHybridFrame(payload: {
+    userId: string;
+    deviceId: string;
+    data: Record<string, unknown>;
+  }) {
+    const d = payload.data ?? {};
+    if (typeof d.type !== 'string' || d.type.toUpperCase() !== 'INFO') return;
+    if (!d.FW) return;
+    try {
+      await this.reportInfo(
+        payload.userId,
+        payload.deviceId,
+        { version: d.FW },
+        'hybrid',
+      );
+    } catch {
+      // Not "a.b.c" / unknown device: ignore.
+    }
+  }
+
   @OnEvent('stm.ota.status.received')
   async onOtaStatus(payload: {
     userId: string;
@@ -738,9 +882,10 @@ export class StmFirmwareService {
     status?: string;
     progress?: number;
     message?: string;
+    kind?: StmDeviceKind;
   }) {
     if (!payload.status) return;
-    await this.inverterDeviceModel
+    await this.devModel(payload.kind ?? 'inverter')
       .updateOne(
         { userId: payload.userId, deviceId: payload.deviceId },
         {
@@ -773,13 +918,15 @@ export class StmFirmwareService {
       force?: boolean;
       source: 'cms' | 'web' | 'app' | 'bulk';
       skipCooldown?: boolean;
+      kind?: StmDeviceKind;
     },
   ): Promise<{ success: true; targetVersion: string; crc32: string }> {
-    const device = await this.findDevice(userId, deviceId);
-    const info = await this.describe(device);
+    const kind = opts.kind ?? 'inverter';
+    const device = await this.findDevice(userId, deviceId, kind);
+    const info = await this.describe(device, kind);
     if (!info.target) {
       const msg: Record<string, string> = {
-        esp_firmware_too_old: `ESP32 firmware ${device.firmwareVersion ?? '?'} không hỗ trợ cập nhật STM32 (cần >= ${this.minEspVersion})`,
+        esp_firmware_too_old: `ESP32 firmware ${device.firmwareVersion ?? '?'} không hỗ trợ cập nhật STM32 (cần >= ${this.minEspFor(kind)})`,
         version_unknown:
           'Chưa biết phiên bản STM32 của thiết bị (STM32 chưa báo phiên bản)',
         no_firmware: `Chưa có firmware STM32 cho ${info.chip ?? '?'} ${info.voltage ?? '?'}`,
@@ -820,8 +967,14 @@ export class StmFirmwareService {
     if (this.triggerAt.size > 2000) this.triggerAt.clear();
     this.triggerAt.set(key, now);
 
-    await this.publishTrigger(userId, deviceId, info.target, !!opts.force);
-    await this.inverterDeviceModel
+    await this.publishTrigger(
+      userId,
+      deviceId,
+      info.target,
+      !!opts.force,
+      kind,
+    );
+    await this.devModel(kind)
       .updateOne(
         { userId, deviceId },
         {
@@ -851,9 +1004,10 @@ export class StmFirmwareService {
     deviceId: string,
     target: StmTarget,
     force: boolean,
+    kind: StmDeviceKind = 'inverter',
   ): Promise<void> {
     return this.mqttService.publish(
-      `inverter/${userId}/${deviceId}/stm/update`,
+      `${kind}/${userId}/${deviceId}/stm/update`,
       {
         action: 'stm_update',
         version: target.version,

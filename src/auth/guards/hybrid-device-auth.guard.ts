@@ -8,6 +8,12 @@ import {
 import type { Request } from 'express';
 import { MqttAuthService } from '../../services/mqtt-auth.service';
 
+/** Set on the request by HybridDeviceAuthGuard. */
+export interface HybridDeviceAccount {
+  userId: string;
+  deviceId: string;
+}
+
 /**
  * Hybrid firmware calls: HTTP Basic auth with the device's own broker
  * account (hyb_<deviceId> + password from provisioning; TLS only).
@@ -48,6 +54,11 @@ export class HybridDeviceAuthGuard implements CanActivate {
     if (params.userId !== undefined && params.userId !== acct.userId) {
       throw new ForbiddenException('Not this owner');
     }
+    // For routes without :userId (e.g. ?deviceId=): the owner of the account.
+    (req as Request & { hybridDevice?: HybridDeviceAccount }).hybridDevice = {
+      userId: acct.userId,
+      deviceId: acct.deviceId,
+    };
     return true;
   }
 }

@@ -535,8 +535,8 @@ export class MqttAuthService implements OnModuleInit {
       const publishes = ['data', 'status', 'ota/status'];
       const receives = ['firmware/update', 'cmd/settings', 'blacklist'];
       if (kind === 'hybrid') {
-        receives.push('cmd/action');
-        publishes.push('raw'); // UART debug log, read by the CMS only
+        receives.push('cmd/action', 'stm/update');
+        publishes.push('raw', 'stm/ota/status'); // raw: UART debug log (CMS)
       }
       const allowed = access === 'write' ? publishes : receives;
       if (allowed.some((t) => topic === base + t)) return true;

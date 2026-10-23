@@ -13,7 +13,21 @@ import type {
   EspFirmwareConfig,
   EspProduct,
 } from '../services/api';
-import { Check, FileText, Loader2, Plus, Trash2, Upload, X } from 'lucide-react';
+import {
+  BatteryCharging,
+  Check,
+  Cpu,
+  FileText,
+  Loader2,
+  Plus,
+  Shuffle,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react';
+import { FirmwareTabs } from '../components/SectionNav';
+import { useSearchParams } from 'react-router-dom';
+import Segmented from '../components/Segmented';
 
 const emptyForm = {
   version: '',
@@ -49,7 +63,18 @@ const errorText = (err: unknown, fallback: string) => {
 const EspFirmware: React.FC = () => {
   const [items, setItems] = useState<EspFirmwareItem[]>([]);
   const [config, setConfig] = useState<EspFirmwareConfig | null>(null);
-  const [product, setProduct] = useState<EspProduct>('inverter');
+  const [params, setParams] = useSearchParams();
+  const qp = params.get('product');
+  const product: EspProduct = qp === 'charger' || qp === 'hybrid' ? qp : 'inverter';
+  const setProduct = (p: EspProduct) =>
+    setParams(
+      (prev) => {
+        const n = new URLSearchParams(prev);
+        n.set('product', p);
+        return n;
+      },
+      { replace: true },
+    );
   const [isLoading, setIsLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -219,9 +244,10 @@ const EspFirmware: React.FC = () => {
 
   return (
     <div className="page esp-firmware-page">
+      <FirmwareTabs />
       <div className="page-header-actions">
         <div>
-          <h1>ESP32 Firmware</h1>
+          <h1>ESP32</h1>
           <p>
             ESP32 firmware builds per device type. Upload{' '}
             <code>.pio/build/esp32dev/firmware.bin</code>, then set it as beta to test on the
@@ -246,19 +272,20 @@ const EspFirmware: React.FC = () => {
         </p>
       )}
 
-      <div className="tabs">
-        {PRODUCTS.map((p) => (
-          <button
-            key={p.key}
-            className={`tab ${product === p.key ? 'active' : ''}`}
-            onClick={() => {
-              setProduct(p.key);
-              setDeleteConfirm(null);
-            }}
-          >
-            {p.label}
-          </button>
-        ))}
+      <div className="product-switch">
+        <Segmented<EspProduct>
+          ariaLabel="Loại thiết bị"
+          value={product}
+          onChange={(p) => {
+            setProduct(p);
+            setDeleteConfirm(null);
+          }}
+          options={[
+            { value: 'inverter', label: 'Inverter', icon: Cpu },
+            { value: 'charger', label: 'Charger', icon: BatteryCharging },
+            { value: 'hybrid', label: 'Hybrid', icon: Shuffle },
+          ]}
+        />
       </div>
 
       <div className="esp-active-row">

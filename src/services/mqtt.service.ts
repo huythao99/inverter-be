@@ -173,6 +173,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       'hybrid/+/+/data', // Hybrid $TLM / $CFG / $INFO / $NAK frames
       'hybrid/+/+/status', // Hybrid heartbeat
       'hybrid/+/+/ota/status', // Hybrid OTA status
+      'hybrid/+/+/stm/ota/status', // Hybrid STM32 update progress
     ];
     topics.forEach((topic) => this.client.subscribe(topic));
   }
@@ -312,6 +313,31 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
           status: data.status,
           progress: data.progress,
           message: data.message,
+          timestamp: new Date().toISOString(),
+        });
+      } catch {
+        // Invalid JSON, ignore
+      }
+      return;
+    }
+
+    // Hybrid STM32 update progress: hybrid/{uid}/{id}/stm/ota/status.
+    if (
+      ns === 'hybrid' &&
+      kind === 'stm' &&
+      topicParts[4] === 'ota' &&
+      topicParts[5] === 'status'
+    ) {
+      try {
+        const data = JSON.parse(message.toString()) as Record<string, unknown>;
+        this.eventEmitter.emit('stm.ota.status.received', {
+          userId: uid,
+          deviceId,
+          kind: 'hybrid',
+          status: typeof data.status === 'string' ? data.status : undefined,
+          progress:
+            typeof data.progress === 'number' ? data.progress : undefined,
+          message: typeof data.message === 'string' ? data.message : undefined,
           timestamp: new Date().toISOString(),
         });
       } catch {

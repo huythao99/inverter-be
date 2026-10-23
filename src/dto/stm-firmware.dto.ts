@@ -9,8 +9,8 @@ import {
 } from 'class-validator';
 
 export class RegisterStmFirmwareDto {
-  @IsIn(['inverter', 'charger'])
-  product: 'inverter' | 'charger';
+  @IsIn(['inverter', 'charger', 'hybrid'])
+  product: 'inverter' | 'charger' | 'hybrid';
 
   @IsIn(['stable', 'beta'])
   channel: 'stable' | 'beta';
@@ -61,8 +61,8 @@ export class StmUpdateDto {
 // multipart/form-data fields of POST /api/cms/stm-firmwares/upload
 // (files: "bin" = app.bin, "manifest" = app.json).
 export class UploadStmFirmwareDto {
-  @IsIn(['inverter', 'charger'])
-  product: 'inverter' | 'charger';
+  @IsIn(['inverter', 'charger', 'hybrid'])
+  product: 'inverter' | 'charger' | 'hybrid';
 
   @IsIn(['stable', 'beta'])
   channel: 'stable' | 'beta';
