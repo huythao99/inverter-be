@@ -26,6 +26,11 @@ import {
 const LEGACY_TOPIC =
   /^(?:(?:inverter|charger)\/[^/+#]+\/(?:[^/+#]+|\+)\/[^+#]+|devices\/(?:inverter|charger)\/[^/+#]+\/(?:[^/+#]+|\+))$/;
 
+/** hybrid/<uid>/<id>/raw (the UART debug log), or a filter ending in it. */
+export function isRawLogTopic(topic: string): boolean {
+  return typeof topic === 'string' && /^hybrid\/[^/]+\/[^/]+\/raw$/.test(topic);
+}
+
 export function legacyTopicAllowed(topic: string): boolean {
   return typeof topic === 'string' && LEGACY_TOPIC.test(topic);
 }
@@ -547,6 +552,15 @@ export class MqttAuthService implements OnModuleInit {
     // App/web and CMS accounts only ever read (commands go through the API).
     if (kind === 'app' || kind === 'cms') {
       if (access === 'write') return false;
+      // UART debug log (hybrid .../raw): CMS only. It shows the raw STM32
+      // protocol, incl. lock commands; owners and shared viewers never get it
+      // (also refused per message when they subscribe with "#").
+      if (kind === 'app' && isRawLogTopic(topic)) {
+        this.logger.debug(
+          `ACL denied (raw log): ${username} ${access} ${topic}`,
+        );
+        return false;
+      }
       const prefixes =
         kind === 'cms'
           ? ['inverter/', 'charger/', 'hybrid/', 'devices/']

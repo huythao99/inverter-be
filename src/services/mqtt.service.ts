@@ -725,6 +725,21 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
+  // Turn the UART debug log (hybrid/{uid}/{id}/raw) on for `minutes`
+  // (0 = off). The device switches it off by itself when the time is up, so a
+  // forgotten CMS tab never leaves it running. NOT retained.
+  async emitHybridRawLog(
+    userId: string,
+    deviceId: string,
+    minutes: number,
+  ): Promise<void> {
+    await this.publishWithRetain(
+      `hybrid/${userId}/${deviceId}/cmd/action`,
+      { cmd: 'RAWLOG', minutes, ts: Date.now() },
+      false,
+    );
+  }
+
   async clearHybridFirmwareUpdate(
     userId: string,
     deviceId: string,

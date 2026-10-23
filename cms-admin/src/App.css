@@ -2408,3 +2408,18 @@ body {
   .hy-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .hy-stats > :first-child { grid-column: 1 / -1; }
 }
+
+/* Hybrid detail: UART debug log switch */
+.rawlog-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 13px;
+}
+.rawlog-control .muted { flex: 1 1 260px; }
+.rawlog-on { flex: 1 1 200px; color: #15803d; font-weight: 500; }

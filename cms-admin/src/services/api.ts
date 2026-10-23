@@ -610,6 +610,13 @@ export const updateHybrid = (id: string, data: { deviceName?: string; firmwareVe
 
 export const deleteHybrid = (id: string) => api.delete(`/hybrid/devices/${id}`);
 
+/** UART debug log (hybrid/{uid}/{id}/raw) on for N minutes (max 30), 0 = off. */
+export const setHybridRawLog = (userId: string, deviceId: string, minutes: number) =>
+  api.post<{ minutes: number; until: string | null }>(
+    `/hybrid/devices/${userId}/${deviceId}/raw-log`,
+    { minutes },
+  );
+
 export const triggerHybridFirmwareUpdate = (id: string) =>
   api.post(`/hybrid/devices/${id}/firmware-update`, {});
 

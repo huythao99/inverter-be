@@ -13,13 +13,20 @@ import {
 } from '@nestjs/common';
 import { AdminGuard } from '../auth/guards/admin.guard';
 import { CmsHybridService } from '../services/cms-hybrid.service';
-import { IsIn, IsOptional } from 'class-validator';
+import { IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
 import { DeviceQueryDto, UpdateDeviceDto } from '../dto/cms-query.dto';
 
 class HybridDeviceQueryDto extends DeviceQueryDto {
   @IsOptional()
   @IsIn(['online', 'offline', 'fault', 'local'])
   status?: 'online' | 'offline' | 'fault' | 'local';
+}
+
+class RawLogDto {
+  @IsInt()
+  @Min(0)
+  @Max(30)
+  minutes!: number;
 }
 
 /**
@@ -48,6 +55,17 @@ export class CmsHybridController {
     @Param('deviceId') deviceId: string,
   ) {
     return this.cms.getDeviceDetails(userId, deviceId);
+  }
+
+  // UART debug log (hybrid/{uid}/{id}/raw) on for N minutes, 0 = off.
+  @Post('devices/:userId/:deviceId/raw-log')
+  @HttpCode(HttpStatus.OK)
+  setRawLog(
+    @Param('userId') userId: string,
+    @Param('deviceId') deviceId: string,
+    @Body() dto: RawLogDto,
+  ) {
+    return this.cms.setRawLog(userId, deviceId, dto.minutes);
   }
 
   @Get('devices/:id')

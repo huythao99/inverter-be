@@ -229,6 +229,35 @@ describe('MqttAuthService ACL for a hybrid device account', () => {
       false,
     );
   });
+
+  it('app account never reads the UART debug log; the CMS does', async () => {
+    const app = new MqttAuthService(
+      {
+        findOne: () => chain({ ...cred, kind: 'app', mqttUsername: 'app_u1' }),
+      } as any,
+      config,
+    );
+    expect(await app.checkAcl('app_u1', 'hybrid/u1/H1/raw', 'read')).toBe(
+      false,
+    );
+    expect(await app.checkAcl('app_u1', 'hybrid/u1/H1/raw', 'subscribe')).toBe(
+      false,
+    );
+    // "#" subscription passes, each /raw message is then refused on read.
+    expect(await app.checkAcl('app_u1', 'hybrid/u1/H1/#', 'subscribe')).toBe(
+      true,
+    );
+    const cms = new MqttAuthService(
+      {
+        findOne: () =>
+          chain({ ...cred, kind: 'cms', mqttUsername: 'cms_viewer' }),
+      } as any,
+      config,
+    );
+    expect(await cms.checkAcl('cms_viewer', 'hybrid/u1/H1/raw', 'read')).toBe(
+      true,
+    );
+  });
 });
 
 describe('HybridSettingService', () => {

@@ -131,6 +131,19 @@ export class HybridSettingService {
     return { cmd: c as HybridCommand, sentAt: new Date() };
   }
 
+  /** UART debug log on for `minutes` (0 = off, max 30). CMS only. */
+  async rawLog(
+    userId: string,
+    deviceId: string,
+    minutes: number,
+    ctx?: AuditContext,
+  ): Promise<{ minutes: number; until: Date | null }> {
+    const m = Math.max(0, Math.min(30, Math.round(Number(minutes) || 0)));
+    await this.mqtt.emitHybridRawLog(userId, deviceId, m);
+    this.audit(ctx, userId, deviceId, 'command', null, `RAWLOG ${m}`);
+    return { minutes: m, until: m ? new Date(Date.now() + m * 60_000) : null };
+  }
+
   async remove(userId: string, deviceId: string): Promise<void> {
     await this.model.deleteOne({ userId, deviceId }).exec();
   }

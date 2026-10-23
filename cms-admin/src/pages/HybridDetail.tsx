@@ -6,6 +6,7 @@ import type { MqttClient } from 'mqtt';
 import {
   getHybridDetails,
   getMqttCredentials,
+  setHybridRawLog,
   triggerHybridFirmwareUpdate,
   type CmsHybridDetails,
 } from '../services/api';
@@ -144,6 +145,51 @@ const HybridDetail: React.FC = () => {
   const pausedRef = useRef(false);
   pausedRef.current = logPaused;
   const lineIdRef = useRef(0);
+  // UART debug log is off on the device unless turned on here (time-limited).
+  const RAW_MINUTES = 10;
+  const [rawUntil, setRawUntil] = useState<number | null>(null);
+  const [rawBusy, setRawBusy] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  const rawActive = rawUntil !== null && rawUntil > now;
+
+  useEffect(() => {
+    if (rawUntil === null) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [rawUntil]);
+
+  const setRawLog = async (minutes: number) => {
+    if (!userId || !deviceId) return;
+    setRawBusy(true);
+    try {
+      const res = await setHybridRawLog(userId, deviceId, minutes);
+      setRawUntil(res.data.until ? new Date(res.data.until).getTime() : null);
+      setNow(Date.now());
+      pushLog({ dir: 'SYS', tag: 'RAWLOG', text: minutes ? `bật log UART ${minutes} phút` : 'tắt log UART' });
+    } catch (err) {
+      console.error('Failed to set raw log', err);
+      alert('Không gửi được lệnh bật/tắt log UART');
+    } finally {
+      setRawBusy(false);
+    }
+  };
+
+  // Leaving the page turns the log off (it would stop by itself anyway).
+  const rawRef = useRef({ active: false, userId, deviceId });
+  rawRef.current = { active: rawActive, userId, deviceId };
+  useEffect(
+    () => () => {
+      const r = rawRef.current;
+      if (r.active && r.userId && r.deviceId) void setHybridRawLog(r.userId, r.deviceId, 0).catch(() => {});
+    },
+    [],
+  );
+
+  const fmtLeft = (ms: number) => {
+    const s = Math.max(0, Math.round(ms / 1000));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  };
+
   const pushLog = (l: Omit<RawLogLine, 'id' | 'at'>) => {
     if (pausedRef.current) return;
     const entry: RawLogLine = { ...l, id: ++lineIdRef.current, at: new Date().toISOString() };
@@ -593,6 +639,28 @@ const HybridDetail: React.FC = () => {
               <span className={`status-indicator ${isConnected ? 'connected' : 'disconnected'}`}>
                 {isConnected ? 'Connected' : 'Disconnected'}
               </span>
+            </div>
+            <div className="rawlog-control">
+              {rawActive ? (
+                <>
+                  <span className="rawlog-on">● Log UART đang bật · còn {fmtLeft((rawUntil ?? 0) - now)}</span>
+                  <button className="btn btn-secondary btn-sm" disabled={rawBusy} onClick={() => setRawLog(RAW_MINUTES)}>
+                    Gia hạn {RAW_MINUTES} phút
+                  </button>
+                  <button className="btn btn-secondary btn-sm" disabled={rawBusy} onClick={() => setRawLog(0)}>
+                    Tắt
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="muted">
+                    Log UART đang tắt: chỉ thấy bản tin hợp lệ (DATA). Bật để xem khung gửi/nhận, lỗi CRC, dòng bị bỏ.
+                  </span>
+                  <button className="btn btn-primary btn-sm" disabled={rawBusy} onClick={() => setRawLog(RAW_MINUTES)}>
+                    Bật log UART {RAW_MINUTES} phút
+                  </button>
+                </>
+              )}
             </div>
             {!isConnected && (
               <div className="connection-warning">

@@ -271,6 +271,13 @@ export class CmsHybridService {
     return { message: `Hybrid ${device.deviceId} deleted successfully` };
   }
 
+  /** Turn the device's UART debug log on (minutes, max 30) or off (0). */
+  async setRawLog(userId: string, deviceId: string, minutes: number) {
+    const device = await this.deviceModel.exists({ userId, deviceId }).exec();
+    if (!device) throw new NotFoundException(`Hybrid ${deviceId} not found`);
+    return this.settings.rawLog(userId, deviceId, minutes);
+  }
+
   async triggerFirmwareUpdate(id: string) {
     const device = await this.byId(id);
     const { version } = this.firmware.getNewestFirmwareVersion(device.deviceId);
