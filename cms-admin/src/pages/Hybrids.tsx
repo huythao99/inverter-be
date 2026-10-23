@@ -41,7 +41,7 @@ const STATUS_OPTIONS: { value: '' | HybridStatusFilter; label: string }[] = [
   { value: 'online', label: 'Online' },
   { value: 'offline', label: 'Offline' },
   { value: 'fault', label: 'Đang lỗi' },
-  { value: 'local', label: 'SRC = LOCAL' },
+  { value: 'local', label: 'Cài trên máy' },
 ];
 
 const Hybrids: React.FC = () => {
@@ -119,7 +119,7 @@ const Hybrids: React.FC = () => {
       fetchStats();
     } catch (err) {
       console.error('Failed to delete hybrid', err);
-      alert('Failed to delete hybrid');
+      alert('Xoá thiết bị thất bại');
     }
   };
 
@@ -136,10 +136,10 @@ const Hybrids: React.FC = () => {
     try {
       await triggerHybridFirmwareUpdate(id);
       setFirmwareUpdateConfirm(null);
-      alert('Hybrid firmware update triggered successfully');
+      alert('Đã gửi lệnh cập nhật firmware');
     } catch (err) {
       console.error('Failed to trigger firmware update', err);
-      alert('Failed to trigger firmware update');
+      alert('Gửi lệnh cập nhật firmware thất bại');
     } finally {
       setIsUpdatingFirmware(false);
     }
@@ -150,31 +150,36 @@ const Hybrids: React.FC = () => {
     color: string,
     value: number | undefined,
     label: string,
-    filter?: '' | HybridStatusFilter,
+    filter: '' | HybridStatusFilter,
   ) => (
-    <div
-      className="stat-card"
-      style={filter !== undefined ? { cursor: 'pointer', outline: status === filter ? '2px solid #3b82f6' : undefined } : undefined}
-      onClick={filter !== undefined ? () => changeStatus(filter) : undefined}
+    <button
+      type="button"
+      className={`stat-card stat-card-button ${filter !== '' && status === filter ? 'selected' : ''}`}
+      onClick={() => changeStatus(status === filter ? '' : filter)}
+      title={filter ? `Lọc: ${label}` : 'Bỏ lọc'}
     >
       <div className={`stat-icon ${color}`}>{icon}</div>
       <div className="stat-content">
         <span className="stat-value">{value ?? '—'}</span>
         <span className="stat-label">{label}</span>
       </div>
-    </div>
+    </button>
   );
+
+  const activeFilter = STATUS_OPTIONS.find((o) => o.value === status && o.value !== '');
+  const openDetail = (h: CmsHybrid) => navigate(`/hybrids/${h.userId}/${h.deviceId}`);
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
 
   return (
     <div className="page devices-page">
       <DeviceTypeSwitch subtitle="Inverter hybrid (HINVLF) — tìm kiếm, trạng thái, lỗi" />
 
-      <div className="stats-grid">
+      <div className="stats-grid hy-stats">
         {statCard(<Shuffle size={24} />, 'blue', stats?.totalDevices, 'Tổng số máy', '')}
         {statCard(<Wifi size={24} />, 'green', stats?.onlineDevices, 'Online', 'online')}
         {statCard(<WifiOff size={24} />, 'purple', stats?.offlineDevices, 'Offline', 'offline')}
         {statCard(<AlertTriangle size={24} />, 'pink', stats?.faultDevices, 'Đang lỗi', 'fault')}
-        {statCard(<Lock size={24} />, 'orange', stats?.localSourceDevices, 'SRC = LOCAL', 'local')}
+        {statCard(<Lock size={24} />, 'orange', stats?.localSourceDevices, 'Cài trên máy (LOCAL)', 'local')}
       </div>
 
       <form onSubmit={handleSearch} className="search-bar">
@@ -187,44 +192,34 @@ const Hybrids: React.FC = () => {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <select
-          value={status}
-          onChange={(e) => changeStatus(e.target.value as '' | HybridStatusFilter)}
-          className="inline-edit"
-          style={{ width: 'auto', minWidth: 140 }}
-          aria-label="Lọc trạng thái"
-        >
-          {STATUS_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
         <button type="submit" className="btn btn-primary">
-          Search
+          Tìm
         </button>
       </form>
 
       <div className="table-container">
+        <div className="hy-toolbar">
+          <span className="hy-count">{hybrids ? `${hybrids.total} thiết bị` : 'Thiết bị'}</span>
+          {activeFilter && (
+            <button type="button" className="hy-chip" onClick={() => changeStatus('')} title="Bỏ lọc">
+              {activeFilter.label}
+              <X size={14} />
+            </button>
+          )}
+        </div>
         {isLoading ? (
-          <div className="loading">Loading hybrids...</div>
+          <div className="loading">Đang tải…</div>
         ) : (
           <>
-            {hybrids && (
-              <p className="muted" style={{ margin: '0 0 8px' }}>
-                {hybrids.total} máy
-              </p>
-            )}
-            <table className="data-table">
+            <table className="data-table hy-table">
               <thead>
                 <tr>
-                  <th>Device ID</th>
-                  <th>Device Name</th>
-                  <th>User</th>
+                  <th>Thiết bị</th>
+                  <th>Chủ sở hữu</th>
                   <th>Trạng thái</th>
-                  <th>Chế độ / SRC</th>
+                  <th>Chế độ</th>
                   <th>Firmware</th>
-                  <th>Actions</th>
+                  <th className="hy-actions-col" aria-label="Thao tác" />
                 </tr>
               </thead>
               <tbody>
@@ -232,85 +227,100 @@ const Hybrids: React.FC = () => {
                   const s = h.summary;
                   const fault = fltText(s.flt);
                   return (
-                    <tr key={h._id}>
-                      <td className="monospace">{h.deviceId}</td>
-                      <td>
+                    <tr
+                      key={h._id}
+                      className={editingId === h._id ? undefined : 'hy-row'}
+                      onClick={editingId === h._id ? undefined : () => openDetail(h)}
+                    >
+                      <td onClick={editingId === h._id ? stop : undefined}>
                         {editingId === h._id ? (
                           <input
                             type="text"
                             value={editData.deviceName}
                             onChange={(e) => setEditData({ ...editData, deviceName: e.target.value })}
                             className="inline-edit"
+                            placeholder="Tên thiết bị"
                           />
                         ) : (
                           <>
-                            <div>{h.deviceName}</div>
-                            {h.description && (
-                              <div className="muted" style={{ fontSize: 12 }}>
-                                {h.description}
-                              </div>
+                            <div className="hy-name">{h.deviceName || h.deviceId}</div>
+                            {h.deviceName && h.deviceName !== h.deviceId && (
+                              <div className="hy-sub monospace">{h.deviceId}</div>
                             )}
+                            {h.description && <div className="hy-sub">{h.description}</div>}
                           </>
                         )}
                       </td>
                       <td>
-                        {h.ownerEmail && <div>{h.ownerEmail}</div>}
-                        <div className="monospace" style={{ fontSize: 12, opacity: h.ownerEmail ? 0.6 : 1 }}>
-                          {h.userId}
+                        <div>{h.ownerEmail || '—'}</div>
+                        <div className="hy-sub monospace" title={h.userId}>
+                          {h.userId.length > 14 ? `${h.userId.slice(0, 6)}…${h.userId.slice(-6)}` : h.userId}
                         </div>
                       </td>
                       <td>
                         <span className={`status-badge ${s.online ? 'active' : 'inactive'}`}>
                           {s.online ? 'Online' : 'Offline'}
                         </span>
-                        <div style={{ fontSize: 12, marginTop: 4 }}>
-                          {s.st ? (ST_LABEL[s.st] ?? s.st) : '—'}
-                          {s.vbat ? ` · ${s.vbat} V` : ''}
-                        </div>
-                        {fault && (
-                          <div style={{ fontSize: 12, color: '#b91c1c' }}>
-                            {fault}
-                            {s.lock ? ' · KHÓA' : ''}
+                        {s.online ? (
+                          <div className="hy-sub">
+                            {s.st ? (ST_LABEL[s.st] ?? s.st) : '—'}
+                            {s.vbat ? ` · Pin ${s.vbat} V` : ''}
                           </div>
+                        ) : (
+                          s.lastSeenAt && (
+                            <div className="hy-sub">Lần cuối {new Date(s.lastSeenAt).toLocaleString('vi-VN')}</div>
+                          )
                         )}
-                        {!s.online && s.lastSeenAt && (
-                          <div className="muted" style={{ fontSize: 11 }}>
-                            {new Date(s.lastSeenAt).toLocaleString()}
+                        {fault && (
+                          <div className="hy-fault">
+                            <AlertTriangle size={12} />
+                            {fault}
+                            {s.lock ? ' · Khoá' : ''}
                           </div>
                         )}
                       </td>
                       <td>
                         <div>{s.mode ? (MODE_LABEL[s.mode] ?? s.mode) : '—'}</div>
-                        <div style={{ fontSize: 12, color: s.src === 'LOCAL' ? '#c2410c' : undefined }}>
-                          {s.src ?? '—'}
-                        </div>
+                        {s.src && (
+                          <span
+                            className={`hy-pill ${s.src === 'LOCAL' ? 'warn' : ''}`}
+                            title={
+                              s.src === 'LOCAL'
+                                ? 'Cài đặt trên máy (LOCAL): app / CMS không đổi được cài đặt'
+                                : 'Cài đặt từ app'
+                            }
+                          >
+                            {s.src === 'LOCAL' && <Lock size={11} />}
+                            {s.src === 'LOCAL' ? 'Cài trên máy' : 'Cài từ app'}
+                          </span>
+                        )}
                       </td>
-                      <td>
+                      <td onClick={editingId === h._id ? stop : undefined}>
                         {editingId === h._id ? (
                           <input
                             type="text"
                             value={editData.firmwareVersion}
                             onChange={(e) => setEditData({ ...editData, firmwareVersion: e.target.value })}
                             className="inline-edit"
+                            placeholder="ESP x.y.z"
                           />
                         ) : (
-                          <>
-                            <div>ESP {h.firmwareVersion}</div>
-                            {s.stmFw && (
-                              <div className="muted" style={{ fontSize: 12 }}>
-                                STM {s.stmFw}
-                              </div>
-                            )}
-                          </>
+                          <div className="hy-fw">
+                            <span className="hy-fw-k">ESP</span>
+                            <span>{h.firmwareVersion || '—'}</span>
+                            <span className="hy-fw-k">STM</span>
+                            <span>{s.stmFw || '—'}</span>
+                          </div>
                         )}
                       </td>
-                      <td className="actions">
+                      <td onClick={stop}>
+                        <div className="actions hy-actions">
                         {editingId === h._id ? (
                           <>
-                            <button className="btn-icon success" onClick={() => saveEdit(h._id)} title="Save">
+                            <button className="btn-icon success" onClick={() => saveEdit(h._id)} title="Lưu">
                               <Check size={16} />
                             </button>
-                            <button className="btn-icon" onClick={() => setEditingId(null)} title="Cancel">
+                            <button className="btn-icon" onClick={() => setEditingId(null)} title="Huỷ">
                               <X size={16} />
                             </button>
                           </>
@@ -323,7 +333,7 @@ const Hybrids: React.FC = () => {
                             >
                               <Check size={16} />
                             </button>
-                            <button className="btn-icon" onClick={() => setDeleteConfirm(null)} title="Cancel">
+                            <button className="btn-icon" onClick={() => setDeleteConfirm(null)} title="Huỷ">
                               <X size={16} />
                             </button>
                           </>
@@ -333,11 +343,11 @@ const Hybrids: React.FC = () => {
                               className="btn-icon success"
                               onClick={() => handleFirmwareUpdate(h._id)}
                               disabled={isUpdatingFirmware}
-                              title="Confirm Update"
+                              title="Mở trang cập nhật firmware"
                             >
                               <Check size={16} />
                             </button>
-                            <button className="btn-icon" onClick={() => setFirmwareUpdateConfirm(null)} title="Cancel">
+                            <button className="btn-icon" onClick={() => setFirmwareUpdateConfirm(null)} title="Huỷ">
                               <X size={16} />
                             </button>
                           </>
@@ -345,15 +355,15 @@ const Hybrids: React.FC = () => {
                           <>
                             <button
                               className="btn-icon"
-                              onClick={() => navigate(`/hybrids/${h.userId}/${h.deviceId}`)}
-                              title="View Details"
+                              onClick={() => openDetail(h)}
+                              title="Xem chi tiết"
                             >
                               <Eye size={16} />
                             </button>
                             <button
                               className="btn-icon"
                               onClick={() => setFirmwareUpdateConfirm(h._id)}
-                              title="Update Firmware"
+                              title="Cập nhật firmware"
                             >
                               <Download size={16} />
                             </button>
@@ -363,23 +373,24 @@ const Hybrids: React.FC = () => {
                                 setEditingId(h._id);
                                 setEditData({ deviceName: h.deviceName, firmwareVersion: h.firmwareVersion });
                               }}
-                              title="Edit"
+                              title="Sửa tên / phiên bản"
                             >
                               <Edit2 size={16} />
                             </button>
-                            <button className="btn-icon danger" onClick={() => setDeleteConfirm(h._id)} title="Delete">
+                            <button className="btn-icon danger" onClick={() => setDeleteConfirm(h._id)} title="Xoá thiết bị">
                               <Trash2 size={16} />
                             </button>
                           </>
                         )}
+                        </div>
                       </td>
                     </tr>
                   );
                 })}
                 {hybrids?.data.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="empty-state">
-                      No hybrids found
+                    <td colSpan={6} className="empty-state">
+                      Không có thiết bị nào
                     </td>
                   </tr>
                 )}
@@ -392,7 +403,7 @@ const Hybrids: React.FC = () => {
                   <ChevronLeft size={20} />
                 </button>
                 <span>
-                  Page {hybrids.page} of {hybrids.totalPages}
+                  Trang {hybrids.page} / {hybrids.totalPages}
                 </span>
                 <button
                   className="btn-icon"
