@@ -10,7 +10,10 @@ import { DeviceQueryDto, UpdateDeviceDto } from '../dto/cms-query.dto';
 import { UserEmailService } from './user-email.service';
 import { HybridDeviceService } from './hybrid-device.service';
 import { HybridDataService } from './hybrid-data.service';
-import { HybridSettingService } from './hybrid-setting.service';
+import {
+  HybridSettingService,
+  hybridOpenRequest,
+} from './hybrid-setting.service';
 import { HybridFirmwareService } from './hybrid-firmware.service';
 import { hybridPendingKeys, vnDay } from '../constants/hybrid.constants';
 
@@ -245,7 +248,10 @@ export class CmsHybridService {
       data: latest,
       setting: {
         ...setting,
-        pending: hybridPendingKeys(setting.config, latest?.cfg),
+        pending: hybridPendingKeys(
+          hybridOpenRequest(setting.request, latest?.cfgAt)?.config ?? {},
+          latest?.cfg,
+        ),
       },
       energy,
     };

@@ -4,6 +4,14 @@ import type { HybridConfig } from '../constants/hybrid.constants';
 
 export type HybridSettingDocument = HybridSetting & Document;
 
+export interface HybridSetRequest {
+  /** Keys sent (after pull-along), e.g. { PEXP: 2000 }. */
+  config: HybridConfig;
+  /** Same as the $SET item list. */
+  set: string;
+  at: Date;
+}
+
 /**
  * Desired inverter config of a hybrid (HINVLF v1 writable keys: MODE PCHG
  * PEXP PIMP VEXP VCUT VRES PMAX PCMAX). Only keys the user has set are
@@ -22,6 +30,11 @@ export class HybridSetting {
 
   @Prop({ type: SchemaTypes.Mixed, default: {} })
   config: HybridConfig;
+
+  // Last change the user saved (protocol v1.1: the ESP32 $SETs it once, then
+  // $CMD,SAVE; the machine's $CFG is the truth afterwards).
+  @Prop({ type: SchemaTypes.Mixed })
+  request?: HybridSetRequest;
 
   @Prop({ default: Date.now })
   updatedAt: Date;

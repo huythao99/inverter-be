@@ -327,6 +327,45 @@ export function hybridEnergyDelta(
   return out;
 }
 
+// ---- $ETOT (protocol v1.1): lifetime totals kept in the STM32 flash ----
+// Unsigned 32-bit Wh since the factory, never reset (odometer). The STM32
+// sends it on $GET,ETOT and every 60 s. A power cut may lose up to 1 h of
+// counting, so a total can come back SMALLER than one already seen: keep the
+// largest per key and count nothing for the step back.
+
+export type HybridEtot = Record<HybridEnergyKey, number>;
+const U32_MAX = 4_294_967_295;
+
+/** Items of a $ETOT (null unless all four are plain unsigned integers). */
+export function hybridEtot(items: Record<string, string>): HybridEtot | null {
+  const out = {} as HybridEtot;
+  for (const k of HYBRID_ENERGY_KEYS) {
+    const s = items[k];
+    if (typeof s !== 'string' || !/^\d{1,10}$/.test(s)) return null;
+    const v = Number(s);
+    if (v > U32_MAX) return null;
+    out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * Energy between the largest totals seen so far (`max`) and a new $ETOT:
+ * only increases count. Returns the energy and the new largest totals.
+ */
+export function hybridEtotDelta(
+  max: HybridEtot,
+  next: HybridEtot,
+): { delta: HybridEtot; max: HybridEtot } {
+  const delta = {} as HybridEtot;
+  const m = {} as HybridEtot;
+  for (const k of HYBRID_ENERGY_KEYS) {
+    delta[k] = Math.max(0, next[k] - max[k]);
+    m[k] = Math.max(max[k], next[k]);
+  }
+  return { delta, max: m };
+}
+
 /** Calendar day in Vietnam (UTC+7), "YYYY-MM-DD". */
 export function vnDay(at: Date = new Date()): string {
   return new Date(at.getTime() + 7 * 3600_000).toISOString().slice(0, 10);

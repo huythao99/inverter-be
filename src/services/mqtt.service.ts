@@ -725,6 +725,22 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
+  // One-shot settings change (protocol v1.1): the ESP32 sends this $SET once
+  // (retrying BUSY for a while), then $CMD,SAVE. NOT retained: a device that
+  // is offline does not apply an old change later; the firmware also drops
+  // one older than 120 s. Firmware < 1.2 ignores it and uses cmd/settings.
+  async emitHybridSet(
+    userId: string,
+    deviceId: string,
+    set: string,
+  ): Promise<void> {
+    await this.publishWithRetain(
+      `hybrid/${userId}/${deviceId}/cmd/action`,
+      { cmd: 'SET', set, ts: Date.now() },
+      false,
+    );
+  }
+
   // Turn the UART debug log (hybrid/{uid}/{id}/raw) on for `minutes`
   // (0 = off). The device switches it off by itself when the time is up, so a
   // forgotten CMS tab never leaves it running. NOT retained.

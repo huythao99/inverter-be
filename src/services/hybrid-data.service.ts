@@ -27,7 +27,15 @@ import {
   hybridEnergyDelta,
   hybridEnergyRef,
   vnDay,
+  hybridEtot,
+  hybridEtotDelta,
+  type HybridEtot,
 } from '../constants/hybrid.constants';
+
+// While a device sent $ETOT this recently, energy is counted from $ETOT only
+// ($TLM counters still followed, not counted). Older STM32 firmware without
+// $ETOT keeps the $TLM counting.
+const ETOT_FRESH_MS = 15 * 60_000;
 
 // Offline when no message arrived within this window (same as the charger).
 const OFFLINE_THRESHOLD_MS = 15000;
@@ -99,6 +107,8 @@ export class HybridDataService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(HybridDataService.name);
   /** uid|dev -> counters of the last $TLM. */
   private readonly refs = new Map<string, HybridEnergyRef & { at: number }>();
+  /** uid|dev -> largest $ETOT seen + when the last $ETOT came. */
+  private readonly etots = new Map<string, { max: HybridEtot; at: number }>();
   /** uid|dev|day -> energy not yet written. */
   private readonly pending = new Map<string, EnergyTotals>();
   /** Per-device chain so two frames never race on the same ref. */
@@ -184,6 +194,12 @@ export class HybridDataService implements OnModuleInit, OnModuleDestroy {
         await this.addEnergy(userId, deviceId, ref, now);
         set.energyRef = { ...ref, at: now };
       }
+    } else if (frame.type === 'ETOT') {
+      const etot = hybridEtot(frame.items);
+      if (!etot) return;
+      set.etot = etot;
+      set.etotAt = now;
+      set.etotMax = await this.addEtot(userId, deviceId, etot, now);
     } else if (frame.type === 'CFG') {
       set.cfg = frame.items;
       set.cfgAt = now;
@@ -229,6 +245,9 @@ export class HybridDataService implements OnModuleInit, OnModuleDestroy {
     }
     this.refs.set(key, { ...ref, at: now.getTime() });
     if (!prev) return; // first frame ever: nothing to add yet
+    // $ETOT is the source while the STM32 sends it (no double counting); the
+    // ref above is still moved on so a fallback starts from here.
+    if (await this.etotFresh(key, now.getTime())) return;
 
     const elapsedSec = (now.getTime() - prev.at) / 1000;
     const delta = hybridEnergyDelta(prev, ref, elapsedSec);
@@ -239,6 +258,62 @@ export class HybridDataService implements OnModuleInit, OnModuleDestroy {
       ({ EDIS: 0, ECHG: 0, EIMP: 0, EEXP: 0 } as EnergyTotals);
     for (const k of HYBRID_ENERGY_KEYS) acc[k] += delta[k];
     this.pending.set(pkey, acc);
+  }
+
+  private async loadEtot(
+    key: string,
+  ): Promise<{ max: HybridEtot; at: number } | undefined> {
+    let e = this.etots.get(key);
+    if (e) return e;
+    const [userId, deviceId] = key.split('|');
+    const doc = (await this.model
+      .findOne({ userId, deviceId })
+      .select('+etotMax etotAt')
+      .lean()
+      .exec()) as { etotMax?: HybridEtot; etotAt?: Date } | null;
+    if (doc?.etotMax) {
+      e = {
+        max: doc.etotMax,
+        at: doc.etotAt ? new Date(doc.etotAt).getTime() : 0,
+      };
+      this.etots.set(key, e);
+    }
+    return e;
+  }
+
+  private async etotFresh(key: string, now: number): Promise<boolean> {
+    const e = await this.loadEtot(key);
+    return !!e && now - e.at < ETOT_FRESH_MS;
+  }
+
+  /**
+   * Count a $ETOT: energy since the largest totals seen, into today's VN day.
+   * The first $ETOT ever (or after the device was removed) only sets the
+   * starting point. Returns the new largest totals (stored with the data).
+   */
+  private async addEtot(
+    userId: string,
+    deviceId: string,
+    etot: HybridEtot,
+    now: Date,
+  ): Promise<HybridEtot> {
+    const key = `${userId}|${deviceId}`;
+    const prev = await this.loadEtot(key);
+    if (!prev) {
+      this.etots.set(key, { max: etot, at: now.getTime() });
+      return etot;
+    }
+    const { delta, max } = hybridEtotDelta(prev.max, etot);
+    this.etots.set(key, { max, at: now.getTime() });
+    if (HYBRID_ENERGY_KEYS.some((k) => delta[k] > 0)) {
+      const pkey = `${key}|${vnDay(now)}`;
+      const acc =
+        this.pending.get(pkey) ??
+        ({ EDIS: 0, ECHG: 0, EIMP: 0, EEXP: 0 } as EnergyTotals);
+      for (const k of HYBRID_ENERGY_KEYS) acc[k] += delta[k];
+      this.pending.set(pkey, acc);
+    }
+    return max;
   }
 
   /** Write the accumulated energy ($inc per device and day). */
@@ -308,6 +383,7 @@ export class HybridDataService implements OnModuleInit, OnModuleDestroy {
   async removeDevice(userId: string, deviceId: string): Promise<void> {
     const key = `${userId}|${deviceId}`;
     this.refs.delete(key);
+    this.etots.delete(key);
     for (const pkey of [...this.pending.keys()]) {
       if (pkey.startsWith(`${key}|`)) this.pending.delete(pkey);
     }

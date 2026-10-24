@@ -1,6 +1,9 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, SchemaTypes } from 'mongoose';
-import type { HybridEnergyRef } from '../constants/hybrid.constants';
+import type {
+  HybridEnergyRef,
+  HybridEtot,
+} from '../constants/hybrid.constants';
 
 export type HybridDataDocument = HybridData & Document;
 
@@ -50,6 +53,17 @@ export class HybridData {
   // Counters of the last $TLM used for energy (survives a backend restart).
   @Prop({ type: SchemaTypes.Mixed, select: false })
   energyRef?: HybridEnergyRef & { at: Date };
+
+  // Last $ETOT (lifetime totals in the STM32 flash, Wh) and when it came.
+  @Prop({ type: SchemaTypes.Mixed })
+  etot?: HybridEtot;
+
+  @Prop()
+  etotAt?: Date;
+
+  // Largest totals seen (energy is counted from here; survives a restart).
+  @Prop({ type: SchemaTypes.Mixed, select: false })
+  etotMax?: HybridEtot;
 
   @Prop()
   status?: string;

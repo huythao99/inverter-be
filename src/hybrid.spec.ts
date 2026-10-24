@@ -1,6 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call */
 import { MqttAuthService } from './services/mqtt-auth.service';
-import { HybridSettingService } from './services/hybrid-setting.service';
+import {
+  HybridSettingService,
+  hybridOpenRequest,
+} from './services/hybrid-setting.service';
 import { HybridDataSchema } from './models/hybrid-data.schema';
 import {
   hybridEnergyDelta,
@@ -9,6 +12,8 @@ import {
   mergeHybridConfig,
   parseHybridPatch,
   vnDay,
+  hybridEtot,
+  hybridEtotDelta,
 } from './constants/hybrid.constants';
 import {
   HybridDataService,
@@ -181,6 +186,77 @@ describe('hybrid energy', () => {
   });
 });
 
+describe('$ETOT (protocol v1.1)', () => {
+  it('parses unsigned 32-bit totals only', () => {
+    expect(
+      hybridEtot({
+        EDIS: '1234567',
+        ECHG: '89012',
+        EIMP: '0',
+        EEXP: '4000000000',
+      }),
+    ).toEqual({ EDIS: 1234567, ECHG: 89012, EIMP: 0, EEXP: 4000000000 });
+    expect(
+      hybridEtot({ EDIS: '-1', ECHG: '0', EIMP: '0', EEXP: '0' }),
+    ).toBeNull();
+    expect(
+      hybridEtot({ EDIS: '4294967296', ECHG: '0', EIMP: '0', EEXP: '0' }),
+    ).toBeNull();
+    expect(hybridEtot({ EDIS: '1', ECHG: '0', EIMP: '0' })).toBeNull();
+  });
+
+  it('counts only increases over the largest seen', () => {
+    const max = { EDIS: 100, ECHG: 50, EIMP: 10, EEXP: 0 };
+    const r = hybridEtotDelta(max, { EDIS: 90, ECHG: 60, EIMP: 10, EEXP: 5 });
+    expect(r.delta).toEqual({ EDIS: 0, ECHG: 10, EIMP: 0, EEXP: 5 });
+    expect(r.max).toEqual({ EDIS: 100, ECHG: 60, EIMP: 10, EEXP: 5 });
+  });
+
+  it('counts from $ETOT and stops counting $TLM while it is fresh', async () => {
+    const writes: any[] = [];
+    const sets: any[] = [];
+    const model = {
+      findOne: () => ({
+        select: () => ({ lean: () => ({ exec: () => Promise.resolve(null) }) }),
+      }),
+      updateOne: (_f: unknown, u: any) => {
+        sets.push(u.$set);
+        return { exec: () => Promise.resolve({}) };
+      },
+    };
+    const energyModel = {
+      bulkWrite: (ops: any[]) => {
+        writes.push(...ops);
+        return Promise.resolve({});
+      },
+    };
+    const svc = new HybridDataService(model as any, energyModel as any);
+    const send = (raw: string) =>
+      svc.onData({ userId: 'u', deviceId: 'H', data: { raw } });
+    send('$ETOT,EDIS=1000,ECHG=500,EIMP=0,EEXP=0*00'); // starting point only
+    send('$TLM,DEV=HINVLF,EDIS=1,ECHG=0,EIMP=0,EEXP=0,UP=10*00');
+    send('$TLM,DEV=HINVLF,EDIS=9,ECHG=0,EIMP=0,EEXP=0,UP=13*00'); // not counted
+    send('$ETOT,EDIS=1010,ECHG=500,EIMP=2,EEXP=0*00');
+    send('$ETOT,EDIS=1005,ECHG=501,EIMP=2,EEXP=0*00'); // step back: 0
+    await new Promise((r) => setTimeout(r, 10));
+    expect(sets[0].etot).toEqual({ EDIS: 1000, ECHG: 500, EIMP: 0, EEXP: 0 });
+    expect(sets[4].etotMax).toEqual({
+      EDIS: 1010,
+      ECHG: 501,
+      EIMP: 2,
+      EEXP: 0,
+    });
+    await svc.flushEnergy();
+    expect(writes).toHaveLength(1);
+    expect(writes[0].updateOne.update.$inc).toEqual({
+      edis: 10,
+      echg: 1,
+      eimp: 2,
+      eexp: 0,
+    });
+  });
+});
+
 describe('MqttAuthService ACL for a hybrid device account', () => {
   const cred = {
     _id: 'c1',
@@ -280,6 +356,10 @@ describe('HybridSettingService', () => {
         log.push(`cmd:${d}:${c}`);
         return Promise.resolve();
       },
+      emitHybridSet: (_u: string, d: string, set: string) => {
+        log.push(`set:${d}:${set}`);
+        return Promise.resolve();
+      },
     };
     const events = {
       emit: (name: string, e: any) =>
@@ -293,16 +373,31 @@ describe('HybridSettingService', () => {
     return { svc, log };
   }
 
-  it('stores only changed keys, triggers a pull and audits', async () => {
+  it('sends the change once (SET), keeps the pull for old firmware, audits', async () => {
     const { svc, log } = setup({ config: { MODE: 'EXPORT' } });
     const r = await svc.update('u1', 'H1', { PMAX: 1000 }, CFG);
     expect(r.config).toEqual({ MODE: 'EXPORT', PMAX: 1000, PEXP: 1000 });
     expect(r.set).toBe('MODE=EXPORT,PEXP=1000,PMAX=1000');
+    expect(r.request).toMatchObject({
+      config: { PMAX: 1000, PEXP: 1000 },
+      set: 'PEXP=1000,PMAX=1000',
+    });
     expect(log).toEqual([
       'db:{"MODE":"EXPORT","PMAX":1000,"PEXP":1000}',
+      'set:H1:PEXP=1000,PMAX=1000',
       'settings:H1',
-      `${AUDIT_EVENT}:hybrid:settings:MODE=EXPORT->MODE=EXPORT,PEXP=1000,PMAX=1000`,
+      `${AUDIT_EVENT}:hybrid:settings:MODE=EXPORT->PEXP=1000,PMAX=1000`,
     ]);
+  });
+
+  it('open request: until a newer $CFG or 3 minutes', () => {
+    const at = new Date('2026-10-24T10:00:00Z');
+    const t0 = at.getTime();
+    const req = { config: { PEXP: 1 }, set: 'PEXP=1', at };
+    expect(hybridOpenRequest(req, new Date(t0 - 1000), t0 + 60_000)).toBe(req);
+    expect(hybridOpenRequest(req, new Date(t0 + 1000), t0 + 2000)).toBeNull();
+    expect(hybridOpenRequest(req, null, t0 + 4 * 60_000)).toBeNull();
+    expect(hybridOpenRequest(null)).toBeNull();
   });
 
   it('rejects invalid values with per-key errors, stores nothing', async () => {

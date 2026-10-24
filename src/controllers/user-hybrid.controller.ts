@@ -23,7 +23,10 @@ import { CurrentFirebaseUser } from '../auth/decorators/firebase-user.decorator'
 import { FirebaseUser } from '../auth/strategies/firebase.strategy';
 import { auditCtx } from '../utils/audit-context';
 import { HybridDeviceService } from '../services/hybrid-device.service';
-import { HybridSettingService } from '../services/hybrid-setting.service';
+import {
+  HybridSettingService,
+  hybridOpenRequest,
+} from '../services/hybrid-setting.service';
 import { HybridDataService } from '../services/hybrid-data.service';
 import { HybridFirmwareService } from '../services/hybrid-firmware.service';
 import { AuditLogService } from '../services/audit-log.service';
@@ -205,14 +208,19 @@ export class UserHybridController {
     d: Awaited<ReturnType<HybridDataService['findLatest']>>,
   ) {
     const cfg = d?.cfg ?? null;
+    // Only a change not yet confirmed by the machine: the form shows the
+    // machine's $CFG otherwise (it may have been changed on the machine).
+    const open = hybridOpenRequest(s.request, d?.cfgAt);
+    const shown = open?.config ?? {};
     return {
       ...s,
+      config: shown,
       keys: HYBRID_CONFIG_KEYS,
       readonlyKeys: HYBRID_READONLY_KEYS,
       cfg,
       cfgAt: d?.cfgAt ?? null,
       src: cfg?.SRC ?? d?.tlm?.SRC ?? null,
-      pending: hybridPendingKeys(s.config, cfg),
+      pending: hybridPendingKeys(shown, cfg),
       lastNak: d?.lastNak ?? null,
       status: d?.status ?? 'offline',
     };
@@ -253,12 +261,38 @@ export class UserHybridController {
         ? from
         : vnDay(new Date(Date.now() - 29 * 24 * 3600_000));
     if (start > end) throw new BadRequestException('from must be <= to');
-    const days = await this.data.energy(user.uid, deviceId, start, end);
+    const monthStart = `${today.slice(0, 8)}01`;
+    const [days, monthDays, latest] = await Promise.all([
+      this.data.energy(user.uid, deviceId, start, end),
+      this.data.energy(user.uid, deviceId, monthStart, today),
+      this.data.findLatest(user.uid, deviceId),
+    ]);
     const zero = { day: today, edis: 0, echg: 0, eimp: 0, eexp: 0 };
+    const month = {
+      month: today.slice(0, 7),
+      edis: 0,
+      echg: 0,
+      eimp: 0,
+      eexp: 0,
+    };
+    for (const d of monthDays) {
+      month.edis += d.edis;
+      month.echg += d.echg;
+      month.eimp += d.eimp;
+      month.eexp += d.eexp;
+    }
+    const e = latest?.etot;
     return {
       from: start,
       to: end,
       today: days.find((x) => x.day === today) ?? zero,
+      month,
+      // Lifetime totals from the STM32 flash ($ETOT, firmware 5.4.3+ with
+      // protocol v1.1); null for older firmware.
+      total: e
+        ? { edis: e.EDIS, echg: e.ECHG, eimp: e.EIMP, eexp: e.EEXP }
+        : null,
+      totalAt: latest?.etotAt ?? null,
       days,
     };
   }
