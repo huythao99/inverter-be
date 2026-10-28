@@ -50,6 +50,13 @@ export function frameShowsGridTieOff(
  *    setting and schedule (the API serves the OFF value) and the retained
  *    command is published again: every 30 s at first, every 10 min after 6
  *    tries without effect, so a device that cannot obey is not hammered.
+ *
+ * The OFF list here is a per-process copy (telemetry only reaches the primary
+ * pm2 instance, while a toggle may be handled by another one; reload() runs
+ * every 60 s). So before sending OFF again it is re-checked in MongoDB: a
+ * stale entry must never re-publish a retained OFF over a grid-tie the user
+ * just turned back ON (the device then fell back to 99.00 V / 1 W "after a
+ * while" until toggled again).
  */
 @Injectable()
 export class GridTieSyncService implements OnModuleInit, OnModuleDestroy {
@@ -107,6 +114,7 @@ export class GridTieSyncService implements OnModuleInit, OnModuleDestroy {
       this.logger.warn(`reload: ${(e as Error).message}`);
       return;
     }
+    const before = new Map(this.off);
     this.off.clear();
     for (const r of rows) {
       this.off.set(this.key(r.userId, r.deviceId), {
@@ -116,6 +124,11 @@ export class GridTieSyncService implements OnModuleInit, OnModuleDestroy {
     }
     for (const k of this.resync.keys()) {
       if (!this.off.has(k)) this.resync.delete(k);
+    }
+    // Turned back ON (maybe through another instance): make sure the retained
+    // command says ON, in case a stale OFF was re-published meanwhile.
+    for (const [k, d] of before) {
+      if (!this.off.has(k)) await this.publish(d.userId, d.deviceId, false);
     }
     // Once per process: devices turned OFF before this topic existed get
     // their retained command too.
@@ -174,6 +187,13 @@ export class GridTieSyncService implements OnModuleInit, OnModuleDestroy {
         : GRID_TIE_RESYNC_SLOW_MS;
     if (now - r.at < wait) return;
     r.at = now;
+    // Still OFF in the source of truth? (The toggle back ON may have been
+    // handled by another instance; this copy is then up to 60 s stale.)
+    if (!(await this.stillOff(p.currentUid, p.wifiSsid))) {
+      this.off.delete(k);
+      this.resync.delete(k);
+      return;
+    }
     r.tries++;
     if (r.tries === GRID_TIE_RESYNC_FAST_TRIES) {
       this.logger.warn(
@@ -188,6 +208,17 @@ export class GridTieSyncService implements OnModuleInit, OnModuleDestroy {
       // next frame retries
     }
     await this.publish(p.currentUid, p.wifiSsid, true);
+  }
+
+  private async stillOff(userId: string, deviceId: string): Promise<boolean> {
+    try {
+      const doc = await this.settingModel
+        .exists({ userId, deviceId, gridTieOff: true })
+        .exec();
+      return !!doc;
+    } catch {
+      return false; // can't tell: never force OFF on a guess
+    }
   }
 
   private async publish(

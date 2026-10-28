@@ -139,6 +139,19 @@ export class CmsController {
     return this.cmsService.getDashboardStats();
   }
 
+  // New devices per week / month: ?period=week|month&count=12 (max 52).
+  @Get('stats/new-devices')
+  @UseGuards(AdminGuard)
+  async getNewDevices(
+    @Query('period') period?: string,
+    @Query('count') count?: string,
+  ) {
+    return this.cmsService.getNewDevices(
+      period === 'month' ? 'month' : 'week',
+      Number(count ?? 12),
+    );
+  }
+
   @Get('analytics')
   @UseGuards(AdminGuard)
   async getAnalytics(@Query() query: AnalyticsQueryDto) {

@@ -45,12 +45,23 @@ import {
   UpdateSettingsDto,
 } from '../dto/cms-query.dto';
 import { AdminLoginDto } from '../dto/admin-login.dto';
+import {
+  ChargerDevice,
+  ChargerDeviceDocument,
+} from '../models/charger-device.schema';
+import {
+  HybridDevice,
+  HybridDeviceDocument,
+} from '../models/hybrid-device.schema';
 import { MqttService } from './mqtt.service';
 
 export interface DashboardStats {
+  /** Inverters only (chargers / hybrids: their own dashboards). */
   totalDevices: number;
+  /** Customers: distinct owners of an inverter, charger or hybrid. */
   totalUsers: number;
-  activeUsers: number;
+  /** Owners who added a device (any product) in the last 7 days. */
+  newUsersThisWeek: number;
   todayTotalA: number;
   todayTotalA2: number;
   devicesAddedToday: number;
@@ -82,6 +93,88 @@ export interface AnalyticsData {
   };
 }
 
+export type NewDevicesPeriod = 'week' | 'month';
+export type DeviceKind = 'inverter' | 'charger' | 'hybrid';
+
+export interface NewDevicesBucket {
+  /** First day of the bucket (GMT+7), "YYYY-MM-DD". */
+  start: string;
+  /** Week: "dd/mm" of its Monday; month: "mm/yyyy". */
+  label: string;
+  inverter: number;
+  charger: number;
+  hybrid: number;
+  total: number;
+}
+
+const GMT7_MS = 7 * 3600_000;
+
+/** Start (UTC instant) of the GMT+7 week (Monday) / month containing `at`. */
+export function periodStart(at: Date, period: NewDevicesPeriod): Date {
+  const local = new Date(at.getTime() + GMT7_MS); // fields read as UTC = GMT+7
+  const y = local.getUTCFullYear();
+  const m = local.getUTCMonth();
+  const d = local.getUTCDate();
+  if (period === 'month') return new Date(Date.UTC(y, m, 1) - GMT7_MS);
+  const dow = (local.getUTCDay() + 6) % 7; // Monday = 0
+  return new Date(Date.UTC(y, m, d - dow) - GMT7_MS);
+}
+
+/** The bucket after `start` (one week / one month later). */
+export function nextPeriod(start: Date, period: NewDevicesPeriod): Date {
+  const local = new Date(start.getTime() + GMT7_MS);
+  const y = local.getUTCFullYear();
+  const m = local.getUTCMonth();
+  const d = local.getUTCDate();
+  return period === 'month'
+    ? new Date(Date.UTC(y, m + 1, 1) - GMT7_MS)
+    : new Date(Date.UTC(y, m, d + 7) - GMT7_MS);
+}
+
+/**
+ * Count devices per product into the last `count` weeks / months (oldest
+ * first, the current one last, empty buckets included).
+ */
+export function bucketNewDevices(
+  created: Record<DeviceKind, Date[]>,
+  period: NewDevicesPeriod,
+  count: number,
+  now = new Date(),
+): NewDevicesBucket[] {
+  const starts: Date[] = [periodStart(now, period)];
+  for (let i = 1; i < count; i++) {
+    // Step back from the previous start: one ms before it is in the bucket before.
+    starts.unshift(periodStart(new Date(starts[0].getTime() - 1), period));
+  }
+  const buckets: NewDevicesBucket[] = starts.map((s) => {
+    const local = new Date(s.getTime() + GMT7_MS);
+    const dd = String(local.getUTCDate()).padStart(2, '0');
+    const mm = String(local.getUTCMonth() + 1).padStart(2, '0');
+    const yyyy = local.getUTCFullYear();
+    return {
+      start: `${yyyy}-${mm}-${dd}`,
+      label: period === 'month' ? `${mm}/${yyyy}` : `${dd}/${mm}`,
+      inverter: 0,
+      charger: 0,
+      hybrid: 0,
+      total: 0,
+    };
+  });
+  const edges = starts.map((s) => s.getTime());
+  const end = nextPeriod(starts[starts.length - 1], period).getTime();
+  for (const kind of ['inverter', 'charger', 'hybrid'] as const) {
+    for (const at of created[kind]) {
+      const t = new Date(at).getTime();
+      if (!(t >= edges[0] && t < end)) continue;
+      let i = edges.length - 1;
+      while (i > 0 && t < edges[i]) i--;
+      buckets[i][kind]++;
+      buckets[i].total++;
+    }
+  }
+  return buckets;
+}
+
 @Injectable()
 export class CmsService implements OnModuleInit {
   private readonly logger = new Logger(CmsService.name);
@@ -92,6 +185,10 @@ export class CmsService implements OnModuleInit {
     @InjectModel(Admin.name) private adminModel: Model<AdminDocument>,
     @InjectModel(InverterDevice.name)
     private inverterDeviceModel: Model<InverterDeviceDocument>,
+    @InjectModel(ChargerDevice.name)
+    private chargerDeviceModel: Model<ChargerDeviceDocument>,
+    @InjectModel(HybridDevice.name)
+    private hybridDeviceModel: Model<HybridDeviceDocument>,
     @InjectModel(MqttCredential.name)
     private mqttCredentialModel: Model<MqttCredentialDocument>,
     @InjectModel(DailyTotals.name)
@@ -206,15 +303,15 @@ export class CmsService implements OnModuleInit {
 
     const [
       totalDevices,
-      totalUsers,
-      activeUsers,
+      owners,
       todayValues,
       devicesAddedToday,
       devicesAddedThisWeek,
     ] = await Promise.all([
       this.inverterDeviceModel.countDocuments().exec(),
-      this.mqttCredentialModel.countDocuments().exec(),
-      this.mqttCredentialModel.countDocuments({ isActive: true }).exec(),
+      // (Was the number of MQTT accounts, which counts devices / HA / CMS
+      // accounts, not customers.)
+      this.owners(weekStart),
       // Convert to real daily values (autoCalculate deltas applied) before
       // summing — raw counters must never be summed.
       this.dailyTotalsService.getDailyValuesForRange({ start: todayStart }),
@@ -235,13 +332,81 @@ export class CmsService implements OnModuleInit {
 
     return {
       totalDevices,
-      totalUsers,
-      activeUsers,
+      totalUsers: owners.total,
+      newUsersThisWeek: owners.newThisWeek,
       todayTotalA,
       todayTotalA2,
       devicesAddedToday,
       devicesAddedThisWeek,
     };
+  }
+
+  /** New devices per week / month (by createdAt, devices still registered). */
+  async getNewDevices(
+    period: NewDevicesPeriod,
+    count: number,
+  ): Promise<{ period: NewDevicesPeriod; buckets: NewDevicesBucket[] }> {
+    const n = Math.max(1, Math.min(52, Math.round(count) || 12));
+    // Start of the oldest bucket.
+    let from = periodStart(new Date(), period);
+    for (let i = 1; i < n; i++) {
+      from = periodStart(new Date(from.getTime() - 1), period);
+    }
+    const dates = async (m: Model<{ createdAt?: Date }>) =>
+      (
+        await m
+          .find({ createdAt: { $gte: from } })
+          .select({ createdAt: 1, _id: 0 })
+          .lean()
+          .exec()
+      )
+        .map((d) => d.createdAt)
+        .filter((d): d is Date => !!d);
+    const [inverter, charger, hybrid] = await Promise.all([
+      dates(this.inverterDeviceModel as unknown as Model<{ createdAt?: Date }>),
+      dates(this.chargerDeviceModel as unknown as Model<{ createdAt?: Date }>),
+      dates(this.hybridDeviceModel as unknown as Model<{ createdAt?: Date }>),
+    ]);
+    return {
+      period,
+      buckets: bucketNewDevices({ inverter, charger, hybrid }, period, n),
+    };
+  }
+
+  /**
+   * Distinct device owners over the three products; "new" = first device
+   * added since `since` (no device before).
+   */
+  private async owners(
+    since: Date,
+  ): Promise<{ total: number; newThisWeek: number }> {
+    const models = [
+      this.inverterDeviceModel,
+      this.chargerDeviceModel,
+      this.hybridDeviceModel,
+    ] as unknown as Model<{ userId: string; createdAt?: Date }>[];
+    const firstSeen = new Map<string, number>();
+    const lists = await Promise.all(
+      models.map((m) =>
+        m
+          .aggregate<{
+            _id: string;
+            first: Date | null;
+          }>([{ $group: { _id: '$userId', first: { $min: '$createdAt' } } }])
+          .exec(),
+      ),
+    );
+    for (const list of lists) {
+      for (const r of list) {
+        if (!r._id) continue;
+        const t = r.first ? new Date(r.first).getTime() : 0;
+        const prev = firstSeen.get(r._id);
+        if (prev === undefined || t < prev) firstSeen.set(r._id, t);
+      }
+    }
+    let newThisWeek = 0;
+    for (const t of firstSeen.values()) if (t >= since.getTime()) newThisWeek++;
+    return { total: firstSeen.size, newThisWeek };
   }
 
   async getAnalytics(query: AnalyticsQueryDto): Promise<AnalyticsData> {

@@ -10,6 +10,14 @@ import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { CmsController } from '../controllers/cms.controller';
 import { CmsService } from '../services/cms.service';
+import {
+  ChargerDevice,
+  ChargerDeviceSchema,
+} from '../models/charger-device.schema';
+import {
+  HybridDevice,
+  HybridDeviceSchema,
+} from '../models/hybrid-device.schema';
 import { Admin, AdminSchema } from '../models/admin.schema';
 import {
   InverterDevice,
@@ -85,6 +93,9 @@ import {
     MongooseModule.forFeature([
       { name: Admin.name, schema: AdminSchema },
       { name: InverterDevice.name, schema: InverterDeviceSchema },
+      // Owners across all products (dashboard "Khách hàng").
+      { name: ChargerDevice.name, schema: ChargerDeviceSchema },
+      { name: HybridDevice.name, schema: HybridDeviceSchema },
       { name: MqttCredential.name, schema: MqttCredentialSchema },
       { name: DailyTotals.name, schema: DailyTotalsSchema },
       { name: InverterData.name, schema: InverterDataSchema },

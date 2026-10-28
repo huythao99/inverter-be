@@ -13,7 +13,7 @@ const lean = (v: unknown) => ({
 const OBEYS = '230.1#50.0#120#52.1#0#41.2#99.00#1';
 const IGNORES = '230.1#50.0#120#52.1#998#41.2#51.00#1000';
 
-function setup(offRows: unknown[] = []) {
+function setup(offRows: unknown[] = [], dbOff = true) {
   const log: string[] = [];
   const mqtt = {
     isConnected: () => true,
@@ -30,7 +30,13 @@ function setup(offRows: unknown[] = []) {
       return Promise.resolve();
     },
   };
-  const settings = { find: () => lean(offRows) };
+  const db = { off: dbOff };
+  const settings = {
+    find: () => lean(offRows),
+    exists: () => ({
+      exec: () => Promise.resolve(db.off ? { _id: 'x' } : null),
+    }),
+  };
   const svc = new GridTieSyncService(settings as any, mqtt as any);
   const frame = (value: string, d = 'D') =>
     svc.onTelemetry({ currentUid: 'u', wifiSsid: d, data: { value } });
@@ -38,7 +44,7 @@ function setup(offRows: unknown[] = []) {
     const r = (svc as any).resync.get(`u:${d}`);
     if (r) r.at -= ms;
   };
-  return { svc, log, frame, age };
+  return { svc, log, frame, age, db, settings };
 }
 
 describe('grid-tie OFF delivery', () => {
@@ -105,5 +111,28 @@ describe('grid-tie OFF delivery', () => {
     await svc.reload();
     expect(svc.isOff('u', 'X')).toBe(true);
     expect(log).toEqual(['X:grid-tie:true']);
+  });
+
+  it('stale OFF entry (turned ON via another instance): never re-sends OFF', async () => {
+    const { svc, log, frame, age, db } = setup();
+    // This (primary) instance saw OFF; the ON toggle went to another one.
+    await svc.onGridTieChanged({ userId: 'u', deviceId: 'D', off: true });
+    db.off = false;
+    log.length = 0;
+    await frame(IGNORES); // device runs normally again
+    age(31_000);
+    await frame(IGNORES);
+    expect(log).toEqual([]);
+    expect(svc.isOff('u', 'D')).toBe(false);
+  });
+
+  it('reload: a device back ON gets a retained ON (heals a stale OFF)', async () => {
+    const { svc, log, settings } = setup([{ userId: 'u', deviceId: 'X' }]);
+    await svc.reload();
+    log.length = 0;
+    (settings as any).find = () => lean([]);
+    await svc.reload();
+    expect(svc.isOff('u', 'X')).toBe(false);
+    expect(log).toEqual(['X:grid-tie:false']);
   });
 });

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Activity,
   AlertTriangle,
@@ -27,8 +27,11 @@ const Health: React.FC = () => {
   const [rows, setRows] = useState<HealthRow[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [status, setStatus] = useState('problems');
-  const [issue, setIssue] = useState<HealthIssue | ''>('');
+  // ?issue=… (links from Tổng quan): open with that issue, all devices.
+  const [searchParams] = useSearchParams();
+  const issueParam = (searchParams.get('issue') ?? '') as HealthIssue | '';
+  const [status, setStatus] = useState(issueParam ? '' : 'problems');
+  const [issue, setIssue] = useState<HealthIssue | ''>(issueParam);
   const [fw, setFw] = useState('');
   const [sort, setSort] = useState('');
   const [search, setSearch] = useState('');

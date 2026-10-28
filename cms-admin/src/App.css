@@ -2423,3 +2423,104 @@ body {
 }
 .rawlog-control .muted { flex: 1 1 260px; }
 .rawlog-on { flex: 1 1 200px; color: #15803d; font-weight: 500; }
+
+/* ==================== Tổng quan (dashboard) ==================== */
+.ov-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.ov-header .btn { display: inline-flex; align-items: center; gap: 6px; }
+.ov-muted { color: var(--text-light); font-weight: 400; }
+.ov-kpi-sub { font-size: 12px; color: var(--text-light); margin-top: 2px; }
+.ov-kpi-link { color: inherit; text-decoration: none; border: 2px solid transparent; }
+.ov-kpi-link:hover { border-color: var(--border); }
+.ov-section-title { font-size: 16px; font-weight: 600; margin: 4px 0 12px; }
+.ov-card {
+  background: var(--bg-card);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 18px 20px;
+}
+.ov-card-title { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 600; margin: 0 0 12px; }
+.ov-subtitle { font-size: 13px; font-weight: 600; color: var(--text-light); margin: 14px 0 6px; }
+
+.ov-products {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  margin-bottom: 28px;
+}
+.ov-product { color: inherit; text-decoration: none; border: 2px solid transparent; display: block; }
+.ov-product:hover { border-color: var(--border); }
+.ov-product-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.ov-product-icon {
+  width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center;
+  background: #eff6ff; color: var(--primary);
+}
+.ov-product-name { font-weight: 600; flex: 1; }
+.ov-product-total { font-size: 24px; font-weight: 700; }
+.ov-bar { height: 8px; border-radius: 999px; background: #fee2e2; overflow: hidden; }
+.ov-bar span { display: block; height: 100%; background: var(--success); border-radius: 999px; }
+.ov-product-online { font-size: 13px; margin: 8px 0 10px; }
+.ov-product-rows { margin: 0; border-top: 1px solid var(--border); padding-top: 8px; }
+.ov-product-rows div { display: flex; justify-content: space-between; font-size: 13px; padding: 3px 0; }
+.ov-product-rows dt { color: var(--text-light); }
+.ov-product-rows dd { margin: 0; font-weight: 600; }
+.ov-bad { color: #dc2626; }
+.ov-warn { color: #c2410c; }
+
+.ov-energy { margin-bottom: 28px; }
+.ov-energy-nums {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.ov-energy-nums > div { display: flex; flex-direction: column; gap: 2px; background: var(--bg); border-radius: 8px; padding: 12px; font-size: 12px; }
+.ov-energy-nums b { font-size: 20px; color: var(--text); }
+.ov-energy-nums b.ov-a { color: var(--primary); }
+.ov-energy-nums b.ov-b { color: #64748b; }
+.ov-chart { display: flex; align-items: flex-end; gap: 3px; height: 160px; padding-top: 8px; }
+.ov-chart-day { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; align-items: center; }
+.ov-chart-bars { flex: 1; width: 100%; display: flex; align-items: flex-end; justify-content: center; gap: 1px; }
+.ov-chart-bars span { width: 45%; max-width: 10px; border-radius: 3px 3px 0 0; min-height: 1px; }
+.ov-chart-bars .a, .ov-legend i.a { background: var(--primary); }
+.ov-chart-bars .b, .ov-legend i.b { background: #cbd5e1; }
+.ov-chart-label { font-size: 10px; color: var(--text-light); margin-top: 4px; }
+.ov-legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; margin-top: 10px; }
+.ov-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+
+.ov-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.ov-row { display: flex; align-items: center; gap: 10px; font-size: 13px; padding: 5px 0; color: inherit; text-decoration: none; }
+.ov-row-link:hover .ov-row-label { text-decoration: underline; }
+.ov-row-label { flex: 0 0 auto; min-width: 120px; display: inline-flex; align-items: center; gap: 6px; }
+.ov-row-bar { flex: 1; height: 8px; background: var(--bg); border-radius: 999px; overflow: hidden; }
+.ov-row-bar span { display: block; height: 100%; background: #93c5fd; border-radius: 999px; }
+.ov-row-val { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ov-tag { font-size: 10px; font-weight: 600; color: #15803d; background: #dcfce7; border-radius: 999px; padding: 1px 6px; }
+.ov-tone-bad { color: #dc2626; }
+.ov-tone-warn { color: #c2410c; }
+.ov-tone-info { color: var(--text-light); }
+@media (max-width: 600px) {
+  .ov-chart-label { display: none; }
+  .ov-chart { height: 120px; }
+}
+
+/* Tổng quan: new devices per week / month */
+.ov-newdev { margin-bottom: 28px; }
+.ov-newdev-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.ov-newdev-sub { font-size: 12px; margin: 4px 0 0; }
+.ov-newdev-now { display: flex; gap: 16px; font-size: 13px; margin: 12px 0 4px; }
+.ov-stack { display: flex; align-items: flex-end; gap: 6px; height: 180px; padding-top: 18px; }
+.ov-stack-col { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; }
+.ov-stack-total { font-size: 11px; font-weight: 600; color: var(--text-light); min-height: 14px; }
+.ov-stack-bar {
+  width: 70%; max-width: 36px; min-height: 0;
+  display: flex; flex-direction: column-reverse;
+  border-radius: 4px 4px 0 0; overflow: hidden;
+}
+.ov-stack-bar span { display: block; min-height: 2px; }
+.ov-stack-col.current .ov-stack-bar { outline: 2px solid #bfdbfe; outline-offset: 1px; }
+.ov-stack-col.current .ov-chart-label { color: var(--primary); font-weight: 600; }
+.ov-stack-col .ov-chart-label { white-space: nowrap; }
+@media (max-width: 600px) {
+  .ov-stack { gap: 3px; height: 150px; }
+  .ov-stack-col .ov-chart-label { display: block; font-size: 9px; }
+}

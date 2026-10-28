@@ -42,6 +42,21 @@ export const getProfile = () => api.get('/profile');
 // Dashboard
 export const getDashboard = () => api.get('/dashboard');
 
+export interface NewDevicesBucket {
+  start: string; // first day (GMT+7) "YYYY-MM-DD"
+  label: string; // week: "dd/mm" of its Monday, month: "mm/yyyy"
+  inverter: number;
+  charger: number;
+  hybrid: number;
+  total: number;
+}
+
+/** New devices per week / month (oldest first, current one last). */
+export const getNewDevicesStats = (period: 'week' | 'month', count = 12) =>
+  api.get<{ period: 'week' | 'month'; buckets: NewDevicesBucket[] }>('/stats/new-devices', {
+    params: { period, count },
+  });
+
 export const getAnalytics = (params?: {
   startDate?: string;
   endDate?: string;
