@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   getDashboard,
-  getAnalytics,
   getHealthSummary,
   getChargerDashboard,
   getHybridDashboard,
@@ -15,23 +14,16 @@ import { ISSUE_META, ISSUE_ORDER } from '../components/health-meta';
 import NewDevicesChart from '../components/NewDevicesChart';
 
 // "Tổng quan": what an operator needs at a glance — how many devices, how
-// many are online, which need attention, customers, and the inverters'
-// energy. Each block comes from its own endpoint; a failing one only hides
+// many are online, which need attention, customers, and the trend of new
+// devices. Each block comes from its own endpoint; a failing one only hides
 // its block.
 
 interface DashboardStats {
   totalDevices: number;
   totalUsers: number;
   newUsersThisWeek?: number;
-  todayTotalA: number; // kWh discharged (inverters, today GMT+7)
-  todayTotalA2: number; // kWh taken from the grid
   devicesAddedToday: number;
   devicesAddedThisWeek: number;
-}
-
-interface AnalyticsData {
-  dailyTotals: Array<{ date: string; totalA: number; totalA2: number; deviceCount: number }>;
-  summary: { totalA: number; totalA2: number; averageDailyA: number; averageDailyA2: number };
 }
 
 interface ChargerDashboard {
@@ -44,17 +36,12 @@ interface ChargerDashboard {
 
 interface Data {
   stats?: DashboardStats;
-  analytics?: AnalyticsData;
   health?: HealthSummary;
   charger?: ChargerDashboard;
   hybrid?: CmsHybridDashboard;
 }
 
 const nf = new Intl.NumberFormat('vi-VN');
-const kwh = (v: number | undefined) =>
-  v === undefined || !Number.isFinite(v)
-    ? '—'
-    : new Intl.NumberFormat('vi-VN', { maximumFractionDigits: v >= 100 ? 0 : 1 }).format(v);
 const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : 0);
 
 function Kpi({
@@ -140,28 +127,6 @@ function ProductCard({
   );
 }
 
-/** 30 days, two bars per day: discharged (inverter output) and from the grid. */
-function EnergyBars({ days }: { days: AnalyticsData['dailyTotals'] }) {
-  const max = Math.max(1, ...days.map((d) => Math.max(d.totalA, d.totalA2)));
-  return (
-    <div className="ov-chart" role="img" aria-label="Sản lượng 30 ngày">
-      {days.map((d) => (
-        <div
-          key={d.date}
-          className="ov-chart-day"
-          title={`${d.date.slice(0, 10)}\nXả pin: ${kwh(d.totalA)} kWh\nLấy lưới: ${kwh(d.totalA2)} kWh\n${d.deviceCount} thiết bị`}
-        >
-          <div className="ov-chart-bars">
-            <span className="a" style={{ height: `${(Math.max(0, d.totalA) / max) * 100}%` }} />
-            <span className="b" style={{ height: `${(Math.max(0, d.totalA2) / max) * 100}%` }} />
-          </div>
-          <span className="ov-chart-label">{d.date.slice(8, 10)}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 const Dashboard: React.FC = () => {
   const [data, setData] = useState<Data>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -174,9 +139,8 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     let alive = true;
     void (async () => {
-      const [s, a, h, c, y] = await Promise.allSettled([
+      const [s, h, c, y] = await Promise.allSettled([
         getDashboard(),
-        getAnalytics(),
         getHealthSummary(),
         getChargerDashboard(),
         getHybridDashboard(),
@@ -186,7 +150,6 @@ const Dashboard: React.FC = () => {
         r.status === 'fulfilled' ? r.value.data : undefined;
       setData({
         stats: ok<DashboardStats>(s as PromiseSettledResult<{ data: DashboardStats }>),
-        analytics: ok<AnalyticsData>(a as PromiseSettledResult<{ data: AnalyticsData }>),
         health: ok<HealthSummary>(h),
         charger: ok<ChargerDashboard>(c as PromiseSettledResult<{ data: ChargerDashboard }>),
         hybrid: ok<CmsHybridDashboard>(y),
@@ -202,7 +165,7 @@ const Dashboard: React.FC = () => {
     };
   }, [tick]);
 
-  const { stats, analytics, health, charger, hybrid } = data;
+  const { stats, health, charger, hybrid } = data;
 
   // Inverter counts: the health service knows who is online.
   const inv = {
@@ -228,8 +191,6 @@ const Dashboard: React.FC = () => {
       .map((i) => ({ issue: i as HealthIssue, count: health.issues[i] }))
       .sort((x, y) => y.count - x.count);
   }, [health]);
-
-  const days = useMemo(() => (analytics?.dailyTotals ?? []).slice(-30), [analytics]);
 
   if (isLoading) return <div className="loading">Đang tải…</div>;
 
@@ -327,44 +288,6 @@ const Dashboard: React.FC = () => {
       </div>
 
       <NewDevicesChart />
-
-      {(stats || analytics) && (
-        <>
-          <h2 className="ov-section-title">Sản lượng inverter hoà lưới</h2>
-          <div className="ov-card ov-energy">
-            <div className="ov-energy-nums">
-              <div>
-                <span className="ov-muted">Hôm nay · xả pin (phát)</span>
-                <b className="ov-a">{kwh(stats?.todayTotalA)} kWh</b>
-              </div>
-              <div>
-                <span className="ov-muted">Hôm nay · lấy lưới</span>
-                <b className="ov-b">{kwh(stats?.todayTotalA2)} kWh</b>
-              </div>
-              <div>
-                <span className="ov-muted">30 ngày · xả pin</span>
-                <b>{kwh(analytics?.summary.totalA)} kWh</b>
-                <small className="ov-muted">TB {kwh(analytics?.summary.averageDailyA)} kWh/ngày</small>
-              </div>
-              <div>
-                <span className="ov-muted">30 ngày · lấy lưới</span>
-                <b>{kwh(analytics?.summary.totalA2)} kWh</b>
-                <small className="ov-muted">TB {kwh(analytics?.summary.averageDailyA2)} kWh/ngày</small>
-              </div>
-            </div>
-            {days.length > 0 && (
-              <>
-                <EnergyBars days={days} />
-                <div className="ov-legend">
-                  <span><i className="a" /> Xả pin (inverter phát)</span>
-                  <span><i className="b" /> Lấy từ lưới</span>
-                  <span className="ov-muted">Tổng mọi inverter, theo ngày (GMT+7)</span>
-                </div>
-              </>
-            )}
-          </div>
-        </>
-      )}
 
       {health && (
         <div className="ov-two">
