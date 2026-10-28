@@ -215,6 +215,8 @@ const Dashboard: React.FC = () => {
         </button>
       </header>
 
+      <NewDevicesChart />
+
       <div className="stats-grid">
         <Kpi icon={<Cpu size={24} />} tone="blue" value={nf.format(totals.devices)} label="Thiết bị" sub="Inverter + bộ sạc + hybrid" />
         <Kpi
@@ -286,8 +288,6 @@ const Dashboard: React.FC = () => {
           ]}
         />
       </div>
-
-      <NewDevicesChart />
 
       {health && (
         <div className="ov-two">
