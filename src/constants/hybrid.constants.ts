@@ -7,6 +7,11 @@ export const HYBRID_MODES = [
   'LOAD',
   'CHG',
   'EXPORT',
+  // STM32 firmware >= 5.4.5: charge the battery from the surplus another
+  // grid-tie PV inverter pushes out (CT sees export); no discharge.
+  'ACCOUPLE',
+  // >= 5.4.10: LOAD + ACCOUPLE (follow the load, charge from the surplus).
+  'LOADACC',
 ] as const;
 export type HybridMode = (typeof HYBRID_MODES)[number];
 

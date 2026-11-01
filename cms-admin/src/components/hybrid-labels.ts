@@ -12,6 +12,8 @@ export const MODE_LABEL: Record<string, string> = {
   EXPORT: 'Đẩy lưới',
   CHG: 'Sạc từ lưới',
   OFFGRID: 'Độc lập',
+  ACCOUPLE: 'Sạc điện dư',
+  LOADACC: 'Bám tải + sạc dư',
   OFF: 'Tắt',
 };
 
@@ -32,7 +34,7 @@ export const FLT_LABEL: Record<string, string> = {
   '4': 'F4 Pin yếu',
   '5': 'F5 Bão hòa biến áp',
   '6': 'F6 Sai cực tính',
-  '7': 'F7 Lỗi CT lưới',
+  '7': 'F7 Lỗi CT lưới (bám tải / sạc dư)',
   '8': 'Quá nhiệt',
   '9': 'Hở mạch NTC',
   '10': 'Lỗi cảm biến',
@@ -58,9 +60,9 @@ export const CONFIG_LABEL: Record<string, [string, string]> = {
   PCHG: ['CS sạc pin', 'W'],
   PEXP: ['CS đẩy lưới', 'W'],
   PIMP: ['CS nhận lưới', 'W'],
-  VEXP: ['Áp ngừng đẩy', 'V'],
-  VCUT: ['Pin ngắt xả', 'V'],
-  VRES: ['Pin chạy lại', 'V'],
+  VEXP: ['Áp dừng xả (hòa lưới)', 'V'],
+  VCUT: ['Pin ngắt xả (độc lập)', 'V'],
+  VRES: ['Pin chạy lại (độc lập)', 'V'],
   PMAX: ['CS tối đa', 'W'],
   PCMAX: ['CS sạc tối đa', 'W'],
 };

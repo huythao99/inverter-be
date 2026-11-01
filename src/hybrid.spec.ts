@@ -73,6 +73,14 @@ describe('hybrid config rules', () => {
     expect(parseHybridPatch({ PMAX: 'abc' }).errors[0].key).toBe('PMAX');
   });
 
+  it('accepts the 5.4.5 / 5.4.10 modes ACCOUPLE and LOADACC', () => {
+    for (const m of ['ACCOUPLE', 'LOADACC', 'loadacc']) {
+      const r = parseHybridPatch({ MODE: m });
+      expect(r.errors).toEqual([]);
+      expect(r.patch.MODE).toBe(m.toUpperCase());
+    }
+  });
+
   it('pull-along: lower PMAX drags PEXP, PCMAX drags PCHG, VRES drags VEXP', () => {
     const r = mergeHybridConfig(
       base,

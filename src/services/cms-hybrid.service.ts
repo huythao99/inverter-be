@@ -25,7 +25,7 @@ export interface HybridSummary {
   online: boolean;
   lastSeenAt: Date | null;
   st: string | null; // RUN IDLE OFF STOP FLT
-  mode: string | null; // OFF OFFGRID LOAD CHG EXPORT
+  mode: string | null; // OFF OFFGRID LOAD CHG EXPORT ACCOUPLE LOADACC
   flt: string | null; // 0 = no fault
   lock: boolean;
   src: string | null; // LOCAL | ESP

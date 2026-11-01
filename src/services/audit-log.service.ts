@@ -111,7 +111,7 @@ const HYBRID_LABEL: Record<string, [string, string]> = {
   PCHG: ['CS sạc pin', 'W'],
   PEXP: ['CS đẩy lưới', 'W'],
   PIMP: ['CS nhận lưới', 'W'],
-  VEXP: ['Áp ngừng đẩy', 'V'],
+  VEXP: ['Áp dừng xả (hòa lưới)', 'V'],
   VCUT: ['Pin ngắt xả', 'V'],
   VRES: ['Pin chạy lại', 'V'],
   PMAX: ['CS tối đa', 'W'],
@@ -123,6 +123,8 @@ const HYBRID_MODE_LABEL: Record<string, string> = {
   LOAD: 'Bám tải',
   CHG: 'Sạc từ lưới',
   EXPORT: 'Đẩy lưới',
+  ACCOUPLE: 'Sạc điện dư',
+  LOADACC: 'Bám tải + sạc dư',
 };
 const HYBRID_CMD_LABEL: Record<string, string> = {
   FAULT_RST: 'Xóa lỗi',
