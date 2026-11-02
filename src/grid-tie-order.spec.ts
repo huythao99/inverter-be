@@ -10,7 +10,8 @@ describe('GridTieService.setGridTie ordering', () => {
     const seenAtDbWrite: string[] = [];
     const redis = {
       get: (k: string) => Promise.resolve(store.get(k) ?? null),
-      set: (k: string, v: string) => {
+      set: (k: string, v: string, ...opts: unknown[]) => {
+        if (opts.includes('NX') && store.has(k)) return Promise.resolve(null);
         store.set(k, v);
         return Promise.resolve('OK');
       },
@@ -26,11 +27,12 @@ describe('GridTieService.setGridTie ordering', () => {
           ? Promise.reject(new Error('db down'))
           : Promise.resolve({});
       },
-      getGridTieOffFromDb: () => Promise.resolve(false),
+      getGridTieOffFromDb: () => db.read(),
     };
+    const db = { read: () => Promise.resolve(false) };
     const svc = new GridTieService({} as any, settings as any);
     (svc as any).redis = redis;
-    return { svc, store, seenAtDbWrite };
+    return { svc, store, seenAtDbWrite, db };
   }
 
   it('cache holds the new status before the DB write (and its re-sync)', async () => {
@@ -45,5 +47,19 @@ describe('GridTieService.setGridTie ordering', () => {
     const { svc, store } = setup(true);
     await expect(svc.setGridTie('u', 'D', true)).rejects.toThrow('db down');
     expect(store.has('grid_tie:u:D')).toBe(false);
+  });
+
+  it('a cache-miss read racing a toggle never overwrites the new status', async () => {
+    const { svc, store, db } = setup();
+    // isOff misses the cache and reads the DB (still OFF) while the user turns
+    // grid-tie back ON; the read finishes after the toggle.
+    let finishRead: (v: boolean) => void = () => {};
+    db.read = () => new Promise<boolean>((r) => (finishRead = r));
+    const reading = svc.isOff('u', 'D');
+    await new Promise((r) => setImmediate(r));
+    await svc.setGridTie('u', 'D', false);
+    finishRead(true);
+    await reading;
+    expect(store.get('grid_tie:u:D')).toBe('0');
   });
 });

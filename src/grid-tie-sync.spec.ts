@@ -30,19 +30,26 @@ function setup(offRows: unknown[] = [], dbOff = true) {
       return Promise.resolve();
     },
   };
-  const db = { off: dbOff };
+  const db = { off: dbOff, offValueStored: false };
   const settings = {
     find: () => lean(offRows),
-    exists: () => ({
-      exec: () => Promise.resolve(db.off ? { _id: 'x' } : null),
+    exists: (f: { gridTieOff: unknown }) => ({
+      exec: () => {
+        // stillOff: {gridTieOff: true}; stillOn: {gridTieOff: {$ne: true}, value: ...}
+        const hit =
+          f.gridTieOff === true ? db.off : !db.off && !db.offValueStored;
+        return Promise.resolve(hit ? { _id: 'x' } : null);
+      },
     }),
   };
   const svc = new GridTieSyncService(settings as any, mqtt as any);
   const frame = (value: string, d = 'D') =>
     svc.onTelemetry({ currentUid: 'u', wifiSsid: d, data: { value } });
   const age = (ms: number, d = 'D') => {
-    const r = (svc as any).resync.get(`u:${d}`);
-    if (r) r.at -= ms;
+    for (const m of [(svc as any).resync, (svc as any).stuck]) {
+      const r = m.get(`u:${d}`);
+      if (r) r.at -= ms;
+    }
   };
   return { svc, log, frame, age, db, settings };
 }
@@ -134,5 +141,30 @@ describe('grid-tie OFF delivery', () => {
     await svc.reload();
     expect(svc.isOff('u', 'X')).toBe(false);
     expect(log).toEqual(['X:grid-tie:false']);
+  });
+
+  it('ON device still running 99 V / 1 W: ON re-sent after 30 s, with back-off', async () => {
+    const { log, frame, age } = setup([], false);
+    await frame(OBEYS, 'S'); // first seen: may still be applying a fresh ON
+    await frame(OBEYS, 'S');
+    expect(log).toEqual([]);
+    age(31_000, 'S');
+    await frame(OBEYS, 'S');
+    expect(log).toEqual(['S:grid-tie:false', 'S:settings', 'S:schedule']);
+    await frame(OBEYS, 'S'); // < 30 s again
+    expect(log).toHaveLength(3);
+    await frame(IGNORES, 'S'); // back to normal: forgotten
+    age(31_000, 'S');
+    await frame(OBEYS, 'S');
+    expect(log).toHaveLength(3);
+  });
+
+  it('ON device whose stored setting is the OFF command: left alone', async () => {
+    const { log, frame, age, db } = setup([], false);
+    db.offValueStored = true;
+    await frame(OBEYS, 'S');
+    age(31_000, 'S');
+    await frame(OBEYS, 'S');
+    expect(log).toEqual([]);
   });
 });

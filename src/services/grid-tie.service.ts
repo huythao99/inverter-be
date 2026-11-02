@@ -68,7 +68,10 @@ export class GridTieService implements OnModuleInit, OnModuleDestroy {
       userId,
       deviceId,
     );
-    await this.writeCache(key, off);
+    // Only if still missing: a toggle that ran during this DB read already
+    // wrote the new status, which this (older) read must not overwrite - it
+    // left the OFF status cached for 5 min after turning grid-tie back ON.
+    await this.writeCache(key, off, true);
     return off;
   }
 
@@ -111,9 +114,18 @@ export class GridTieService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async writeCache(key: string, off: boolean): Promise<void> {
+  private async writeCache(
+    key: string,
+    off: boolean,
+    onlyIfMissing = false,
+  ): Promise<void> {
     try {
-      await this.redis.set(key, off ? '1' : '0', 'EX', this.CACHE_TTL_SECONDS);
+      const v = off ? '1' : '0';
+      if (onlyIfMissing) {
+        await this.redis.set(key, v, 'EX', this.CACHE_TTL_SECONDS, 'NX');
+      } else {
+        await this.redis.set(key, v, 'EX', this.CACHE_TTL_SECONDS);
+      }
     } catch {
       // Best-effort cache write; MongoDB remains the source of truth.
     }

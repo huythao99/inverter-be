@@ -12,7 +12,10 @@ import {
   InverterSettingDocument,
 } from '../models/inverter-setting.schema';
 import { MqttService } from './mqtt.service';
-import { GRID_TIE_CHANGED_EVENT } from '../constants/grid-tie.constants';
+import {
+  GRID_TIE_CHANGED_EVENT,
+  GRID_TIE_OFF_VALUE,
+} from '../constants/grid-tie.constants';
 
 /** First re-sync this long after the device was seen not to obey OFF. */
 export const GRID_TIE_RESYNC_MS = 30_000;
@@ -57,6 +60,14 @@ export function frameShowsGridTieOff(
  * stale entry must never re-publish a retained OFF over a grid-tie the user
  * just turned back ON (the device then fell back to 99.00 V / 1 W "after a
  * while" until toggled again).
+ *
+ * 3. The other way round (any firmware): a device that is ON in MongoDB but
+ *    whose frames still show 99.00 V / 1 W missed the ON. Firmware latches OFF
+ *    from a GET setting/schedule answered with gridTieOff (e.g. a poll that
+ *    was in flight while the user turned it back ON) and only leaves it on a
+ *    cmd/grid-tie {"off":false}, which a retained message delivers only once
+ *    per subscribe. Such a device gets the ON command again (and re-fetches
+ *    its setting), same back-off as above.
  */
 @Injectable()
 export class GridTieSyncService implements OnModuleInit, OnModuleDestroy {
@@ -67,6 +78,8 @@ export class GridTieSyncService implements OnModuleInit, OnModuleDestroy {
     { userId: string; deviceId: string }
   >();
   private readonly resync = new Map<string, { at: number; tries: number }>();
+  /** ON devices still running the OFF values (layer 3). */
+  private readonly stuck = new Map<string, { at: number; tries: number }>();
   private seeded = false;
   private timer: NodeJS.Timeout | null = null;
 
@@ -125,6 +138,9 @@ export class GridTieSyncService implements OnModuleInit, OnModuleDestroy {
     for (const k of this.resync.keys()) {
       if (!this.off.has(k)) this.resync.delete(k);
     }
+    for (const k of this.stuck.keys()) {
+      if (this.off.has(k)) this.stuck.delete(k);
+    }
     // Turned back ON (maybe through another instance): make sure the retained
     // command says ON, in case a stale OFF was re-published meanwhile.
     for (const [k, d] of before) {
@@ -149,6 +165,7 @@ export class GridTieSyncService implements OnModuleInit, OnModuleDestroy {
   }): Promise<void> {
     const k = this.key(p.userId, p.deviceId);
     this.resync.delete(k);
+    this.stuck.delete(k);
     if (p.off) this.off.set(k, { userId: p.userId, deviceId: p.deviceId });
     else this.off.delete(k);
     await this.publish(p.userId, p.deviceId, p.off);
@@ -161,7 +178,7 @@ export class GridTieSyncService implements OnModuleInit, OnModuleDestroy {
     data?: { value?: string };
   }): Promise<void> {
     const k = this.key(p.currentUid, p.wifiSsid);
-    if (!this.off.has(k)) return;
+    if (!this.off.has(k)) return this.checkOn(k, p);
     const obeys = frameShowsGridTieOff(p.data?.value);
     if (obeys === null) return;
     if (obeys) {
@@ -208,6 +225,65 @@ export class GridTieSyncService implements OnModuleInit, OnModuleDestroy {
       // next frame retries
     }
     await this.publish(p.currentUid, p.wifiSsid, true);
+  }
+
+  /** Layer 3: an ON device whose frames still show the OFF values. */
+  private async checkOn(
+    k: string,
+    p: { currentUid: string; wifiSsid: string; data?: { value?: string } },
+  ): Promise<void> {
+    if (frameShowsGridTieOff(p.data?.value) !== true) {
+      this.stuck.delete(k);
+      return;
+    }
+    const now = Date.now();
+    const r = this.stuck.get(k);
+    if (!r) {
+      // First frame: the device may still be applying a fresh ON.
+      this.stuck.set(k, { at: now, tries: 0 });
+      return;
+    }
+    const wait =
+      r.tries < GRID_TIE_RESYNC_FAST_TRIES
+        ? GRID_TIE_RESYNC_MS
+        : GRID_TIE_RESYNC_SLOW_MS;
+    if (now - r.at < wait) return;
+    r.at = now;
+    if (!(await this.stillOn(p.currentUid, p.wifiSsid))) return;
+    r.tries++;
+    if (r.tries === 1) {
+      this.logger.warn(
+        `grid-tie ON but ${p.currentUid}/${p.wifiSsid} still runs the OFF ` +
+          `values: re-sending ON (frame ${p.data?.value})`,
+      );
+    }
+    await this.publish(p.currentUid, p.wifiSsid, false);
+    try {
+      await this.mqtt.emitSyncSettings(p.currentUid, p.wifiSsid);
+      await this.mqtt.emitSyncSchedule(p.currentUid, p.wifiSsid);
+    } catch {
+      // next frame retries
+    }
+  }
+
+  /**
+   * ON in MongoDB with a real setting (not the OFF command stored for a
+   * device turned OFF before it had one): 99 V / 1 W is then not wanted.
+   */
+  private async stillOn(userId: string, deviceId: string): Promise<boolean> {
+    try {
+      const doc = await this.settingModel
+        .exists({
+          userId,
+          deviceId,
+          gridTieOff: { $ne: true },
+          value: { $ne: GRID_TIE_OFF_VALUE },
+        })
+        .exec();
+      return !!doc;
+    } catch {
+      return false;
+    }
   }
 
   private async stillOff(userId: string, deviceId: string): Promise<boolean> {

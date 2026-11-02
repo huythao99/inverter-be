@@ -194,13 +194,13 @@ export class InverterSettingService {
       void this.mqttService.emitSyncSchedule(userId, deviceId);
       // GridTieSyncService publishes the dedicated retained cmd/grid-tie and
       // re-syncs a device whose telemetry does not show the OFF values.
-      if (wasOff !== off) {
-        this.eventEmitter.emit(GRID_TIE_CHANGED_EVENT, {
-          userId,
-          deviceId,
-          off,
-        });
-      }
+      // Also when unchanged: pressing ON again must re-send ON to a device
+      // that missed it (it latched OFF and keeps 99.00 V / 1 W).
+      this.eventEmitter.emit(GRID_TIE_CHANGED_EVENT, {
+        userId,
+        deviceId,
+        off,
+      });
       this.eventEmitter.emit(AUDIT_EVENT, {
         ctx: ctx ?? { source: 'system' },
         userId,
