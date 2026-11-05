@@ -41,8 +41,11 @@ export const HYBRID_READONLY_KEYS = [
   'SRC',
 ] as const;
 
-/** Commands the app may send (cmd/action). SAVE / FWU are not exposed. */
-export const HYBRID_COMMANDS = ['FAULT_RST', 'STOP', 'RUN'] as const;
+/**
+ * Commands the app may send (cmd/action). SAVE: "Lưu" after an advanced
+ * change (§13; a normal change is saved by the ESP32 itself). FWU: never.
+ */
+export const HYBRID_COMMANDS = ['FAULT_RST', 'STOP', 'RUN', 'SAVE'] as const;
 export type HybridCommand = (typeof HYBRID_COMMANDS)[number];
 
 export type HybridConfig = Partial<{
@@ -374,4 +377,126 @@ export function hybridEtotDelta(
 /** Calendar day in Vietnam (UTC+7), "YYYY-MM-DD". */
 export function vnDay(at: Date = new Date()): string {
   return new Date(at.getTime() + 7 * 3600_000).toISOString().slice(0, 10);
+}
+
+// ---------------------------------------------------------------------------
+// Advanced settings menu ($GET,ADV / $SETADV, STM32 >= 5.4.12, §13)
+// ---------------------------------------------------------------------------
+
+/** Writable $SETADV keys: label, unit, value kind. */
+export const HYBRID_ADV_KEYS: Record<
+  string,
+  {
+    label: string;
+    unit: string;
+    kind: 'enum' | 'num';
+    values?: string[];
+    decimals?: number;
+    /** Calibration: applied while running (no RUNNING check on the STM32). */
+    cal?: boolean;
+  }
+> = {
+  SYS: {
+    label: 'Hệ pin',
+    unit: 'V',
+    kind: 'enum',
+    values: ['12', '24', '36', '48', '60', '72'],
+  },
+  FHZ: { label: 'Tần số', unit: 'Hz', kind: 'enum', values: ['50', '60'] },
+  N: { label: 'Tỉ số biến áp', unit: '', kind: 'num', decimals: 2 },
+  CF: { label: 'Tụ lọc Cf', unit: 'µF', kind: 'num', decimals: 1 },
+  LF: { label: 'Điện cảm rò Lf', unit: 'mH', kind: 'num', decimals: 1 },
+  HALL: {
+    label: 'Hall sơ cấp',
+    unit: '',
+    kind: 'enum',
+    values: ['AUTO', 'YES', 'NO'],
+  },
+  VCV: { label: 'Áp sạc', unit: 'V', kind: 'num', decimals: 1 },
+  VOVP: { label: 'Pin quá áp', unit: 'V', kind: 'num', decimals: 1 },
+  VGMAX: { label: 'Áp lưới max', unit: 'V', kind: 'num', decimals: 0 },
+  VGMIN: { label: 'Áp lưới min', unit: 'V', kind: 'num', decimals: 0 },
+  CVO: {
+    label: 'Hiệu chỉnh áp ra',
+    unit: 'V',
+    kind: 'num',
+    decimals: 1,
+    cal: true,
+  },
+  CVG: {
+    label: 'Hiệu chỉnh áp lưới',
+    unit: 'V',
+    kind: 'num',
+    decimals: 1,
+    cal: true,
+  },
+  CVB: {
+    label: 'Hiệu chỉnh áp pin',
+    unit: 'V',
+    kind: 'num',
+    decimals: 2,
+    cal: true,
+  },
+  CII: {
+    label: 'Hiệu chỉnh dòng CT inverter',
+    unit: 'A',
+    kind: 'num',
+    decimals: 2,
+    cal: true,
+  },
+  CIG: {
+    label: 'Hiệu chỉnh dòng CT lưới',
+    unit: 'A',
+    kind: 'num',
+    decimals: 2,
+    cal: true,
+  },
+  FACT: { label: 'Cài đặt gốc', unit: '', kind: 'enum', values: ['1'] },
+};
+
+/** Menu password: letters / digits only (a "," or "=" would break the frame). */
+export const HYBRID_ADV_PW = /^[A-Za-z0-9]{1,16}$/;
+
+/**
+ * Body of a $SETADV (without PW) from { KEY: value }: known keys only, numbers
+ * as plain decimals (the STM32 checks the ranges), FACT alone. The order is
+ * the one of HYBRID_ADV_KEYS (SYS first, which the STM32 applies first anyway).
+ */
+export function parseHybridAdvSet(input: Record<string, unknown>): {
+  set: string;
+  errors: HybridConfigError[];
+} {
+  const items = new Map<string, string>();
+  const errors: HybridConfigError[] = [];
+  for (const [k, v] of Object.entries(input ?? {})) {
+    const key = k.toUpperCase();
+    const def = HYBRID_ADV_KEYS[key];
+    if (!def) {
+      errors.push({ key: k, message: 'Không hỗ trợ tham số này' });
+      continue;
+    }
+    if (def.kind === 'enum') {
+      const s =
+        typeof v === 'string' || typeof v === 'number'
+          ? String(v).trim().toUpperCase()
+          : '';
+      if (def.values!.includes(s)) items.set(key, s);
+      else errors.push({ key, message: 'Giá trị không hợp lệ' });
+      continue;
+    }
+    const n = num(v);
+    if (n === undefined || n < 0 || n > 9999) {
+      errors.push({ key, message: 'Giá trị phải là số' });
+      continue;
+    }
+    items.set(key, n.toFixed(def.decimals ?? 1));
+  }
+  if (items.has('FACT') && items.size > 1) {
+    errors.push({ key: 'FACT', message: 'Cài đặt gốc phải gửi riêng' });
+  }
+  const set = Object.keys(HYBRID_ADV_KEYS)
+    .filter((k) => items.has(k))
+    .map((k) => `${k}=${items.get(k)}`)
+    .join(',');
+  return { set, errors };
 }

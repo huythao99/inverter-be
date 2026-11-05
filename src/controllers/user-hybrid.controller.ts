@@ -239,6 +239,59 @@ export class UserHybridController {
     return this.settings.command(user.uid, deviceId, cmd, this.ctx(req, user));
   }
 
+  // ---- Advanced settings menu (STM32 >= 5.4.12, protocol §13) -------------
+
+  /** Last $ADV, whether this STM32 has the menu, outcome of the last change. */
+  @Get(':deviceId/advanced')
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
+  async advanced(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('deviceId') deviceId: string,
+  ) {
+    await this.assertOwned(user.uid, deviceId);
+    return this.data.advanced(user.uid, deviceId);
+  }
+
+  /** Ask the device for $ADV ({ watch: s }: every 1 s, calibration page). */
+  @Post(':deviceId/advanced/read')
+  @HttpCode(HttpStatus.OK)
+  async advancedRead(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('deviceId') deviceId: string,
+    @Body('watch') watch?: number,
+  ) {
+    await this.assertOwned(user.uid, deviceId);
+    await this.settings.advRead(user.uid, deviceId, watch);
+    return this.data.advanced(user.uid, deviceId);
+  }
+
+  /**
+   * { pw, set?: { VCV: 55, ... } }: $SETADV with the menu password (only pw =
+   * check it / unlock the menu). Result: poll GET advanced until `result`.
+   */
+  @Post(':deviceId/advanced')
+  @HttpCode(HttpStatus.OK)
+  async advancedSet(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Param('deviceId') deviceId: string,
+    @Body('pw') pw: unknown,
+    @Body('set') set: unknown,
+    @Req() req: Request,
+  ) {
+    await this.assertOwned(user.uid, deviceId);
+    // Taken before sending: a reply stored before markAdvRequest still counts.
+    const requestAt = new Date();
+    const r = await this.settings.advSet(
+      user.uid,
+      deviceId,
+      pw,
+      set,
+      this.ctx(req, user),
+    );
+    await this.data.markAdvRequest(user.uid, deviceId, requestAt);
+    return { ...r, requestAt };
+  }
+
   /**
    * Daily energy (Wh, VN days): ?from=YYYY-MM-DD&to=YYYY-MM-DD (default:
    * last 30 days). edis/echg = battery discharge/charge, eimp/eexp = grid

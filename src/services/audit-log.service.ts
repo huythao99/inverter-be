@@ -1,3 +1,4 @@
+import { HYBRID_ADV_KEYS } from '../constants/hybrid.constants';
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { OnEvent } from '@nestjs/event-emitter';
@@ -130,6 +131,7 @@ const HYBRID_CMD_LABEL: Record<string, string> = {
   FAULT_RST: 'Xóa lỗi',
   STOP: 'Dừng máy',
   RUN: 'Chạy máy',
+  SAVE: 'Lưu cài đặt vào máy',
 };
 
 function hybridSettingsSummary(before: string | null, after: string | null) {
@@ -153,6 +155,20 @@ function hybridSettingsSummary(before: string | null, after: string | null) {
   return changed.length ? changed.join('; ') : 'Không đổi';
 }
 
+/** "VCV=55.0,FHZ=60" -> "Cài đặt nâng cao: Áp sạc 55.0 V; Tần số 60 Hz". */
+function hybridAdvSummary(after: string | null) {
+  const parts = (after ?? '')
+    .split(',')
+    .map((it) => it.split('='))
+    .filter((kv) => kv.length === 2 && kv[0])
+    .map(([k, v]) => {
+      const d = HYBRID_ADV_KEYS[k];
+      if (k === 'FACT') return 'Khôi phục cài đặt gốc';
+      return d ? `${d.label} ${v} ${d.unit}`.trim() : `${k}=${v}`;
+    });
+  return `Cài đặt nâng cao: ${parts.join('; ') || '—'}`;
+}
+
 export function buildAuditSummary(
   e: Pick<AuditEvent, 'kind' | 'action' | 'before' | 'after'>,
 ): string {
@@ -160,6 +176,7 @@ export function buildAuditSummary(
     return e.after === '1' ? 'Tắt hoà lưới' : 'Bật hoà lưới';
   }
   if (e.kind === 'hybrid') {
+    if (e.action === 'advanced') return hybridAdvSummary(e.after);
     if (e.action === 'command') {
       return HYBRID_CMD_LABEL[e.after ?? ''] ?? `Lệnh ${e.after ?? ''}`;
     }

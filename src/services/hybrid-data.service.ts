@@ -8,6 +8,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { OnEvent } from '@nestjs/event-emitter';
 import { Model } from 'mongoose';
 import {
+  HybridAdvResult,
   HybridData,
   HybridDataDocument,
   HybridNak,
@@ -178,6 +179,7 @@ export class HybridDataService implements OnModuleInit, OnModuleDestroy {
     raw: string,
   ): Promise<void> {
     const now = new Date();
+    const unset: Record<string, ''> = {};
     const set: Record<string, unknown> = {
       userId,
       deviceId,
@@ -206,6 +208,29 @@ export class HybridDataService implements OnModuleInit, OnModuleDestroy {
     } else if (frame.type === 'INFO') {
       set.info = frame.items;
       set.infoAt = now;
+    } else if (frame.type === 'ADV') {
+      set.adv = frame.items;
+      set.advAt = now;
+      unset.advUnsupportedFw = '';
+    } else if (frame.type === 'ACK' && frame.words[0] === 'SETADV') {
+      set.advResult = { ok: true, at: now } satisfies HybridAdvResult;
+    } else if (frame.type === 'NAK' && frame.words[0] === 'SETADV') {
+      // Advanced menu: its own result, not the settings banner (lastNak).
+      const r: HybridAdvResult = {
+        ok: false,
+        err: frame.items.ERR ?? '?',
+        at: now,
+      };
+      if (frame.items.KEY) r.key = frame.items.KEY;
+      set.advResult = r;
+    } else if (frame.type === 'NAK' && frame.words[0] === 'GET') {
+      // The ESP32 forwards only the $GET,ADV refusal: STM32 without the menu.
+      const doc = (await this.model
+        .findOne({ userId, deviceId })
+        .select('info')
+        .lean()
+        .exec()) as { info?: Record<string, string> } | null;
+      set.advUnsupportedFw = doc?.info?.FW ?? '?';
     } else if (frame.type === 'NAK') {
       const nak: HybridNak = {
         of: frame.words.join(' ') || '?',
@@ -219,9 +244,52 @@ export class HybridDataService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    const update: Record<string, unknown> = { $set: set };
+    if (Object.keys(unset).length) update.$unset = unset;
     await this.model
-      .updateOne({ userId, deviceId }, { $set: set }, { upsert: true })
+      .updateOne({ userId, deviceId }, update, { upsert: true })
       .exec();
+  }
+
+  /** Advanced settings state for the app (§13). */
+  async advanced(userId: string, deviceId: string) {
+    const doc = (await this.model
+      .findOne({ userId, deviceId })
+      .select('adv advAt advUnsupportedFw advRequestAt advResult info cfg tlm')
+      .lean()
+      .exec()) as HybridData | null;
+    const fw = doc?.info?.FW;
+    const result =
+      doc?.advResult &&
+      (!doc.advRequestAt ||
+        new Date(doc.advResult.at).getTime() >=
+          new Date(doc.advRequestAt).getTime())
+        ? doc.advResult
+        : null;
+    return {
+      // false: this STM32 firmware has no advanced menu (hide it).
+      supported: !(doc?.advUnsupportedFw && doc.advUnsupportedFw === fw),
+      adv: doc?.adv ?? null,
+      advAt: doc?.advAt ?? null,
+      requestAt: doc?.advRequestAt ?? null,
+      // Outcome of the last change (null while it is on its way).
+      result,
+      src: doc?.tlm?.SRC ?? doc?.cfg?.SRC ?? null,
+      mode: doc?.cfg?.MODE ?? doc?.tlm?.MODE ?? null,
+      ist: doc?.tlm?.IST ?? null,
+    };
+  }
+
+  /** A $SETADV was just sent: the next ACK / NAK is its result. */
+  async markAdvRequest(
+    userId: string,
+    deviceId: string,
+    at = new Date(),
+  ): Promise<Date> {
+    await this.model
+      .updateOne({ userId, deviceId }, { $set: { advRequestAt: at } })
+      .exec();
+    return at;
   }
 
   private async addEnergy(

@@ -713,6 +713,23 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
   // One-shot command to the STM32 (FAULT_RST / STOP / RUN). NOT retained: a
   // device that is offline must not run it later; the firmware also drops
   // one older than 120 s.
+  // Advanced settings (§13): read now / every 1 s for `watch` s (max 60), or a
+  // $SETADV with the menu password. NOT retained, never logged: the password
+  // only lives in this one message (TLS to the broker and to the device).
+  async emitHybridAdv(
+    userId: string,
+    deviceId: string,
+    payload:
+      | { cmd: 'ADV'; watch?: number }
+      | { cmd: 'SETADV'; pw: string; set: string },
+  ): Promise<void> {
+    await this.publishWithRetain(
+      `hybrid/${userId}/${deviceId}/cmd/action`,
+      { ...payload, ts: Date.now() },
+      false,
+    );
+  }
+
   async emitHybridCommand(
     userId: string,
     deviceId: string,

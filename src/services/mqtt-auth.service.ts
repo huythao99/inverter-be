@@ -26,6 +26,19 @@ import {
 const LEGACY_TOPIC =
   /^(?:(?:inverter|charger)\/[^/+#]+\/(?:[^/+#]+|\+)\/[^+#]+|devices\/(?:inverter|charger)\/[^/+#]+\/(?:[^/+#]+|\+))$/;
 
+/**
+ * Device command topics ({inverter,charger,hybrid}/<uid>/<id>/cmd/...): only
+ * the server writes them and only the device reads them. A hybrid cmd/action
+ * can carry the advanced-menu password, so app / CMS accounts never get them
+ * (also refused per message when they subscribe with "#").
+ */
+export function isDeviceCmdTopic(topic: string): boolean {
+  return (
+    typeof topic === 'string' &&
+    /^(?:inverter|charger|hybrid)\/[^/]+\/[^/]+\/cmd\//.test(topic)
+  );
+}
+
 /** hybrid/<uid>/<id>/raw (the UART debug log), or a filter ending in it. */
 export function isRawLogTopic(topic: string): boolean {
   return typeof topic === 'string' && /^hybrid\/[^/]+\/[^/]+\/raw$/.test(topic);
@@ -555,6 +568,10 @@ export class MqttAuthService implements OnModuleInit {
       // UART debug log (hybrid .../raw): CMS only. It shows the raw STM32
       // protocol, incl. lock commands; owners and shared viewers never get it
       // (also refused per message when they subscribe with "#").
+      if (isDeviceCmdTopic(topic)) {
+        this.logger.debug(`ACL denied (cmd): ${username} ${access} ${topic}`);
+        return false;
+      }
       if (kind === 'app' && isRawLogTopic(topic)) {
         this.logger.debug(
           `ACL denied (raw log): ${username} ${access} ${topic}`,

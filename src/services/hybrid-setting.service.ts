@@ -10,6 +10,7 @@ import {
 import { MqttService } from './mqtt.service';
 import { AUDIT_EVENT, AuditContext, AuditEvent } from '../utils/audit-context';
 import {
+  HYBRID_ADV_PW,
   HYBRID_COMMANDS,
   HybridCommand,
   HybridConfig,
@@ -17,6 +18,7 @@ import {
   hybridSetBody,
   mergeHybridConfig,
   num,
+  parseHybridAdvSet,
   parseHybridPatch,
 } from '../constants/hybrid.constants';
 
@@ -178,6 +180,59 @@ export class HybridSettingService {
     await this.mqtt.emitHybridCommand(userId, deviceId, c);
     this.audit(ctx, userId, deviceId, 'command', null, c);
     return { cmd: c as HybridCommand, sentAt: new Date() };
+  }
+
+  /** Advanced settings: $GET,ADV now, and every 1 s for `watch` s (max 60). */
+  async advRead(userId: string, deviceId: string, watch?: unknown) {
+    const w = Math.max(0, Math.min(60, Math.round(Number(watch) || 0)));
+    await this.mqtt.emitHybridAdv(userId, deviceId, {
+      cmd: 'ADV',
+      ...(w ? { watch: w } : {}),
+    });
+  }
+
+  /**
+   * Advanced change ($SETADV, §13): only the password (= unlock the menu) or
+   * password + items. The password goes to the device in this one message and
+   * is never stored or logged; the audit log gets the items only.
+   */
+  async advSet(
+    userId: string,
+    deviceId: string,
+    pw: unknown,
+    items: unknown,
+    ctx?: AuditContext,
+  ): Promise<{ set: string }> {
+    if (typeof pw !== 'string' || !HYBRID_ADV_PW.test(pw)) {
+      throw new BadRequestException({
+        message: 'Mật khẩu chỉ gồm chữ và số (tối đa 16 ký tự)',
+        errors: [{ key: 'PW', message: 'Mật khẩu không hợp lệ' }],
+      });
+    }
+    const input =
+      items && typeof items === 'object' && !Array.isArray(items)
+        ? (items as Record<string, unknown>)
+        : {};
+    const { set, errors } = parseHybridAdvSet(input);
+    if (errors.length) {
+      throw new BadRequestException({
+        message: 'Cài đặt không hợp lệ',
+        errors,
+      });
+    }
+    await this.mqtt.emitHybridAdv(userId, deviceId, { cmd: 'SETADV', pw, set });
+    if (set) {
+      this.events.emit(AUDIT_EVENT, {
+        ctx: ctx ?? { source: 'system' },
+        userId,
+        deviceId,
+        kind: 'hybrid',
+        action: 'advanced',
+        before: null,
+        after: set,
+      } satisfies AuditEvent);
+    }
+    return { set };
   }
 
   /** UART debug log on for `minutes` (0 = off, max 30). CMS only. */

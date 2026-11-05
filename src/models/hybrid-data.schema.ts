@@ -16,6 +16,15 @@ export interface HybridNak {
   at: Date;
 }
 
+/** Outcome of the last $SETADV (advanced settings, §13). */
+export interface HybridAdvResult {
+  ok: boolean;
+  /** NAK reason: PW, PWLOCK, RUNNING, RANGE, NOSIGNAL, LOCAL, BUSY, ... */
+  err?: string;
+  key?: string;
+  at: Date;
+}
+
 /**
  * Latest state of a hybrid (HINVLF v1): the last $TLM / $CFG / $INFO as
  * KEY -> VALUE maps (strings, exactly as the STM32 sent them), the last
@@ -49,6 +58,24 @@ export class HybridData {
 
   @Prop({ type: SchemaTypes.Mixed })
   lastNak?: HybridNak;
+
+  // Advanced settings (§13): last $ADV, when the last $SETADV was asked and
+  // how it ended. advUnsupportedFw: STM32 FW that answered $GET,ADV with
+  // UNSUP (another FW, e.g. after an update, is asked again).
+  @Prop({ type: SchemaTypes.Mixed })
+  adv?: Record<string, string>;
+
+  @Prop()
+  advAt?: Date;
+
+  @Prop()
+  advUnsupportedFw?: string;
+
+  @Prop()
+  advRequestAt?: Date;
+
+  @Prop({ type: SchemaTypes.Mixed })
+  advResult?: HybridAdvResult;
 
   // Counters of the last $TLM used for energy (survives a backend restart).
   @Prop({ type: SchemaTypes.Mixed, select: false })

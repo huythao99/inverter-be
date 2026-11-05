@@ -18,7 +18,7 @@ export interface AuditEvent {
   userId: string;
   deviceId: string;
   kind: 'inverter' | 'charger' | 'hybrid';
-  action: 'settings' | 'schedule' | 'grid-tie' | 'command';
+  action: 'settings' | 'schedule' | 'grid-tie' | 'command' | 'advanced';
   before: string | null;
   after: string | null;
 }

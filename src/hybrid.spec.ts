@@ -10,6 +10,7 @@ import {
   hybridPendingKeys,
   hybridSetBody,
   mergeHybridConfig,
+  parseHybridAdvSet,
   parseHybridPatch,
   vnDay,
   hybridEtot,
@@ -423,14 +424,16 @@ describe('HybridSettingService', () => {
     expect(await svc.get('u1', 'H1')).toMatchObject({ config: {}, set: '' });
   });
 
-  it('commands: only FAULT_RST / STOP / RUN', async () => {
+  it('commands: only FAULT_RST / STOP / RUN / SAVE', async () => {
     const { svc, log } = setup(null);
     await svc.command('u1', 'H1', 'fault_rst');
     expect(log).toEqual([
       'cmd:H1:FAULT_RST',
       `${AUDIT_EVENT}:hybrid:command:null->FAULT_RST`,
     ]);
-    await expect(svc.command('u1', 'H1', 'SAVE')).rejects.toThrow();
+    await svc.command('u1', 'H1', 'SAVE'); // "Lưu" of the advanced menu
+    expect(log[2]).toBe('cmd:H1:SAVE');
+    await expect(svc.command('u1', 'H1', 'FWU')).rejects.toThrow();
   });
 });
 
@@ -676,5 +679,152 @@ describe('activeHybridNak', () => {
     ).not.toBeNull();
     expect(activeHybridNak(nak('RANGE'), null, t0 + 25 * 3600_000)).toBeNull();
     expect(activeHybridNak(null)).toBeNull();
+  });
+});
+
+describe('advanced settings (§13)', () => {
+  it('builds the $SETADV body: known keys, fixed decimals, SYS first', () => {
+    expect(
+      parseHybridAdvSet({ vcv: '55', HALL: 'auto', SYS: 24, N: 9 }),
+    ).toEqual({ set: 'SYS=24,N=9.00,HALL=AUTO,VCV=55.0', errors: [] });
+    expect(parseHybridAdvSet({}).set).toBe('');
+    expect(parseHybridAdvSet({ VCUT: 40 }).errors[0].key).toBe('VCUT');
+    expect(parseHybridAdvSet({ SYS: 30 }).errors[0].key).toBe('SYS');
+    expect(parseHybridAdvSet({ CVB: 'abc' }).errors[0].key).toBe('CVB');
+    expect(parseHybridAdvSet({ FACT: 1, VCV: 55 }).errors[0].key).toBe('FACT');
+    expect(parseHybridAdvSet({ FACT: '1' }).set).toBe('FACT=1');
+  });
+
+  function settingSvc() {
+    const sent: any[] = [];
+    const events: any[] = [];
+    const mqtt = {
+      emitHybridAdv: (_u: string, _d: string, p: any) => {
+        sent.push(p);
+        return Promise.resolve();
+      },
+    };
+    const svc = new HybridSettingService(
+      {} as any,
+      mqtt as any,
+      { emit: (_n: string, e: any) => events.push(e) } as any,
+    );
+    return { svc, sent, events };
+  }
+
+  it('sends the password to the device only, never to the audit log', async () => {
+    const { svc, sent, events } = settingSvc();
+    await svc.advSet('u', 'H', 'ab12', { VCV: 55 });
+    expect(sent).toEqual([{ cmd: 'SETADV', pw: 'ab12', set: 'VCV=55.0' }]);
+    expect(events).toHaveLength(1);
+    expect(JSON.stringify(events[0])).not.toContain('ab12');
+    expect(buildAuditSummary(events[0])).toBe(
+      'Cài đặt nâng cao: Áp sạc 55.0 V',
+    );
+    // Password only (unlock the menu): sent, not audited.
+    await svc.advSet('u', 'H', 'ab12', undefined);
+    expect(sent[1]).toEqual({ cmd: 'SETADV', pw: 'ab12', set: '' });
+    expect(events).toHaveLength(1);
+  });
+
+  it('rejects a password that would break the frame', async () => {
+    const { svc, sent } = settingSvc();
+    for (const pw of ['', '12,VCV=1', 'a=b', 'x'.repeat(17), 12]) {
+      await expect(svc.advSet('u', 'H', pw, {})).rejects.toThrow();
+    }
+    expect(sent).toEqual([]);
+  });
+
+  it('stores $ADV, the SETADV result (not as lastNak) and a GET,ADV refusal', async () => {
+    const sets: any[] = [];
+    const unsets: any[] = [];
+    const model = {
+      findOne: () => ({
+        select: () => ({
+          lean: () => ({
+            exec: () => Promise.resolve({ info: { FW: '5.4.10' } }),
+          }),
+        }),
+      }),
+      updateOne: (_f: unknown, u: any) => {
+        sets.push(u.$set);
+        unsets.push(u.$unset);
+        return { exec: () => Promise.resolve({}) };
+      },
+    };
+    const svc = new HybridDataService(model as any, {} as any);
+    const send = (raw: string) =>
+      svc.onData({ userId: 'u', deviceId: 'H', data: { raw } });
+    send('$ADV,SYS=48,FHZ=50,VCV=56.5,MVB=51.23*74');
+    send('$ACK,SETADV*A5');
+    send('$NAK,SETADV,ERR=RANGE,KEY=VCV*72');
+    send('$NAK,GET,ERR=UNSUP*4B');
+    await new Promise((r) => setTimeout(r, 10));
+    expect(sets[0].adv).toEqual({
+      SYS: '48',
+      FHZ: '50',
+      VCV: '56.5',
+      MVB: '51.23',
+    });
+    expect(unsets[0]).toEqual({ advUnsupportedFw: '' });
+    expect(sets[1].advResult).toMatchObject({ ok: true });
+    expect(sets[2].advResult).toMatchObject({
+      ok: false,
+      err: 'RANGE',
+      key: 'VCV',
+    });
+    expect(sets[2].lastNak).toBeUndefined();
+    expect(sets[3].advUnsupportedFw).toBe('5.4.10');
+  });
+
+  it('advanced(): unsupported only for the FW that refused; stale result hidden', async () => {
+    const doc: any = {
+      info: { FW: '5.4.10' },
+      advUnsupportedFw: '5.4.10',
+      advRequestAt: new Date(2000),
+      advResult: { ok: false, err: 'PW', at: new Date(1000) },
+    };
+    const model = {
+      findOne: () => ({
+        select: () => ({ lean: () => ({ exec: () => Promise.resolve(doc) }) }),
+      }),
+    };
+    const svc = new HybridDataService(model as any, {} as any);
+    let r = await svc.advanced('u', 'H');
+    expect(r.supported).toBe(false);
+    expect(r.result).toBeNull(); // older than the request: still on its way
+    doc.info.FW = '5.4.12';
+    doc.advResult.at = new Date(3000);
+    r = await svc.advanced('u', 'H');
+    expect(r.supported).toBe(true);
+    expect(r.result).toMatchObject({ err: 'PW' });
+  });
+
+  it('app / CMS accounts never read device command topics', async () => {
+    for (const kind of ['app', 'cms']) {
+      const model = {
+        findOne: () =>
+          chain({
+            _id: 'c',
+            userId: 'u1',
+            kind,
+            mqttUsername: `${kind}_u1`,
+            isActive: true,
+          }),
+      };
+      const svc = new MqttAuthService(
+        model as any,
+        { get: (_k: string, d?: unknown) => d } as any,
+      );
+      expect(
+        await svc.checkAcl(`${kind}_u1`, 'hybrid/u1/H1/cmd/action', 'read'),
+      ).toBe(false);
+      expect(
+        await svc.checkAcl(`${kind}_u1`, 'inverter/u1/D/cmd/grid-tie', 'read'),
+      ).toBe(false);
+      expect(
+        await svc.checkAcl(`${kind}_u1`, 'hybrid/u1/H1/data', 'read'),
+      ).toBe(true);
+    }
   });
 });
