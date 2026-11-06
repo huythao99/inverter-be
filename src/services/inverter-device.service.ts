@@ -98,6 +98,23 @@ export class InverterDeviceService {
   }
 
   /** userIds of every account that has this deviceId (owner + shares). */
+  /** Hybrid build to serve while a CMS conversion to hybrid is pending. */
+  async findHybridConversion(
+    deviceId: string,
+  ): Promise<{ url: string; version: string } | null> {
+    const row = (await this.inverterDeviceModel
+      .findOne(
+        { deviceId, hybridConversion: { $ne: null } },
+        { hybridConversion: 1 },
+      )
+      .lean()
+      .exec()) as {
+      hybridConversion?: { url: string; version: string } | null;
+    } | null;
+    const c = row?.hybridConversion;
+    return c?.url ? { url: c.url, version: c.version } : null;
+  }
+
   async findUserIdsByDeviceId(deviceId: string): Promise<string[]> {
     const rows = await this.inverterDeviceModel
       .find({ deviceId }, { userId: 1 })

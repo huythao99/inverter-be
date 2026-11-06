@@ -196,6 +196,10 @@ export class FirmwareService {
     deviceId: string,
     userId?: string,
   ): Promise<{ url: string }> {
+    // CMS "Chuyển sang hybrid": this inverter gets the hybrid build.
+    const conversion =
+      await this.inverterDeviceService.findHybridConversion(deviceId);
+    if (conversion) return { url: conversion.url };
     const channel: EspFirmwareChannel = (await this.isBetaDevice(
       deviceId,
       userId,

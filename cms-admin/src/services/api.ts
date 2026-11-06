@@ -320,6 +320,23 @@ export const setStmProtocol = (id: string, mode: StmProtocolSetting) =>
 
 // Grid-tie ("hoà lưới") of one device. PUT always re-publishes the retained
 // cmd/grid-tie (clears a stale OFF on the device).
+// ---- Inverter -> hybrid (ESP32 firmware only, by OTA) ----
+export interface HybridConversion {
+  hybridDeviceId: string;
+  version: string;
+  url: string;
+  requestedAt: string;
+  by?: string | null;
+}
+
+export const getHybridConversionTarget = () =>
+  api.get<{ version: string; url: string; size: number }>('/hybrid-conversion/target');
+
+export const startHybridConversion = (id: string) =>
+  api.post<HybridConversion & { deviceId: string }>(`/devices/${id}/hybrid-conversion`);
+
+export const cancelHybridConversion = (id: string) => api.delete(`/devices/${id}/hybrid-conversion`);
+
 export const getGridTie = (id: string) => api.get<{ off: boolean }>(`/devices/${id}/grid-tie`);
 
 export const setGridTie = (id: string, off: boolean) =>

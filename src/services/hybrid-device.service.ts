@@ -1,4 +1,10 @@
-import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  Logger,
+  Optional,
+} from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as crypto from 'crypto';
@@ -36,6 +42,7 @@ export class HybridDeviceService {
     @InjectModel(ChargerClaim.name)
     private readonly claimModel: Model<ChargerClaimDocument>,
     private readonly mqttAuthService: MqttAuthService,
+    @Optional() private readonly events?: EventEmitter2,
   ) {}
 
   findByUserId(userId: string): Promise<HybridDevice[]> {
@@ -167,6 +174,8 @@ export class HybridDeviceService {
       deviceId,
     );
     this.logger.log(`Hybrid ${deviceId} provisioned for user ${userId}`);
+    // A converted inverter (GTIControlN -> HybridControlN) drops its old entry.
+    this.events?.emit('hybrid.device.provisioned', { userId, deviceId });
     return { userId, mqttUsername: cred.username, mqttPassword: cred.password };
   }
 }

@@ -59,6 +59,18 @@ export class InverterDevice {
   @Prop({ type: String, enum: ['auto', 'new', 'legacy'], default: 'auto' })
   stmProtocol: 'auto' | 'new' | 'legacy';
 
+  // CMS "Chuyển sang hybrid" (HybridConversionService): while set, GET
+  // /api/firmware serves this hybrid build to the device. The entry is
+  // removed once the device is added again as HybridControl<N>.
+  @Prop({ type: Object, default: null })
+  hybridConversion: {
+    hybridDeviceId: string;
+    version: string;
+    url: string;
+    requestedAt: Date;
+    by?: string | null;
+  } | null;
+
   @Prop({ default: Date.now })
   updatedAt: Date;
 }

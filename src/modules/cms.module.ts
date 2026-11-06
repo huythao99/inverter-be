@@ -46,6 +46,8 @@ import { DailyTotalsModule } from './daily-totals.module';
 import { RedisConfig } from '../config/redis.config';
 import { FirmwareBulkUpdateService } from '../services/firmware-bulk-update.service';
 import { FirmwareRolloutService } from '../services/firmware-rollout.service';
+import { HybridConversionService } from '../services/hybrid-conversion.service';
+import { EspFirmware, EspFirmwareSchema } from '../models/esp-firmware.schema';
 import {
   FirmwareRollout,
   FirmwareRolloutSchema,
@@ -104,6 +106,7 @@ import {
       { name: FirmwareRollout.name, schema: FirmwareRolloutSchema },
       { name: RolloutDevice.name, schema: RolloutDeviceSchema },
       { name: DeviceHealth.name, schema: DeviceHealthSchema },
+      { name: EspFirmware.name, schema: EspFirmwareSchema },
     ]),
   ],
   controllers: [CmsController],
@@ -116,6 +119,7 @@ import {
     RedisConfig,
     FirmwareBulkUpdateService,
     FirmwareRolloutService,
+    HybridConversionService,
   ],
   exports: [CmsService],
 })

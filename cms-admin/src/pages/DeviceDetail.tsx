@@ -13,6 +13,8 @@ import StmFirmwareCard from '../components/StmFirmwareCard';
 import UartDebugPanel from '../components/UartDebugPanel';
 import StmProtocolCard from '../components/StmProtocolCard';
 import GridTieCard from '../components/GridTieCard';
+import HybridConversionCard from '../components/HybridConversionCard';
+import type { HybridConversion } from '../services/api';
 import RunSourceCard from '../components/RunSourceCard';
 import { ActivityPanel, DeviceHealthPanel } from '../components/DevicePanels';
 import type { StmOtaLive } from '../components/StmFirmwareCard';
@@ -46,6 +48,7 @@ interface DeviceDetailData {
     deviceName: string;
     firmwareVersion: string;
     updatedAt: string;
+    hybridConversion?: HybridConversion | null;
   } | null;
   owner?: {
     email: string | null;
@@ -142,7 +145,8 @@ const DeviceDetail: React.FC = () => {
   const [realtimeHistory, setRealtimeHistory] = useState<RealtimeData[]>([]);
   const mqttClientRef = useRef<MqttClient | null>(null);
 
-  // Fetch initial data
+  // Fetch initial data (again when reloadTick changes, e.g. hybrid conversion)
+  const [reloadTick, setReloadTick] = useState(0);
   useEffect(() => {
     const fetchData = async () => {
       if (!userId || !deviceId) return;
@@ -160,7 +164,7 @@ const DeviceDetail: React.FC = () => {
     };
 
     fetchData();
-  }, [userId, deviceId]);
+  }, [userId, deviceId, reloadTick]);
 
   // Broker account for the live view (issued by the backend after login).
   const [mqttAccount, setMqttAccount] = useState<{ username: string; password: string } | null>(null);
@@ -559,6 +563,14 @@ const DeviceDetail: React.FC = () => {
       {data?.device && <GridTieCard deviceId={data.device._id} />}
       {data?.device && <RunSourceCard deviceId={data.device._id} />}
       {data?.device && <StmProtocolCard deviceId={data.device._id} />}
+      {data?.device && (
+        <HybridConversionCard
+          id={data.device._id}
+          deviceId={data.device.deviceId}
+          conversion={data.device.hybridConversion}
+          onChanged={() => setReloadTick((t) => t + 1)}
+        />
+      )}
 
       {/* Tabs */}
       <div className="tabs">
