@@ -337,6 +337,24 @@ export const startHybridConversion = (id: string) =>
 
 export const cancelHybridConversion = (id: string) => api.delete(`/devices/${id}/hybrid-conversion`);
 
+// ---- Hybrid -> inverter (ESP32 firmware only, by OTA) ----
+export interface InverterConversion {
+  gtiDeviceId: string;
+  version: string;
+  url: string;
+  requestedAt: string;
+  by?: string | null;
+}
+
+export const getInverterConversionTarget = () =>
+  api.get<{ version: string; url: string }>('/inverter-conversion/target');
+
+export const startInverterConversion = (id: string) =>
+  api.post<InverterConversion & { deviceId: string }>(`/hybrid-devices/${id}/inverter-conversion`);
+
+export const cancelInverterConversion = (id: string) =>
+  api.delete(`/hybrid-devices/${id}/inverter-conversion`);
+
 export const getGridTie = (id: string) => api.get<{ off: boolean }>(`/devices/${id}/grid-tie`);
 
 export const setGridTie = (id: string, off: boolean) =>
@@ -587,6 +605,8 @@ export interface CmsHybrid {
   firmwareVersion: string;
   updatedAt: string;
   summary: HybridSummary;
+  convertedFrom?: string | null;
+  inverterConversion?: InverterConversion | null;
 }
 
 export interface CmsHybridDashboard {

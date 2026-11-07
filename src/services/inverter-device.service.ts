@@ -45,6 +45,13 @@ export class InverterDeviceService {
       )
       .exec();
 
+    // A hybrid converted back to inverter registered itself: the hybrid
+    // entry goes (HybridConversionService).
+    this.eventEmitter.emit('inverter.device.registered', {
+      userId: savedDevice.userId,
+      deviceId: savedDevice.deviceId,
+    });
+
     // // Emit MQTT event
     // if (createInverterDeviceDto.userId) {
     //   await this.mqttService.emitDeviceAdded(

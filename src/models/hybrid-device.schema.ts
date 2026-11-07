@@ -52,6 +52,23 @@ export class HybridDevice {
     source?: string;
     at: Date;
   } | null;
+
+  // Inverter id this unit was converted from by OTA (CMS "Chuyển sang
+  // hybrid"), e.g. "GTIControl1312". Null for a hybrid flashed as one.
+  @Prop({ type: String, default: null })
+  convertedFrom: string | null;
+
+  // CMS "Chuyển về inverter": while set, /api/hybrid-firmware serves this
+  // inverter build; the unit then runs as gtiDeviceId. Removed with the
+  // hybrid entry once the unit shows up as that inverter.
+  @Prop({ type: Object, default: null })
+  inverterConversion: {
+    gtiDeviceId: string;
+    version: string;
+    url: string;
+    requestedAt: Date;
+    by?: string | null;
+  } | null;
 }
 
 export const HybridDeviceSchema = SchemaFactory.createForClass(HybridDevice);

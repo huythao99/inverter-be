@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call */
 // Inverter -> hybrid by OTA (ESP32 only): CMS start / cancel, the hybrid
 // build served by GET /api/firmware, cleanup once added again as a hybrid.
 import {
@@ -34,6 +34,13 @@ function setup(opts: { fw?: any; hybridExists?: boolean } = {}) {
       deviceId: 'GTIControl9',
       hybridConversion: null,
     },
+    // Converted with 1.3.1, rolled back to the inverter firmware (new name).
+    {
+      _id: 'i4',
+      userId: 'u1',
+      deviceId: 'HybridControl77',
+      hybridConversion: null,
+    },
   ];
   const deleted: any[] = [];
   const inverters = {
@@ -44,21 +51,39 @@ function setup(opts: { fw?: any; hybridExists?: boolean } = {}) {
         if (d.deviceId === f.deviceId) Object.assign(d, u.$set);
       return q({});
     },
+    findOne: (f: any) =>
+      q(
+        inverterDocs.find(
+          (d) => f.deviceId.$in.includes(d.deviceId) && d.hybridConversion,
+        ) ?? null,
+      ),
     deleteMany: (f: any) => {
-      const hit = inverterDocs.filter(
-        (d) => d.deviceId === f.deviceId && d.hybridConversion,
+      const match = (d: any, c: any) =>
+        (typeof c.deviceId === 'string'
+          ? d.deviceId === c.deviceId
+          : c.deviceId.$in.includes(d.deviceId)) &&
+        (!('hybridConversion' in c) || d.hybridConversion);
+      const hit = inverterDocs.filter((d) =>
+        f.$or.some((c: any) => match(d, c)),
       );
       deleted.push(...hit);
       return q({ deletedCount: hit.length });
     },
   };
-  const hybrids = { exists: () => q(opts.hybridExists ? { _id: 'h' } : null) };
+  const hybridUpdates: any[] = [];
+  const hybrids = {
+    exists: () => q(opts.hybridExists ? { _id: 'h' } : null),
+    updateMany: (f: any, u: any) => {
+      hybridUpdates.push({ f, u });
+      return q({});
+    },
+  };
   const fw =
     'fw' in opts
       ? opts.fw
       : {
-          version: '1.3.1',
-          url: 'https://cdn/hybrid-1.3.1.bin',
+          version: '1.3.2',
+          url: 'https://cdn/hybrid-1.3.2.bin',
           size: 1_142_500,
         };
   const firmwares = { findOne: () => q(fw) };
@@ -74,8 +99,9 @@ function setup(opts: { fw?: any; hybridExists?: boolean } = {}) {
     hybrids as any,
     firmwares as any,
     mqtt as any,
+    {} as any,
   );
-  return { svc, inverterDocs, published, deleted };
+  return { svc, inverterDocs, published, deleted, hybridUpdates };
 }
 
 describe('inverter -> hybrid conversion', () => {
@@ -100,14 +126,14 @@ describe('inverter -> hybrid conversion', () => {
     expect(r).toMatchObject({
       deviceId: 'GTIControl1230',
       hybridDeviceId: 'HybridControl1230',
-      version: '1.3.1',
+      version: '1.3.2',
       by: 'admin',
     });
     expect(inverterDocs[0].hybridConversion?.url).toBe(
-      'https://cdn/hybrid-1.3.1.bin',
+      'https://cdn/hybrid-1.3.2.bin',
     );
     expect(inverterDocs[1].hybridConversion?.url).toBe(
-      'https://cdn/hybrid-1.3.1.bin',
+      'https://cdn/hybrid-1.3.2.bin',
     );
     expect(inverterDocs[2].hybridConversion).toBeNull();
     expect(published).toHaveLength(1);
@@ -124,7 +150,7 @@ describe('inverter -> hybrid conversion', () => {
   it('refused: no stable hybrid build, too old, or too big for the inverter slot', async () => {
     for (const fw of [
       null,
-      { version: '1.3.0', url: 'u', size: 1000 },
+      { version: '1.3.1', url: 'u', size: 1000 }, // rolled back before being added
       { version: '1.4.0', url: 'u', size: HYBRID_CONVERT_MAX_BYTES + 1 },
     ]) {
       const { svc, published, inverterDocs } = setup({ fw });
@@ -170,6 +196,24 @@ describe('inverter -> hybrid conversion', () => {
     });
     expect(deleted.map((d) => d._id).sort()).toEqual(['i1', 'i2']);
   });
+  it('rolled back (inverter entry named HybridControlN): converted again, same id', async () => {
+    const { svc, inverterDocs, published } = setup({ hybridExists: true });
+    const r = await svc.start('i4');
+    expect(r.hybridDeviceId).toBe('HybridControl77');
+    expect(inverterDocs[3].hybridConversion?.url).toBe(
+      'https://cdn/hybrid-1.3.2.bin',
+    );
+    expect(published[0].t).toBe('inverter/u1/HybridControl77/firmware/update');
+  });
+
+  it('added as a hybrid: its rolled-back inverter entry goes too', async () => {
+    const { svc, deleted } = setup();
+    await svc.onHybridProvisioned({
+      userId: 'u1',
+      deviceId: 'HybridControl77',
+    });
+    expect(deleted.map((d) => d._id)).toEqual(['i4']);
+  });
 });
 
 describe('GET /api/firmware while converting', () => {
@@ -181,7 +225,7 @@ describe('GET /api/firmware while converting', () => {
             ? {
                 hybridConversion: {
                   url: 'https://cdn/hyb.bin',
-                  version: '1.3.1',
+                  version: '1.3.2',
                 },
               }
             : null,

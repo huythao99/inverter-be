@@ -11,6 +11,7 @@ import {
   type CmsHybridDetails,
 } from '../services/api';
 import RawLogPanel from '../components/RawLogPanel';
+import InverterConversionCard from '../components/InverterConversionCard';
 import { parseRawLog, type RawLogLine } from '../components/raw-log';
 import {
   Activity,
@@ -479,6 +480,15 @@ const HybridDetail: React.FC = () => {
           </div>
         )}
       </div>
+
+      <InverterConversionCard
+        id={details.device._id}
+        deviceId={details.device.deviceId}
+        firmwareVersion={details.device.firmwareVersion}
+        convertedFrom={details.device.convertedFrom}
+        conversion={details.device.inverterConversion}
+        onChanged={() => void load()}
+      />
 
       <div className="tabs">
         <button className={`tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>

@@ -713,6 +713,28 @@ export class CmsController {
     return this.hybridConversion.cancel(id);
   }
 
+  // ---- Hybrid -> inverter (ESP32 only, by OTA) ----
+  @Get('inverter-conversion/target')
+  @UseGuards(AdminGuard)
+  inverterConversionTarget() {
+    return this.hybridConversion.inverterTarget();
+  }
+
+  // :id = hybrid device _id. The unit runs as GTIControl<its old number> or
+  // GTIControl<90000 + N> (a hybrid flashed as one).
+  @Post('hybrid-devices/:id/inverter-conversion')
+  @UseGuards(AdminGuard)
+  @HttpCode(HttpStatus.OK)
+  startInverterConversion(@Param('id') id: string, @Request() req: any) {
+    return this.hybridConversion.startToInverter(id, req.user?.username ?? null);
+  }
+
+  @Delete('hybrid-devices/:id/inverter-conversion')
+  @UseGuards(AdminGuard)
+  cancelInverterConversion(@Param('id') id: string) {
+    return this.hybridConversion.cancelToInverter(id);
+  }
+
   @Post('devices/:id/restart')
   @UseGuards(AdminGuard)
   @HttpCode(HttpStatus.OK)

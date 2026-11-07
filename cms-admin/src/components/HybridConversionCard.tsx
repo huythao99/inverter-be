@@ -23,7 +23,10 @@ const HybridConversionCard: React.FC<{
   const [targetError, setTargetError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
-  const hybridId = /^GTIControl(\d+)$/.exec(deviceId)?.[1];
+  const hybridId = /^(?:GTI|Hybrid)Control(\d+)$/.exec(deviceId)?.[1];
+  // An inverter entry named HybridControlN: converted with a hybrid build
+  // older than 1.3.2, rolled back to the inverter firmware before being added.
+  const rolledBack = deviceId.startsWith('HybridControl');
 
   useEffect(() => {
     getHybridConversionTarget()
@@ -32,7 +35,13 @@ const HybridConversionCard: React.FC<{
   }, []);
 
   if (!hybridId) return null;
-  const newId = `HybridControl${hybridId}`;
+  // GTIControl9xxxx = a hybrid flashed as one, made an inverter: back to
+  // HybridControl<N> (4 digits). Same rule as the backend / firmware.
+  const n = parseInt(hybridId, 10);
+  const newId =
+    !rolledBack && n >= 90000 && n < 180000
+      ? `HybridControl${String(n - 90000).padStart(4, '0')}`
+      : `HybridControl${hybridId}`;
 
   const start = async () => {
     if (
@@ -103,6 +112,12 @@ const HybridConversionCard: React.FC<{
         </div>
       </div>
 
+      {rolledBack && (
+        <p className="stm-note error">
+          Máy này đã được chuyển nhưng quay về firmware inverter (khởi động lại trước khi khách thêm máy). Bấm
+          "Chuyển sang hybrid" để gửi lại bản hybrid mới.
+        </p>
+      )}
       {targetError && <p className="stm-note error">{targetError}</p>}
 
       <div className="stm-card-header" style={{ marginTop: 12, marginBottom: 0 }}>

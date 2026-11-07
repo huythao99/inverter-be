@@ -1,4 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import {
+  HybridDevice,
+  HybridDeviceDocument,
+} from '../models/hybrid-device.schema';
 import { OnEvent } from '@nestjs/event-emitter';
 import { MqttService } from './mqtt.service';
 import { BetaFirmwareDeviceService } from './beta-firmware-device.service';
@@ -11,13 +17,28 @@ export class HybridFirmwareService {
   constructor(
     private readonly mqtt: MqttService,
     private readonly beta: BetaFirmwareDeviceService,
+    @Optional()
+    @InjectModel(HybridDevice.name)
+    private readonly devices?: Model<HybridDeviceDocument>,
   ) {}
 
   private channel(deviceId?: string): 'beta' | 'stable' {
     return deviceId && this.beta.isBeta(deviceId) ? 'beta' : 'stable';
   }
 
-  getFirmwareUrl(deviceId: string): { url: string } {
+  async getFirmwareUrl(deviceId: string): Promise<{ url: string }> {
+    // CMS "Chuyển về inverter": this unit gets the inverter build.
+    const row = this.devices
+      ? ((await this.devices
+          .findOne(
+            { deviceId, inverterConversion: { $ne: null } },
+            { inverterConversion: 1 },
+          )
+          .lean()
+          .exec()) as { inverterConversion?: { url: string } | null } | null)
+      : null;
+    if (row?.inverterConversion?.url)
+      return { url: row.inverterConversion.url };
     return { url: activeEspFirmware(this.channel(deviceId), 'hybrid').url };
   }
 
