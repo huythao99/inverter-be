@@ -103,6 +103,8 @@ describe('ids hybrid <-> inverter', () => {
     expect(gtiToHybridId('GTIControl90015')).toBe('HybridControl0015');
     expect(gtiToHybridId('GTIControl91312')).toBe('HybridControl1312');
     expect(gtiToHybridId('GTIControl1312')).toBe('HybridControl1312');
+    // Name wrongly kept by inverter 1.1.4 after a rollback: back to the hybrid.
+    expect(gtiToHybridId('GTIControl0015')).toBe('HybridControl0015');
     for (const id of [
       'HybridControl0015',
       'HybridControl0001',
@@ -122,8 +124,8 @@ describe('ids hybrid <-> inverter', () => {
 describe('Chuyển về inverter', () => {
   beforeEach(() =>
     setActiveEspFirmware('inverter', 'stable', {
-      version: '1.1.4',
-      url: 'https://cdn/inverter-1.1.4.bin',
+      version: '1.1.5',
+      url: 'https://cdn/inverter-1.1.5.bin',
     }),
   );
   afterAll(() => setActiveEspFirmware('inverter', 'stable', null));
@@ -133,10 +135,10 @@ describe('Chuyển về inverter', () => {
     const r = await svc.startToInverter('h1', 'admin');
     expect(r).toMatchObject({
       gtiDeviceId: 'GTIControl90015',
-      version: '1.1.4',
+      version: '1.1.5',
     });
     expect(hybridDocs[0].inverterConversion.url).toBe(
-      'https://cdn/inverter-1.1.4.bin',
+      'https://cdn/inverter-1.1.5.bin',
     );
     expect(published).toHaveLength(1);
     expect(published[0]).toMatchObject({
@@ -162,9 +164,9 @@ describe('Chuyển về inverter', () => {
     );
     s = setup([{ ...native(), firmwareVersion: '1.3.3' }]);
     await expect(s.svc.startToInverter('h1')).rejects.toThrow('1.3.4');
-    setActiveEspFirmware('inverter', 'stable', { version: '1.1.3', url: 'u' });
+    setActiveEspFirmware('inverter', 'stable', { version: '1.1.4', url: 'u' });
     s = setup([native()]);
-    await expect(s.svc.startToInverter('h1')).rejects.toThrow('1.1.4');
+    await expect(s.svc.startToInverter('h1')).rejects.toThrow('1.1.5');
     expect(s.published).toEqual([]);
   });
 
@@ -198,7 +200,7 @@ describe('/api/hybrid-firmware while converting to inverter', () => {
       findOne: (f: any) =>
         q(
           f.deviceId === 'HybridControl0015'
-            ? { inverterConversion: { url: 'https://cdn/inverter-1.1.4.bin' } }
+            ? { inverterConversion: { url: 'https://cdn/inverter-1.1.5.bin' } }
             : null,
         ),
     };
@@ -208,10 +210,10 @@ describe('/api/hybrid-firmware while converting to inverter', () => {
       model as any,
     );
     expect(await svc.getFirmwareUrl('HybridControl0015')).toEqual({
-      url: 'https://cdn/inverter-1.1.4.bin',
+      url: 'https://cdn/inverter-1.1.5.bin',
     });
     expect((await svc.getFirmwareUrl('HybridControl0016')).url).not.toContain(
-      'inverter-1.1.4',
+      'inverter-1.1.5',
     );
   });
 });

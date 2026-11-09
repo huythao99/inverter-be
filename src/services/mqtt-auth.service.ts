@@ -44,6 +44,16 @@ export function isRawLogTopic(topic: string): boolean {
   return typeof topic === 'string' && /^hybrid\/[^/]+\/[^/]+\/raw$/.test(topic);
 }
 
+/**
+ * HYBRID_EXCLUSIVE_OWNER=1: one owner per hybrid id (adding a unit moves it
+ * away from any other account, one broker account hyb_<id>). Off (default,
+ * TEMPORARY while duplicate ids from the flashing counter are around): the
+ * same id may live in several accounts, each with its own broker account.
+ */
+export function hybridExclusiveOwner(): boolean {
+  return process.env.HYBRID_EXCLUSIVE_OWNER === '1';
+}
+
 export function legacyTopicAllowed(topic: string): boolean {
   return typeof topic === 'string' && LEGACY_TOPIC.test(topic);
 }
@@ -225,7 +235,14 @@ export class MqttAuthService implements OnModuleInit {
   }
 
   /** Broker username of a hybrid's own account. */
-  static hybridUsername(deviceId: string): string {
+  static hybridUsername(deviceId: string, userId?: string): string {
+    if (userId && !hybridExclusiveOwner()) {
+      // Shared ids (HYBRID_EXCLUSIVE_OWNER off): one account per owner, so
+      // two units carrying the same id (duplicate numbering) don't take each
+      // other's account. Short stable hash of the uid (account name <= 63).
+      const h = crypto.createHash('sha256').update(userId).digest('hex');
+      return `hyb_${deviceId}_${h.slice(0, 8)}`;
+    }
     return `hyb_${deviceId}`;
   }
 
@@ -234,12 +251,17 @@ export class MqttAuthService implements OnModuleInit {
     userId: string,
     deviceId: string,
   ): Promise<{ username: string; password: string }> {
-    return this.issueDeviceCredentials(
-      'hybrid',
-      MqttAuthService.hybridUsername(deviceId),
-      userId,
-      deviceId,
-    );
+    const username = MqttAuthService.hybridUsername(deviceId, userId);
+    // This owner's account under another name (older scheme): replaced.
+    await this.mqttCredentialModel
+      .deleteMany({
+        kind: 'hybrid',
+        deviceId,
+        userId,
+        mqttUsername: { $ne: username },
+      })
+      .exec();
+    return this.issueDeviceCredentials('hybrid', username, userId, deviceId);
   }
 
   /**
@@ -269,12 +291,10 @@ export class MqttAuthService implements OnModuleInit {
     deviceId: string,
     userId?: string,
   ): Promise<void> {
-    const filter: Record<string, string> = {
-      mqttUsername: MqttAuthService.hybridUsername(deviceId),
-      kind: 'hybrid',
-    };
+    // Every account of this device (both name schemes), of one owner if given.
+    const filter: Record<string, string> = { kind: 'hybrid', deviceId };
     if (userId) filter.userId = userId;
-    const res = await this.mqttCredentialModel.deleteOne(filter).exec();
+    const res = await this.mqttCredentialModel.deleteMany(filter).exec();
     if (res.deletedCount) {
       this.logger.log(`Revoked MQTT account of hybrid ${deviceId}`);
     }

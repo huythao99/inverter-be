@@ -82,8 +82,8 @@ function setup(opts: { fw?: any; hybridExists?: boolean } = {}) {
     'fw' in opts
       ? opts.fw
       : {
-          version: '1.3.2',
-          url: 'https://cdn/hybrid-1.3.2.bin',
+          version: '1.3.5',
+          url: 'https://cdn/hybrid-1.3.5.bin',
           size: 1_142_500,
         };
   const firmwares = { findOne: () => q(fw) };
@@ -126,14 +126,14 @@ describe('inverter -> hybrid conversion', () => {
     expect(r).toMatchObject({
       deviceId: 'GTIControl1230',
       hybridDeviceId: 'HybridControl1230',
-      version: '1.3.2',
+      version: '1.3.5',
       by: 'admin',
     });
     expect(inverterDocs[0].hybridConversion?.url).toBe(
-      'https://cdn/hybrid-1.3.2.bin',
+      'https://cdn/hybrid-1.3.5.bin',
     );
     expect(inverterDocs[1].hybridConversion?.url).toBe(
-      'https://cdn/hybrid-1.3.2.bin',
+      'https://cdn/hybrid-1.3.5.bin',
     );
     expect(inverterDocs[2].hybridConversion).toBeNull();
     expect(published).toHaveLength(1);
@@ -150,7 +150,7 @@ describe('inverter -> hybrid conversion', () => {
   it('refused: no stable hybrid build, too old, or too big for the inverter slot', async () => {
     for (const fw of [
       null,
-      { version: '1.3.1', url: 'u', size: 1000 }, // rolled back before being added
+      { version: '1.3.4', url: 'u', size: 1000 }, // rolled back before being added
       { version: '1.4.0', url: 'u', size: HYBRID_CONVERT_MAX_BYTES + 1 },
     ]) {
       const { svc, published, inverterDocs } = setup({ fw });
@@ -201,7 +201,7 @@ describe('inverter -> hybrid conversion', () => {
     const r = await svc.start('i4');
     expect(r.hybridDeviceId).toBe('HybridControl77');
     expect(inverterDocs[3].hybridConversion?.url).toBe(
-      'https://cdn/hybrid-1.3.2.bin',
+      'https://cdn/hybrid-1.3.5.bin',
     );
     expect(published[0].t).toBe('inverter/u1/HybridControl77/firmware/update');
   });
@@ -225,7 +225,7 @@ describe('GET /api/firmware while converting', () => {
             ? {
                 hybridConversion: {
                   url: 'https://cdn/hyb.bin',
-                  version: '1.3.2',
+                  version: '1.3.5',
                 },
               }
             : null,

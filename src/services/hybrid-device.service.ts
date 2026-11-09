@@ -16,7 +16,7 @@ import {
   ChargerClaim,
   ChargerClaimDocument,
 } from '../models/charger-claim.schema';
-import { MqttAuthService } from './mqtt-auth.service';
+import { MqttAuthService, hybridExclusiveOwner } from './mqtt-auth.service';
 
 // Same as the charger: time to join the device AP, enter the home WiFi and
 // let the device reach the Internet. Single use (per device) anyway.
@@ -147,11 +147,23 @@ export class HybridDeviceService {
     }
     const userId = doc.userId;
 
-    const moved = await this.deviceModel
-      .deleteMany({ deviceId, userId: { $ne: userId } })
-      .exec();
-    if (moved.deletedCount) {
-      this.logger.log(`Hybrid ${deviceId} moved to user ${userId}`);
+    if (hybridExclusiveOwner()) {
+      const moved = await this.deviceModel
+        .deleteMany({ deviceId, userId: { $ne: userId } })
+        .exec();
+      if (moved.deletedCount) {
+        this.logger.log(`Hybrid ${deviceId} moved to user ${userId}`);
+      }
+    } else if (
+      await this.deviceModel
+        .exists({ deviceId, userId: { $ne: userId } })
+        .exec()
+    ) {
+      // Same id in another account: kept there (shared ids, see
+      // hybridExclusiveOwner). A duplicate number or a resold unit.
+      this.logger.warn(
+        `Hybrid ${deviceId} added by ${userId} while another account has it (kept both)`,
+      );
     }
     await this.deviceModel
       .findOneAndUpdate(

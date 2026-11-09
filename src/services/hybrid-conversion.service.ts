@@ -66,8 +66,11 @@ export function hybridToGtiId(
   return `GTIControl${HYBRID_AS_GTI_OFFSET + n}`;
 }
 
-/** Inverter firmware that renames itself + does not roll back unconfigured. */
-export const INVERTER_CONVERT_MIN_VERSION = '1.1.4';
+/**
+ * Inverter firmware that renames itself right (1.1.4 turned HybridControl0015
+ * into GTIControl0015 after a rollback) and does not roll back unconfigured.
+ */
+export const INVERTER_CONVERT_MIN_VERSION = '1.1.5';
 /** Hybrid firmware that understands cmd/action CONVERT. */
 export const HYBRID_CONVERT_CMD_MIN_VERSION = '1.3.4';
 
@@ -80,9 +83,11 @@ export const HYBRID_CONVERT_MAX_BYTES = 0x140000;
  * First hybrid firmware that runs on an inverter board: keeps its secrets in
  * NVS when there is no devsec partition and renames GTIControl -> Hybrid.
  */
-// 1.3.2: also confirms the OTA image without an MQTT account (1.3.1 rolled
-// back to the inverter firmware on any reboot before the owner added it).
-export const HYBRID_CONVERT_MIN_VERSION = '1.3.2';
+// 1.3.5: confirms the OTA image without an MQTT account, or with one the
+// broker refuses (a unit made an inverter and back: its hybrid account was
+// revoked), and keeps the inverter name for a rollback. Older builds rolled
+// back to the inverter firmware on the next reboot.
+export const HYBRID_CONVERT_MIN_VERSION = '1.3.5';
 
 /**
  * An inverter entry named HybridControlN: a converted device that rolled back
