@@ -221,8 +221,12 @@ export class UserHybridController {
       cfgAt: d?.cfgAt ?? null,
       src: cfg?.SRC ?? d?.tlm?.SRC ?? null,
       pending: hybridPendingKeys(shown, cfg),
+      // When the open change was saved (app: "đã lưu lúc …, chờ máy").
+      requestAt: open?.at ?? null,
       lastNak: d?.lastNak ?? null,
       status: d?.status ?? 'offline',
+      // STM32 firmware ($INFO FW): app greys out modes it can't run.
+      fw: d?.info?.FW ?? null,
     };
   }
 
