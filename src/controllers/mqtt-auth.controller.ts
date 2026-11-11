@@ -7,7 +7,6 @@ import {
   HttpCode,
   HttpStatus,
   HttpException,
-  GoneException,
   Logger,
   UseGuards,
 } from '@nestjs/common';
@@ -29,19 +28,6 @@ export class MqttAuthController {
   private readonly logger = new Logger(MqttAuthController.name);
 
   constructor(private readonly mqttAuthService: MqttAuthService) {}
-
-  // These two routes had no authentication (anyone could read or reset a
-  // user's Home Assistant password from a uid). Replaced by the signed-in
-  // api/user/hass endpoints.
-  @Get('config/:userId')
-  getConfig() {
-    throw new GoneException('Use /api/user/hass');
-  }
-
-  @Post('regenerate/:userId')
-  regeneratePassword() {
-    throw new GoneException('Use /api/user/hass');
-  }
 
   /**
    * Validate MQTT credentials (called by Mosquitto auth plugin)

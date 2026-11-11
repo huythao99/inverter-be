@@ -2,7 +2,6 @@ import {
   Controller,
   Get,
   Query,
-  Body,
   HttpStatus,
   HttpException,
 } from '@nestjs/common';
@@ -21,28 +20,5 @@ export class ChargerFirmwareController {
       throw new HttpException('deviceId is required', HttpStatus.BAD_REQUEST);
     }
     return this.chargerFirmwareService.getFirmwareUrl(deviceId);
-  }
-
-  // deviceId optional: chargers on the beta list get the beta version.
-  @Get('newest')
-  getNewestFirmwareVersion(@Query('deviceId') deviceId?: string) {
-    return this.chargerFirmwareService.getNewestFirmwareVersion(deviceId);
-  }
-
-  @Get('version')
-  getDeviceFirmwareVersion(
-    @Query('userId') userId: string,
-    @Query('deviceId') deviceId: string,
-  ) {
-    if (!userId || !deviceId) {
-      throw new HttpException(
-        'userId and deviceId are required',
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-    return this.chargerFirmwareService.getDeviceFirmwareVersion(
-      userId,
-      deviceId,
-    );
   }
 }

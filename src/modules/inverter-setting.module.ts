@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { InverterSettingController } from '../controllers/inverter-setting.controller';
-import { ShareController } from '../controllers/share.controller';
 import { InverterSettingService } from '../services/inverter-setting.service';
 import {
   InverterSetting,
@@ -27,7 +26,7 @@ import {
     ]),
     InverterDataModule,
   ],
-  controllers: [InverterSettingController, ShareController],
+  controllers: [InverterSettingController],
   providers: [
     InverterSettingService,
     RedisConfig,

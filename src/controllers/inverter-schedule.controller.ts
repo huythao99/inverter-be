@@ -1,19 +1,8 @@
-import {
-  Controller,
-  Get,
-  Body,
-  Patch,
-  Param,
-  Query,
-  Req,
-} from '@nestjs/common';
-import type { Request } from 'express';
-import { auditCtx } from '../utils/audit-context';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { InverterScheduleService } from '../services/inverter-schedule.service';
 import { GridTieService } from '../services/grid-tie.service';
 import { ShareService } from '../services/share.service';
 
-import { UpdateInverterScheduleValueDto } from '../dto/update-inverter-schedule-value.dto';
 import {
   GRID_TIE_OFF_VALUE,
   BLACKLIST_OFF_VALUE,
@@ -105,26 +94,5 @@ export class InverterScheduleController {
       }
       throw error;
     }
-  }
-
-  @Patch('data/:userId/:deviceId/schedule')
-  updateScheduleByUserIdAndDeviceId(
-    @Param('userId') userId: string,
-    @Param('deviceId') deviceId: string,
-    @Body() updateScheduleDto: UpdateInverterScheduleValueDto,
-    @Req() req: Request,
-  ) {
-    const schedule = this.blacklistDeviceService.isBlacklisted(deviceId, userId)
-      ? updateScheduleDto.schedule.replace(
-          /value=[^&#]*/g,
-          `value=${BLACKLIST_OFF_VALUE}`,
-        )
-      : updateScheduleDto.schedule;
-    return this.inverterScheduleService.updateScheduleByUserIdAndDeviceId(
-      userId,
-      deviceId,
-      schedule,
-      auditCtx(req, { actor: userId }),
-    );
   }
 }

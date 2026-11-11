@@ -1,24 +1,8 @@
-import {
-  Controller,
-  Get,
-  Body,
-  Patch,
-  Param,
-  Query,
-  UseInterceptors,
-  Req,
-} from '@nestjs/common';
-import type { Request } from 'express';
-import { auditCtx } from '../utils/audit-context';
+import { Controller, Get, Param, Query, UseInterceptors } from '@nestjs/common';
 import { CacheTTL } from '@nestjs/cache-manager';
 import { ChargerSettingService } from '../services/charger-setting.service';
-import { UpdateChargerSettingValueDto } from '../dto/update-charger-setting-value.dto';
-import { UpdateChargerSettingDto } from '../dto/update-charger-setting.dto';
 import { SettingCacheInterceptor } from '../interceptors/setting-cache.interceptor';
-import {
-  decodeChargerValue,
-  encodeChargerValue,
-} from '../utils/charger-value.util';
+import { decodeChargerValue } from '../utils/charger-value.util';
 
 @Controller('api/charger-setting')
 export class ChargerSettingController {
@@ -54,44 +38,5 @@ export class ChargerSettingController {
     // App/web gets the decoded values too.
     const decoded = decodeChargerValue(result.value);
     return { ...result, ...(decoded ?? {}) };
-  }
-
-  // App/web: update using raw 8-digit value.
-  @Patch('data/:userId/:deviceId/value')
-  updateValueByUserIdAndDeviceId(
-    @Param('userId') userId: string,
-    @Param('deviceId') deviceId: string,
-    @Body() dto: UpdateChargerSettingValueDto,
-    @Req() req: Request,
-  ) {
-    return this.chargerSettingService.updateValueByUserIdAndDeviceId(
-      userId,
-      deviceId,
-      dto.value,
-      auditCtx(req, { actor: userId }),
-    );
-  }
-
-  // App/web: update using human-friendly VBAT (V) / IBAT (A).
-  @Patch('data/:userId/:deviceId')
-  async updateByUserIdAndDeviceId(
-    @Param('userId') userId: string,
-    @Param('deviceId') deviceId: string,
-    @Body() dto: UpdateChargerSettingDto,
-    @Req() req: Request,
-  ) {
-    const value = encodeChargerValue(dto.vbat, dto.ibat);
-    const result =
-      await this.chargerSettingService.updateValueByUserIdAndDeviceId(
-        userId,
-        deviceId,
-        value,
-        auditCtx(req, { actor: userId }),
-      );
-    return {
-      ...(result ?? { userId, deviceId, value }),
-      vbat: dto.vbat,
-      ibat: dto.ibat,
-    };
   }
 }

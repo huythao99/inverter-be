@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { InverterDataController } from '../controllers/inverter-data.controller';
 import { InverterDataService } from '../services/inverter-data.service';
 import {
   InverterData,
@@ -20,7 +19,6 @@ import { DailyTotalsModule } from './daily-totals.module';
     ]),
     DailyTotalsModule,
   ],
-  controllers: [InverterDataController],
   providers: [InverterDataService],
   exports: [InverterDataService],
 })
