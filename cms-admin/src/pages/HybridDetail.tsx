@@ -11,7 +11,8 @@ import {
   type CmsHybridDetails,
 } from '../services/api';
 import RawLogPanel from '../components/RawLogPanel';
-import InverterConversionCard from '../components/InverterConversionCard';
+import StmFirmwareCard from '../components/StmFirmwareCard';
+import type { StmOtaLive } from '../components/StmFirmwareCard';
 import { parseRawLog, type RawLogLine } from '../components/raw-log';
 import {
   Activity,
@@ -129,6 +130,7 @@ const HybridDetail: React.FC = () => {
   );
   const [isUpdatingFirmware, setIsUpdatingFirmware] = useState(false);
   const [otaStatus, setOtaStatus] = useState<OtaStatus | null>(null);
+  const [stmOta, setStmOta] = useState<StmOtaLive | null>(null);
   // Set when the CMS sent the trigger: the panel stays visible from the click
   // until success / failure, and warns when the device never answers.
   const [otaSentAt, setOtaSentAt] = useState<number | null>(null);
@@ -238,6 +240,7 @@ const HybridDetail: React.FC = () => {
     const otaTopic = `hybrid/${userId}/${deviceId}/ota/status`;
     const rawTopic = `hybrid/${userId}/${deviceId}/raw`;
     const statusTopic = `hybrid/${userId}/${deviceId}/status`;
+    const stmOtaTopic = `hybrid/${userId}/${deviceId}/stm/ota/status`;
 
     client.on('connect', () => {
       setIsConnected(true);
@@ -245,6 +248,7 @@ const HybridDetail: React.FC = () => {
       client.subscribe(otaTopic, { qos: 1 });
       client.subscribe(rawTopic, { qos: 0 });
       client.subscribe(statusTopic, { qos: 0 });
+      client.subscribe(stmOtaTopic, { qos: 1 });
       pushLog({ dir: 'SYS', tag: 'MQTT', text: `subscribed ${dataTopic}, ${rawTopic}` });
     });
     client.on('disconnect', () => setIsConnected(false));
@@ -252,6 +256,27 @@ const HybridDetail: React.FC = () => {
     client.on('error', () => setIsConnected(false));
     client.on('message', (topic, message) => {
       const raw = stripControl(message.toString());
+      // STM32 FOTA (same '/ota/status' suffix as the ESP32 OTA: check first)
+      if (topic === stmOtaTopic) {
+        try {
+          const p = JSON.parse(raw);
+          if (typeof p.status === 'string') {
+            setStmOta({
+              status: p.status,
+              progress: typeof p.progress === 'number' ? p.progress : undefined,
+              message: typeof p.message === 'string' ? p.message : undefined,
+            });
+            pushLog({
+              dir: 'SYS',
+              tag: 'STM OTA',
+              text: `${p.status}${typeof p.progress === 'number' && p.progress >= 0 ? ` ${p.progress}%` : ''}${p.message ? ` - ${p.message}` : ''}`,
+            });
+          }
+        } catch {
+          // ignore
+        }
+        return;
+      }
       if (topic.endsWith('/ota/status')) {
         try {
           const p = JSON.parse(raw);
@@ -292,6 +317,7 @@ const HybridDetail: React.FC = () => {
       client.unsubscribe(otaTopic);
       client.unsubscribe(rawTopic);
       client.unsubscribe(statusTopic);
+      client.unsubscribe(stmOtaTopic);
       client.end();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -481,14 +507,7 @@ const HybridDetail: React.FC = () => {
         )}
       </div>
 
-      <InverterConversionCard
-        id={details.device._id}
-        deviceId={details.device.deviceId}
-        firmwareVersion={details.device.firmwareVersion}
-        convertedFrom={details.device.convertedFrom}
-        conversion={details.device.inverterConversion}
-        onChanged={() => void load()}
-      />
+      <StmFirmwareCard deviceId={details.device._id} live={stmOta} kind="hybrid" />
 
       <div className="tabs">
         <button className={`tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>

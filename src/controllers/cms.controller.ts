@@ -26,7 +26,6 @@ import {
 import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import { AdminGuard } from '../auth/guards/admin.guard';
 import { CmsService } from '../services/cms.service';
-import { HybridConversionService } from '../services/hybrid-conversion.service';
 import { BlacklistDeviceService } from '../services/blacklist-device.service';
 import { BetaFirmwareDeviceService } from '../services/beta-firmware-device.service';
 import { DeviceRestartService } from '../services/device-restart.service';
@@ -105,7 +104,6 @@ export class CmsController {
     private readonly gridTieService: GridTieService,
     private readonly mqttService: MqttService,
     private readonly shareService: ShareService,
-    private readonly hybridConversion: HybridConversionService,
   ) {}
 
   // ==================== Authentication ====================
@@ -690,49 +688,26 @@ export class CmsController {
     };
   }
 
-  // ---- Inverter -> hybrid (ESP32 only, by OTA) ----
-  // The hybrid build that would be sent (or why none can be).
-  @Get('hybrid-conversion/target')
+  // ---- Hybrid STM32 power board (same flow as the inverter card) ----
+  @Get('hybrid-devices/:id/stm')
   @UseGuards(AdminGuard)
-  hybridConversionTarget() {
-    return this.hybridConversion.target();
+  getHybridStm(@Param('id') id: string) {
+    return this.stmFirmwareService.describeById(id, 'hybrid');
   }
 
-  // Start / re-send: the device gets the hybrid firmware, renames itself
-  // GTIControlN -> HybridControlN; the owner then adds it again in the app.
-  @Post('devices/:id/hybrid-conversion')
+  @Post('hybrid-devices/:id/stm-update')
   @UseGuards(AdminGuard)
   @HttpCode(HttpStatus.OK)
-  startHybridConversion(@Param('id') id: string, @Request() req: any) {
-    return this.hybridConversion.start(id, req.user?.username ?? null);
-  }
-
-  @Delete('devices/:id/hybrid-conversion')
-  @UseGuards(AdminGuard)
-  cancelHybridConversion(@Param('id') id: string) {
-    return this.hybridConversion.cancel(id);
-  }
-
-  // ---- Hybrid -> inverter (ESP32 only, by OTA) ----
-  @Get('inverter-conversion/target')
-  @UseGuards(AdminGuard)
-  inverterConversionTarget() {
-    return this.hybridConversion.inverterTarget();
-  }
-
-  // :id = hybrid device _id. The unit runs as GTIControl<its old number> or
-  // GTIControl<90000 + N> (a hybrid flashed as one).
-  @Post('hybrid-devices/:id/inverter-conversion')
-  @UseGuards(AdminGuard)
-  @HttpCode(HttpStatus.OK)
-  startInverterConversion(@Param('id') id: string, @Request() req: any) {
-    return this.hybridConversion.startToInverter(id, req.user?.username ?? null);
-  }
-
-  @Delete('hybrid-devices/:id/inverter-conversion')
-  @UseGuards(AdminGuard)
-  cancelInverterConversion(@Param('id') id: string) {
-    return this.hybridConversion.cancelToInverter(id);
+  async triggerHybridStmUpdate(
+    @Param('id') id: string,
+    @Body() dto: StmUpdateDto,
+  ) {
+    const d = await this.stmFirmwareService.describeById(id, 'hybrid');
+    return this.stmFirmwareService.trigger(d.userId, d.deviceId, {
+      kind: 'hybrid',
+      force: dto.force,
+      source: 'cms',
+    });
   }
 
   @Post('devices/:id/restart')

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { CircuitBoard, Download, Loader2, RefreshCw } from 'lucide-react';
-import { getDeviceStm, triggerStmUpdate } from '../services/api';
+import { getDeviceStm, getHybridStm, triggerHybridStmUpdate, triggerStmUpdate } from '../services/api';
 import type { DeviceStmInfo } from '../services/api';
 
 export interface StmOtaLive {
@@ -27,11 +27,13 @@ const REASON_TEXT: Record<string, string> = {
   no_firmware: 'No STM32 image registered for this chip / voltage',
 };
 
-/** STM32 power-board firmware of one inverter (CMS device detail). */
-const StmFirmwareCard: React.FC<{ deviceId: string; live: StmOtaLive | null }> = ({
-  deviceId,
-  live,
-}) => {
+/** STM32 power-board firmware of one inverter / hybrid (CMS device detail). */
+const StmFirmwareCard: React.FC<{
+  deviceId: string;
+  live: StmOtaLive | null;
+  kind?: 'inverter' | 'hybrid';
+}> = ({ deviceId, live, kind = 'inverter' }) => {
+  const hybrid = kind === 'hybrid';
   const [info, setInfo] = useState<DeviceStmInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
@@ -41,14 +43,14 @@ const StmFirmwareCard: React.FC<{ deviceId: string; live: StmOtaLive | null }> =
   const load = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await getDeviceStm(deviceId);
+      const res = await (hybrid ? getHybridStm : getDeviceStm)(deviceId);
       setInfo(res.data);
     } catch (err) {
       console.error('Failed to load STM32 info', err);
     } finally {
       setIsLoading(false);
     }
-  }, [deviceId]);
+  }, [deviceId, hybrid]);
 
   useEffect(() => {
     load();
@@ -64,15 +66,17 @@ const StmFirmwareCard: React.FC<{ deviceId: string; live: StmOtaLive | null }> =
   const handleUpdate = async () => {
     if (!info?.target) return;
     const ok = window.confirm(
-      `Flash STM32 v${info.target.version} (${info.target.chip} ${info.target.voltage}) on this device?\n\n` +
-        'The inverter stops producing power for ~40 s while the STM32 is flashed. ' +
+      `${force ? 'Force re-flash' : 'Flash'} STM32 v${info.target.version} (${info.target.chip} ${info.target.voltage}) on this device?\n\n` +
+        (hybrid
+          ? 'The hybrid stops (inverter + charger) for ~1 min while the STM32 is flashed. '
+          : 'The inverter stops producing power for ~40 s while the STM32 is flashed. ') +
         'Prefer a time with low output (night).',
     );
     if (!ok) return;
     setIsSending(true);
     setNotice(null);
     try {
-      const res = await triggerStmUpdate(deviceId, force);
+      const res = await (hybrid ? triggerHybridStmUpdate : triggerStmUpdate)(deviceId, force);
       setNotice({ ok: true, text: `Update to ${res.data.targetVersion} sent.` });
       load();
     } catch (err) {
@@ -148,7 +152,11 @@ const StmFirmwareCard: React.FC<{ deviceId: string; live: StmOtaLive | null }> =
                 disabled={isSending || (!info.updateAvailable && !force)}
               >
                 {isSending ? <Loader2 size={16} className="spin" /> : <Download size={16} />}
-                {info.updateAvailable ? `Update to ${info.target.version}` : 'Up to date'}
+                {info.updateAvailable
+                  ? `Update to ${info.target.version}`
+                  : force
+                    ? `Re-flash ${info.target.version}`
+                    : 'Up to date'}
               </button>
             </div>
           )}

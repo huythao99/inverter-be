@@ -320,41 +320,6 @@ export const setStmProtocol = (id: string, mode: StmProtocolSetting) =>
 
 // Grid-tie ("hoà lưới") of one device. PUT always re-publishes the retained
 // cmd/grid-tie (clears a stale OFF on the device).
-// ---- Inverter -> hybrid (ESP32 firmware only, by OTA) ----
-export interface HybridConversion {
-  hybridDeviceId: string;
-  version: string;
-  url: string;
-  requestedAt: string;
-  by?: string | null;
-}
-
-export const getHybridConversionTarget = () =>
-  api.get<{ version: string; url: string; size: number }>('/hybrid-conversion/target');
-
-export const startHybridConversion = (id: string) =>
-  api.post<HybridConversion & { deviceId: string }>(`/devices/${id}/hybrid-conversion`);
-
-export const cancelHybridConversion = (id: string) => api.delete(`/devices/${id}/hybrid-conversion`);
-
-// ---- Hybrid -> inverter (ESP32 firmware only, by OTA) ----
-export interface InverterConversion {
-  gtiDeviceId: string;
-  version: string;
-  url: string;
-  requestedAt: string;
-  by?: string | null;
-}
-
-export const getInverterConversionTarget = () =>
-  api.get<{ version: string; url: string }>('/inverter-conversion/target');
-
-export const startInverterConversion = (id: string) =>
-  api.post<InverterConversion & { deviceId: string }>(`/hybrid-devices/${id}/inverter-conversion`);
-
-export const cancelInverterConversion = (id: string) =>
-  api.delete(`/hybrid-devices/${id}/inverter-conversion`);
-
 export const getGridTie = (id: string) => api.get<{ off: boolean }>(`/devices/${id}/grid-tie`);
 
 export const setGridTie = (id: string, off: boolean) =>
@@ -415,6 +380,14 @@ export const getRunSource = (id: string) => api.get<RunSourceInfo>(`/devices/${i
 export const triggerStmUpdate = (id: string, force = false) =>
   api.post<{ success: boolean; targetVersion: string; crc32: string }>(
     `/devices/${id}/stm-update`,
+    { force },
+  );
+
+// Hybrid STM32 (id = hybrid device _id).
+export const getHybridStm = (id: string) => api.get<DeviceStmInfo>(`/hybrid-devices/${id}/stm`);
+export const triggerHybridStmUpdate = (id: string, force = false) =>
+  api.post<{ success: boolean; targetVersion: string; crc32: string }>(
+    `/hybrid-devices/${id}/stm-update`,
     { force },
   );
 
@@ -605,8 +578,6 @@ export interface CmsHybrid {
   firmwareVersion: string;
   updatedAt: string;
   summary: HybridSummary;
-  convertedFrom?: string | null;
-  inverterConversion?: InverterConversion | null;
 }
 
 export interface CmsHybridDashboard {
