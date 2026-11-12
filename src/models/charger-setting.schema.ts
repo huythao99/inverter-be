@@ -3,7 +3,7 @@ import { Document, Types } from 'mongoose';
 
 export type ChargerSettingDocument = ChargerSetting & Document;
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'chargersettings' })
 export class ChargerSetting {
   _id: Types.ObjectId;
 

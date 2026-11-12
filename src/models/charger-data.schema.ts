@@ -11,7 +11,7 @@ export type ChargerDataDocument = ChargerData & Document;
  * Every telemetry field is stored as a string exactly as sent by the device
  * (the firmware sends numbers as strings; NAN is possible). Clients parse.
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'chargerdatas' })
 export class ChargerData {
   _id: Types.ObjectId;
 

@@ -3,7 +3,7 @@ import { Document, Types } from 'mongoose';
 
 export type TrackLogErrorDocument = TrackLogError & Document;
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'tracklogerrors' })
 export class TrackLogError {
   _id: Types.ObjectId;
 

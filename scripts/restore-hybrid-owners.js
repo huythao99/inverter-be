@@ -125,8 +125,6 @@ async function main() {
         deviceName: p.deviceId,
         firmwareVersion: '1.0.0',
         description: '',
-        convertedFrom: null,
-        inverterConversion: null,
         createdAt: now,
         updatedAt: now,
       })),

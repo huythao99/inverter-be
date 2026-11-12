@@ -3,7 +3,7 @@ import { Document, Types } from 'mongoose';
 
 export type InverterScheduleDocument = InverterSchedule & Document;
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'inverterschedules' })
 export class InverterSchedule {
   _id: Types.ObjectId;
 

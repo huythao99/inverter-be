@@ -3,7 +3,7 @@ import { Document, Types } from 'mongoose';
 
 export type BlacklistDeviceDocument = BlacklistDevice & Document;
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'blacklistdevices' })
 export class BlacklistDevice {
   _id: Types.ObjectId;
 

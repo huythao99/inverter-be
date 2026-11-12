@@ -1,31 +1,12 @@
-import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import { Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Document } from 'mongoose';
+import { DeviceBase } from './device-base.schema';
 
 export type ChargerDeviceDocument = ChargerDevice & Document;
 
-@Schema({ timestamps: true })
-export class ChargerDevice {
-  _id: Types.ObjectId;
-
-  @Prop({ required: true })
-  userId: string;
-
-  // SSID AP of the device, e.g. "ChargerControl1369"
-  @Prop({ required: true })
-  deviceId: string;
-
-  @Prop({ required: true })
-  deviceName: string;
-
-  @Prop({ type: String, default: '1.0.0' })
-  firmwareVersion: string;
-
-  @Prop({ type: String, default: '' })
-  description: string;
-
-  @Prop({ default: Date.now })
-  updatedAt: Date;
-}
+/** MPPT charger (ChargerControl<N>). Fields: device-base.schema.ts. */
+@Schema({ timestamps: true, collection: 'chargerdevices' })
+export class ChargerDevice extends DeviceBase {}
 
 export const ChargerDeviceSchema = SchemaFactory.createForClass(ChargerDevice);
 

@@ -30,7 +30,7 @@ export interface HybridAdvResult {
  * KEY -> VALUE maps (strings, exactly as the STM32 sent them), the last
  * $NAK and the status heartbeat.
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'hybriddatas' })
 export class HybridData {
   @Prop({ required: true })
   userId: string;

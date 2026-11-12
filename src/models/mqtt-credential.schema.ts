@@ -3,7 +3,7 @@ import { Document, Types } from 'mongoose';
 
 export type MqttCredentialDocument = MqttCredential & Document;
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'mqttcredentials' })
 export class MqttCredential {
   _id: Types.ObjectId;
 

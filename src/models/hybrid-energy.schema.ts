@@ -4,7 +4,7 @@ import { Document } from 'mongoose';
 export type HybridEnergyDocument = HybridEnergy & Document;
 
 /** Daily energy of a hybrid (Wh, Vietnam calendar day), from $TLM counters. */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'hybridenergies' })
 export class HybridEnergy {
   @Prop({ required: true })
   userId: string;

@@ -20,7 +20,7 @@ export const ShareMemberSchema = SchemaFactory.createForClass(ShareMember);
  * pool        = Σ over ON members of (_p[idx2] + _energy[idx4]) of latest telemetry
  * computed_i  = round(pool × ratio_i / Σ ratios)   // grid-tie OFF members excluded
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'sharegroups' })
 export class ShareGroup {
   _id: Types.ObjectId;
 

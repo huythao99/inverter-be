@@ -6,7 +6,7 @@ export type BetaFirmwareDeviceDocument = BetaFirmwareDevice & Document;
 // Devices allowed to download the beta firmware build. An entry may target a
 // specific userId+deviceId pair, or (when userId is empty) the deviceId for
 // every user.
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'betafirmwaredevices' })
 export class BetaFirmwareDevice {
   _id: Types.ObjectId;
 

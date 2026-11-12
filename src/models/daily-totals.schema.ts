@@ -3,7 +3,7 @@ import { Document, Types } from 'mongoose';
 
 export type DailyTotalsDocument = DailyTotals & Document;
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'dailytotals' })
 export class DailyTotals {
   _id: Types.ObjectId;
 

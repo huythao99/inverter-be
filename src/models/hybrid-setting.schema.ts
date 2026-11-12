@@ -18,7 +18,7 @@ export interface HybridSetRequest {
  * stored; the firmware $SETs the ones that differ from the machine's $CFG
  * and re-applies them after an STM32 reboot (SET is RAM-only there).
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'hybridsettings' })
 export class HybridSetting {
   _id: Types.ObjectId;
 

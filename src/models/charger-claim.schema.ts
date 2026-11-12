@@ -11,7 +11,7 @@ export type ChargerClaimDocument = ChargerClaim & Document;
  * own MQTT account (POST /api/charger-device/provision). The owner comes from
  * the code, never from what the device says.
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'chargerclaims' })
 export class ChargerClaim {
   // SHA-256 of the code: a DB leak does not reveal usable codes.
   @Prop({ required: true, unique: true })

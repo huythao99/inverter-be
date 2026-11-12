@@ -5,7 +5,7 @@ export type AdminDocument = Admin & Document;
 
 export type AdminRole = 'super_admin' | 'admin';
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'admins' })
 export class Admin {
   _id: Types.ObjectId;
 
