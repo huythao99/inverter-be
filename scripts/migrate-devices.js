@@ -26,6 +26,7 @@ const { MongoClient } = require('mongodb');
 
 const APPLY = process.argv.includes('--apply');
 const ROLLBACK = process.argv.includes('--rollback');
+const PRUNE = process.argv.includes('--prune');
 const SOURCES = { inverterdevices: 'inverter', chargerdevices: 'charger', hybriddevices: 'hybrid' };
 const PREFIX = { inverter: /^GTIControl/, charger: /^ChargerControl/, hybrid: /^HybridControl/ };
 const DEAD = ['hybridConversion', 'convertedFrom', 'inverterConversion'];
@@ -78,6 +79,7 @@ async function apply(db) {
   // Index trước: lỗi trùng hiện ra ngay khi chép, không phải lúc backend khởi động.
   await target.createIndex({ userId: 1, deviceId: 1 }, { unique: true });
   await target.createIndex({ deviceId: 1 });
+  const dupTotal = {};
   for (const [coll, kind] of Object.entries(SOURCES)) {
     const docs = await db.collection(coll).find({}).toArray();
     if (docs.length === 0) continue;
@@ -86,15 +88,31 @@ async function apply(db) {
       for (const f of DEAD) delete doc[f];
       return { updateOne: { filter: { _id: d._id }, update: { $setOnInsert: doc }, upsert: true } };
     });
-    const r = await target.bulkWrite(ops, { ordered: false });
-    console.log(`  ${coll} -> ${TARGET}: ${r.upsertedCount} thêm mới, ${docs.length - r.upsertedCount} đã có`);
+    let added = 0;
+    const dup = [];
+    try {
+      added = (await target.bulkWrite(ops, { ordered: false })).upsertedCount;
+    } catch (e) {
+      // Backend mới chạy trước khi migrate -> người dùng có thể đã thêm lại thiết bị
+      // (cùng userId+deviceId, _id khác). Giữ bản mới trong devices, báo ra, chép tiếp phần còn lại.
+      if (!e.writeErrors && !e.result) throw e;
+      added = e.result?.upsertedCount ?? e.result?.nUpserted ?? 0;
+      for (const w of [].concat(e.writeErrors || [])) {
+        if (w.code !== 11000) throw e;
+        const d = docs[w.index];
+        dup.push(`${d.userId}|${d.deviceId}`);
+      }
+    }
+    console.log(`  ${coll} -> ${TARGET}: ${added} thêm mới, ${docs.length - added - dup.length} đã có, ${dup.length} đã được thêm lại (giữ bản trong devices)`);
+    for (const k of dup.slice(0, 30)) console.log(`     thêm lại: ${k}`);
+    dupTotal[kind] = dup.length;
   }
   // Kiểm lại: mỗi dòng nguồn phải có trong devices với đúng kind.
   let bad = 0;
   for (const [coll, kind] of Object.entries(SOURCES)) {
     const src = await db.collection(coll).countDocuments();
     const dst = await target.countDocuments({ kind });
-    const ok = dst >= src;
+    const ok = dst + (dupTotal[kind] || 0) >= src;
     if (!ok) bad++;
     console.log(`  kiểm tra ${kind.padEnd(8)}: nguồn ${src}, devices ${dst} ${ok ? 'OK' : '!! THIẾU'}`);
   }
@@ -111,9 +129,13 @@ async function rollback(db) {
       delete doc.kind;
       return { replaceOne: { filter: { _id: d._id }, replacement: doc, upsert: true } };
     });
-    // Dòng đã xoá trên bản mới cũng phải xoá ở bảng cũ.
-    const keep = docs.map((d) => d._id);
-    const del = await db.collection(coll).deleteMany({ _id: { $nin: keep } });
+    // Mặc định KHÔNG xoá gì ở bảng cũ (devices có thể chỉ có một phần nếu backend mới
+    // chạy trước khi migrate). Chỉ khi chắc devices là đầy đủ mới thêm --prune.
+    let del = { deletedCount: 0 };
+    if (PRUNE) {
+      const keep = docs.map((d) => d._id);
+      del = await db.collection(coll).deleteMany({ _id: { $nin: keep } });
+    }
     const r = await db.collection(coll).bulkWrite(ops, { ordered: false });
     console.log(`  ${TARGET}[${kind}] -> ${coll}: ${r.upsertedCount} thêm, ${r.modifiedCount} cập nhật, ${del.deletedCount} xoá`);
   }
