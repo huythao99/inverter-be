@@ -6,13 +6,12 @@ export type HybridDeviceDocument = HybridDevice & Document;
 
 /**
  * A hybrid unit (ESP32 + STM32 hybrid low-frequency inverter, HINVLF v1),
- * HybridControl<N>. Separate device type with its own collections and MQTT
- * namespace (hybrid/{uid}/{deviceId}/...). Fields: device-base.schema.ts.
+ * HybridControl<N>. Own MQTT namespace (hybrid/{uid}/{deviceId}/...).
+ * Discriminator of Device, kind "hybrid", collection "devices".
  */
-@Schema({ timestamps: true, collection: 'hybriddevices' })
-export class HybridDevice extends StmDeviceBase {}
+@Schema({ timestamps: true })
+export class HybridDevice extends StmDeviceBase {
+  readonly kind?: 'hybrid';
+}
 
 export const HybridDeviceSchema = SchemaFactory.createForClass(HybridDevice);
-
-HybridDeviceSchema.index({ userId: 1, deviceId: 1 }, { unique: true });
-HybridDeviceSchema.index({ deviceId: 1 });

@@ -6,14 +6,7 @@ import {
   BlacklistDevice,
   BlacklistDeviceDocument,
 } from '../models/blacklist-device.schema';
-import {
-  InverterDevice,
-  InverterDeviceDocument,
-} from '../models/inverter-device.schema';
-import {
-  ChargerDevice,
-  ChargerDeviceDocument,
-} from '../models/charger-device.schema';
+import { DevicesService } from './devices.service';
 
 // Emitted whenever a device's blacklist status changes. MqttService listens and
 // publishes it to the device so the ESP32 can react. (EventEmitter avoids a
@@ -35,10 +28,7 @@ export class BlacklistDeviceService implements OnModuleInit {
   constructor(
     @InjectModel(BlacklistDevice.name)
     private blacklistDeviceModel: Model<BlacklistDeviceDocument>,
-    @InjectModel(InverterDevice.name)
-    private inverterDeviceModel: Model<InverterDeviceDocument>,
-    @InjectModel(ChargerDevice.name)
-    private chargerDeviceModel: Model<ChargerDeviceDocument>,
+    private devices: DevicesService,
     private eventEmitter: EventEmitter2,
   ) {}
 
@@ -50,28 +40,26 @@ export class BlacklistDeviceService implements OnModuleInit {
     blacklisted: boolean,
     userId?: string,
   ): Promise<void> {
-    const type = deviceId.startsWith('ChargerControl') ? 'charger' : 'inverter';
-
-    let uids: string[];
-    if (userId) {
-      uids = [userId];
-    } else {
-      const docs: Array<{ userId?: string }> =
-        type === 'charger'
-          ? await this.chargerDeviceModel
-              .find({ deviceId }, { userId: 1 })
-              .lean()
-              .exec()
-          : await this.inverterDeviceModel
-              .find({ deviceId }, { userId: 1 })
-              .lean()
-              .exec();
-      uids = docs.map((d) => d.userId).filter((u): u is string => !!u);
+    // Per-device topic of each owner: {kind}/{uid}/{deviceId}/blacklist, kind
+    // from the devices collection (a hybrid listens on hybrid/..., which the
+    // old id-prefix guess sent to inverter/...).
+    const owners = (await this.devices.owners(deviceId)).filter(
+      (o) => !userId || o.userId === userId,
+    );
+    // Not registered (yet): an id-only guess, as before.
+    if (owners.length === 0 && userId) {
+      owners.push({
+        userId,
+        kind: deviceId.startsWith('ChargerControl')
+          ? 'charger'
+          : deviceId.startsWith('HybridControl')
+            ? 'hybrid'
+            : 'inverter',
+      });
     }
-
-    for (const uid of uids) {
+    for (const o of owners) {
       this.eventEmitter.emit(BLACKLIST_CHANGED_EVENT, {
-        topic: `${type}/${uid}/${deviceId}/blacklist`,
+        topic: `${o.kind}/${o.userId}/${deviceId}/blacklist`,
         lock: blacklisted,
       });
     }

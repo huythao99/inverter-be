@@ -36,7 +36,8 @@ async function main() {
   });
   await client.connect();
   const db = client.db(process.env.MONGODB_DATABASE || undefined);
-  const devices = db.collection('hybriddevices');
+  // Since the devices merge: one "devices" collection, hybrids are kind "hybrid".
+  const devices = db.collection('devices');
   const sources = ['hybriddatas', 'hybridenergies', 'hybridsettings'];
 
   // Every (userId, deviceId) that ever had hybrid data / energy / settings.
@@ -65,7 +66,7 @@ async function main() {
   }
 
   const existing = new Set(
-    (await devices.find({}, { projection: { userId: 1, deviceId: 1 } }).toArray()).map(
+    (await devices.find({ kind: 'hybrid' }, { projection: { userId: 1, deviceId: 1 } }).toArray()).map(
       (d) => `${d.userId}|${d.deviceId}`,
     ),
   );
@@ -73,7 +74,7 @@ async function main() {
   // hybrid entry was removed on purpose; they now run as GTIControl<N> or
   // GTIControl<90000 + N>.
   const inverterIds = new Set(
-    (await db.collection('inverterdevices').distinct('deviceId', { deviceId: /^GTIControl\d+$/ })),
+    (await devices.distinct('deviceId', { kind: 'inverter', deviceId: /^GTIControl\d+$/ })),
   );
   const nowInverter = (id) => {
     const digits = id.replace(/\D/g, '');
@@ -120,6 +121,7 @@ async function main() {
     const now = new Date();
     const res = await devices.insertMany(
       missing.map((p) => ({
+        kind: 'hybrid',
         userId: p.userId,
         deviceId: p.deviceId,
         deviceName: p.deviceId,

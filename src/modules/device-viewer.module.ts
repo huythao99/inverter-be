@@ -7,14 +7,6 @@ import {
   DeviceViewer,
   DeviceViewerSchema,
 } from '../models/device-viewer.schema';
-import {
-  InverterDevice,
-  InverterDeviceSchema,
-} from '../models/inverter-device.schema';
-import {
-  ChargerDevice,
-  ChargerDeviceSchema,
-} from '../models/charger-device.schema';
 import { DeviceViewerService } from '../services/device-viewer.service';
 import { PublicStreamService } from '../services/public-stream.service';
 import {
@@ -31,8 +23,6 @@ import {
     MongooseModule.forFeature([
       { name: DeviceViewer.name, schema: DeviceViewerSchema },
       { name: DeviceShareLink.name, schema: DeviceShareLinkSchema },
-      { name: InverterDevice.name, schema: InverterDeviceSchema },
-      { name: ChargerDevice.name, schema: ChargerDeviceSchema },
     ]),
   ],
   controllers: [DeviceViewerController, PublicViewController],

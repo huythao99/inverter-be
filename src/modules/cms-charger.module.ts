@@ -4,10 +4,6 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { CmsChargerController } from '../controllers/cms-charger.controller';
 import { CmsChargerService } from '../services/cms-charger.service';
-import {
-  ChargerDevice,
-  ChargerDeviceSchema,
-} from '../models/charger-device.schema';
 import { ChargerData, ChargerDataSchema } from '../models/charger-data.schema';
 import {
   ChargerSetting,
@@ -21,7 +17,6 @@ import { MqttAuthModule } from './mqtt-auth.module';
 @Module({
   imports: [
     MongooseModule.forFeature([
-      { name: ChargerDevice.name, schema: ChargerDeviceSchema },
       { name: ChargerData.name, schema: ChargerDataSchema },
       { name: ChargerSetting.name, schema: ChargerSettingSchema },
     ]),

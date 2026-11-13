@@ -6,16 +6,11 @@ import {
   MqttCredential,
   MqttCredentialSchema,
 } from '../models/mqtt-credential.schema';
-import {
-  InverterDevice,
-  InverterDeviceSchema,
-} from '../models/inverter-device.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: MqttCredential.name, schema: MqttCredentialSchema },
-      { name: InverterDevice.name, schema: InverterDeviceSchema },
     ]),
   ],
   controllers: [MqttAuthController],

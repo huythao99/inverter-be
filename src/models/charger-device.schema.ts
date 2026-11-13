@@ -4,10 +4,13 @@ import { DeviceBase } from './device-base.schema';
 
 export type ChargerDeviceDocument = ChargerDevice & Document;
 
-/** MPPT charger (ChargerControl<N>). Fields: device-base.schema.ts. */
-@Schema({ timestamps: true, collection: 'chargerdevices' })
-export class ChargerDevice extends DeviceBase {}
+/**
+ * MPPT charger (ChargerControl<N>). Fields: device-base.schema.ts.
+ * Discriminator of Device, kind "charger", collection "devices".
+ */
+@Schema({ timestamps: true })
+export class ChargerDevice extends DeviceBase {
+  readonly kind?: 'charger';
+}
 
 export const ChargerDeviceSchema = SchemaFactory.createForClass(ChargerDevice);
-
-ChargerDeviceSchema.index({ userId: 1, deviceId: 1 }, { unique: true });

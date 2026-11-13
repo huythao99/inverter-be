@@ -9,17 +9,29 @@ Firebase của chủ máy, `deviceId` là SSID AP (`GTIControl1230`,
 `ChargerControl1369`, `HybridControl0015`). Một mã máy có thể có nhiều dòng
 (nhiều chủ) ở hybrid khi `HYBRID_EXCLUSIVE_OWNER` tắt.
 
-## Thiết bị
+## Thiết bị: một bảng `devices`, phân loại bằng `kind`
 
-| Collection | Schema | Ghi chú |
-|---|---|---|
-| `inverterdevices` | `InverterDevice` | `StmDeviceBase` + `autoCalculate`, `stmProtocol` |
-| `chargerdevices` | `ChargerDevice` | `DeviceBase` |
-| `hybriddevices` | `HybridDevice` | `StmDeviceBase` |
+| `kind` | Model (discriminator) | Mã mặc định | Trường riêng |
+|---|---|---|---|
+| `inverter` | `InverterDevice` | `GTIControl<N>` | `StmDeviceBase` + `autoCalculate`, `stmProtocol` |
+| `charger` | `ChargerDevice` | `ChargerControl<N>` | — |
+| `hybrid` | `HybridDevice` | `HybridControl<N>` | `StmDeviceBase` |
 
-Trường chung nằm ở `src/models/device-base.schema.ts`:
-- `DeviceBase`: `userId`, `deviceId`, `deviceName`, `firmwareVersion` (ESP32), `description`, `updatedAt`
-- `StmDeviceBase` (máy có mạch STM32 nạp qua ESP32): `stmFwVersion`, `stmFwCrc`, `stmInfoAt`, `stmOta`
+- Model gốc `Device` (`src/models/device.schema.ts`), `discriminatorKey: 'kind'`.
+  Ba model con là Mongoose discriminator, đăng ký MỘT lần trong
+  `DevicesModule` (global). Truy vấn qua model con tự thêm `kind`, document
+  tạo qua model con tự có `kind`, nên service vẫn dùng model theo loại.
+- Truy vấn không phân loại (mã máy này loại gì, mọi máy của một người):
+  `DevicesService` (`owners`, `kindOf`, `listByUser`).
+- Loại máy lấy từ `kind`, không đoán theo tiền tố mã máy (máy theo hãng có
+  thể dùng tiền tố riêng).
+- Index: unique `(userId, deviceId)` trên mọi loại, và `(deviceId)`.
+- Trường chung: `src/models/device-base.schema.ts`
+  - `DeviceBase`: `userId`, `deviceId`, `deviceName`, `firmwareVersion` (ESP32), `description`, `updatedAt`
+  - `StmDeviceBase` (máy có mạch STM32 nạp qua ESP32): `stmFwVersion`, `stmFwCrc`, `stmInfoAt`, `stmOta`
+- 3 bảng cũ `inverterdevices`, `chargerdevices`, `hybriddevices`: không còn
+  dùng sau `scripts/migrate-devices.js --apply`, giữ làm bản sao lưu
+  (`--rollback` chép ngược về khi cần quay lại backend cũ).
 
 ## Dữ liệu, cài đặt, điện năng
 
@@ -58,7 +70,10 @@ Trường chung nằm ở `src/models/device-base.schema.ts`:
 | `tracklogerrors` | 7 ngày (TTL) — log lỗi từ thiết bị |
 | `device_health` | Tình trạng kết nối thiết bị |
 
-## Dọn dữ liệu
+## Dọn dữ liệu / chuyển dữ liệu
+
+- `scripts/migrate-devices.js`: gộp 3 bảng thiết bị vào `devices` (xem thứ tự deploy trong file).
+- `scripts/db-audit.js`: so database thật với schema (chỉ đọc).
 
 - `scripts/cleanup-dead-fields.js`: xoá trường của tính năng chuyển hybrid ↔ inverter đã bỏ
   (`inverterdevices.hybridConversion`, `hybriddevices.convertedFrom`, `hybriddevices.inverterConversion`).

@@ -1,12 +1,14 @@
-// Collection names are fixed explicitly (they used to come from Mongoose's
+// Collection names are fixed explicitly (device kinds: discriminators of
+// Device in "devices", no collection of their own) (they used to come from Mongoose's
 // pluralized model names). Renaming one would silently start an empty
 // collection in production: this test pins them.
-import { Schema } from 'mongoose';
+import { Mongoose, Schema } from 'mongoose';
 import * as fs from 'fs';
 import * as path from 'path';
-import { InverterDeviceSchema } from './inverter-device.schema';
-import { HybridDeviceSchema } from './hybrid-device.schema';
-import { ChargerDeviceSchema } from './charger-device.schema';
+import { Device, DeviceSchema } from './device.schema';
+import { InverterDevice, InverterDeviceSchema } from './inverter-device.schema';
+import { HybridDevice, HybridDeviceSchema } from './hybrid-device.schema';
+import { ChargerDevice, ChargerDeviceSchema } from './charger-device.schema';
 
 const BASE = [
   'userId',
@@ -18,39 +20,68 @@ const BASE = [
 ];
 const STM = ['stmFwVersion', 'stmFwCrc', 'stmInfoAt', 'stmOta'];
 const has = (s: Schema, keys: string[]) => keys.filter((k) => !s.path(k));
+// Mongoose sets it on a discriminator's schema; not in its typings.
+const mapping = (m: { schema: unknown }) =>
+  (m.schema as { discriminatorMapping?: unknown }).discriminatorMapping;
 
-describe('device schemas (shared base)', () => {
+describe('devices: one collection, kind = discriminator', () => {
+  // Same registration as DevicesModule, on a private Mongoose instance.
+  const mg = new Mongoose();
+  const Base = mg.model(Device.name, DeviceSchema);
+  const I = Base.discriminator(
+    InverterDevice.name,
+    InverterDeviceSchema,
+    'inverter',
+  );
+  const C = Base.discriminator(
+    ChargerDevice.name,
+    ChargerDeviceSchema,
+    'charger',
+  );
+  const H = Base.discriminator(HybridDevice.name, HybridDeviceSchema, 'hybrid');
+
+  it('all kinds live in "devices", told apart by kind', () => {
+    for (const m of [Base, I, C, H])
+      expect(m.collection.collectionName).toBe('devices');
+    expect(Base.schema.get('discriminatorKey')).toBe('kind');
+    expect(mapping(I)).toMatchObject({
+      key: 'kind',
+      value: 'inverter',
+    });
+    expect(mapping(C)).toMatchObject({
+      key: 'kind',
+      value: 'charger',
+    });
+    expect(mapping(H)).toMatchObject({
+      key: 'kind',
+      value: 'hybrid',
+    });
+    expect(new I({}).get('kind')).toBe('inverter');
+    expect(new H({}).get('kind')).toBe('hybrid');
+  });
   it('inverter: base + STM32 + own fields, no conversion field', () => {
     expect(
-      has(InverterDeviceSchema, [
-        ...BASE,
-        ...STM,
-        'autoCalculate',
-        'stmProtocol',
-      ]),
+      has(I.schema, [...BASE, ...STM, 'autoCalculate', 'stmProtocol']),
     ).toEqual([]);
-    expect(InverterDeviceSchema.path('hybridConversion')).toBeUndefined();
-    expect(InverterDeviceSchema.get('collection')).toBe('inverterdevices');
+    expect(I.schema.path('hybridConversion')).toBeUndefined();
+    expect(I.schema.path('stmProtocol').options.default).toBe('auto');
   });
   it('hybrid: base + STM32, no conversion fields', () => {
-    expect(has(HybridDeviceSchema, [...BASE, ...STM])).toEqual([]);
-    expect(HybridDeviceSchema.path('convertedFrom')).toBeUndefined();
-    expect(HybridDeviceSchema.path('inverterConversion')).toBeUndefined();
-    expect(HybridDeviceSchema.get('collection')).toBe('hybriddevices');
+    expect(has(H.schema, [...BASE, ...STM])).toEqual([]);
+    expect(H.schema.path('convertedFrom')).toBeUndefined();
+    expect(H.schema.path('inverterConversion')).toBeUndefined();
   });
   it('charger: base only', () => {
-    expect(has(ChargerDeviceSchema, BASE)).toEqual([]);
-    expect(ChargerDeviceSchema.path('stmOta')).toBeUndefined();
-    expect(ChargerDeviceSchema.get('collection')).toBe('chargerdevices');
+    expect(has(C.schema, BASE)).toEqual([]);
+    expect(C.schema.path('stmOta')).toBeUndefined();
   });
-  it('defaults and required flags kept', () => {
-    expect(InverterDeviceSchema.path('firmwareVersion').options.default).toBe(
-      '1.0.0',
+  it('defaults, required, indexes', () => {
+    expect(I.schema.path('firmwareVersion').options.default).toBe('1.0.0');
+    expect(H.schema.path('userId').isRequired).toBe(true);
+    const idx = DeviceSchema.indexes().map(
+      ([k, o]) => JSON.stringify(k) + (o?.unique ? 'U' : ''),
     );
-    expect(HybridDeviceSchema.path('userId').isRequired).toBe(true);
-    expect(InverterDeviceSchema.path('stmProtocol').options.default).toBe(
-      'auto',
-    );
+    expect(idx).toEqual(['{"userId":1,"deviceId":1}U', '{"deviceId":1}']);
   });
 });
 
@@ -62,7 +93,7 @@ describe('collection names', () => {
     'blacklist-device.schema.ts': ['blacklistdevices'],
     'charger-claim.schema.ts': ['chargerclaims'],
     'charger-data.schema.ts': ['chargerdatas'],
-    'charger-device.schema.ts': ['chargerdevices'],
+    'charger-device.schema.ts': [],
     'charger-setting.schema.ts': ['chargersettings'],
     'daily-totals.schema.ts': ['dailytotals'],
     'device-health.schema.ts': ['device_health'],
@@ -73,11 +104,12 @@ describe('collection names', () => {
       'firmware_rollout_devices',
     ],
     'hybrid-data.schema.ts': ['hybriddatas'],
-    'hybrid-device.schema.ts': ['hybriddevices'],
+    'hybrid-device.schema.ts': [],
     'hybrid-energy.schema.ts': ['hybridenergies'],
     'hybrid-setting.schema.ts': ['hybridsettings'],
     'inverter-data.schema.ts': ['inverterdatas'],
-    'inverter-device.schema.ts': ['inverterdevices'],
+    'inverter-device.schema.ts': [],
+    'device.schema.ts': ['devices'],
     'inverter-schedule.schema.ts': ['inverterschedules'],
     'inverter-setting.schema.ts': ['invertersettings'],
     'mqtt-credential.schema.ts': ['mqttcredentials'],

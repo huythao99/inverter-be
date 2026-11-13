@@ -4,6 +4,8 @@
  *   inverterdevices.hybridConversion
  *   hybriddevices.convertedFrom, hybriddevices.inverterConversion
  * The backend no longer reads or writes them (schemas cleaned 2026-11-12).
+ * Only for the OLD collections: scripts/migrate-devices.js drops these
+ * fields itself when it copies the devices into "devices".
  *
  *   node scripts/cleanup-dead-fields.js            # count only (dry run)
  *   node scripts/cleanup-dead-fields.js --apply    # $unset them

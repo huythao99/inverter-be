@@ -47,13 +47,16 @@ const fmtKey = (spec) =>
     .join(',');
 const mb = (b) => `${(b / 1048576).toFixed(1)} MB`;
 
-const DEVICE = { inverterdevices: /^GTIControl\d+$/, chargerdevices: /^ChargerControl\d+$/, hybriddevices: /^HybridControl\d+$/ };
-// collection con -> collection thiết bị của nó
+// Thiết bị: một bảng "devices", phân loại bằng kind (sau migrate-devices.js).
+const DEVICE = { inverter: /^GTIControl\d+$/, charger: /^ChargerControl\d+$/, hybrid: /^HybridControl\d+$/ };
+// kind -> các bảng dữ liệu của loại đó
 const CHILDREN = {
-  inverterdevices: ['inverterdatas', 'invertersettings', 'inverterschedules', 'dailytotals'],
-  chargerdevices: ['chargerdatas', 'chargersettings'],
-  hybriddevices: ['hybriddatas', 'hybridsettings', 'hybridenergies'],
+  inverter: ['inverterdatas', 'invertersettings', 'inverterschedules', 'dailytotals'],
+  charger: ['chargerdatas', 'chargersettings'],
+  hybrid: ['hybriddatas', 'hybridsettings', 'hybridenergies'],
 };
+// 3 bảng cũ: giữ làm bản sao lưu sau khi gộp, không phải lỗi
+const OLD_DEVICE_COLLECTIONS = ['inverterdevices', 'chargerdevices', 'hybriddevices'];
 
 async function main() {
   const schemas = loadSchemas();
@@ -86,8 +89,9 @@ async function main() {
     const line = st
       ? `${String(st.count).padStart(8)} doc  ${mb(st.size).padStart(9)}  index ${mb(st.totalIndexSize)}`
       : '';
-    console.log(`  ${name.padEnd(28)} ${line}${inCode ? '' : '   !! KHÔNG CÓ SCHEMA'}`);
-    if (!inCode) warn(`Collection "${name}" trên DB không có schema nào dùng (sót lại / tên cũ?)`);
+    const old = OLD_DEVICE_COLLECTIONS.includes(name);
+    console.log(`  ${name.padEnd(28)} ${line}${inCode ? '' : old ? '   (bảng cũ, sao lưu trước khi gộp)' : '   !! KHÔNG CÓ SCHEMA'}`);
+    if (!inCode && !old) warn(`Collection "${name}" trên DB không có schema nào dùng (sót lại / tên cũ?)`);
   }
 
   // ---- 2. index ---------------------------------------------------------------
@@ -129,23 +133,27 @@ async function main() {
   }
 
   // ---- 4–6. thiết bị ------------------------------------------------------------
-  console.log('\n== 4–6. Thiết bị');
-  for (const [devColl, children] of Object.entries(CHILDREN)) {
-    if (!existing.includes(devColl)) continue;
-    const devs = db.collection(devColl);
-    const dup = await devs
-      .aggregate([{ $group: { _id: { u: '$userId', d: '$deviceId' }, n: { $sum: 1 } } }, { $match: { n: { $gt: 1 } } }])
+  console.log('\n== 4–6. Thiết bị (bảng devices, theo kind)');
+  if (!existing.includes('devices')) {
+    warn('Chưa có bảng "devices": chạy scripts/migrate-devices.js');
+  }
+  const allDevs = db.collection('devices');
+  const noKind = await allDevs.countDocuments({ kind: { $nin: Object.keys(DEVICE) } });
+  if (noKind) warn(`devices: ${noKind} dòng thiếu kind hoặc kind lạ`);
+  const dup = await allDevs
+    .aggregate([{ $group: { _id: { u: '$userId', d: '$deviceId' }, n: { $sum: 1 } } }, { $match: { n: { $gt: 1 } } }])
+    .toArray();
+  if (dup.length) warn(`devices: ${dup.length} cặp (userId, deviceId) bị trùng`);
+  for (const [kind, children] of Object.entries(CHILDREN)) {
+    const multi = await allDevs
+      .aggregate([{ $match: { kind } }, { $group: { _id: '$deviceId', n: { $sum: 1 } } }, { $match: { n: { $gt: 1 } } }])
       .toArray();
-    if (dup.length) warn(`${devColl}: ${dup.length} cặp (userId, deviceId) bị trùng`);
-    const multi = await devs
-      .aggregate([{ $group: { _id: '$deviceId', n: { $sum: 1 } } }, { $match: { n: { $gt: 1 } } }])
-      .toArray();
-    const badId = await devs.countDocuments({ deviceId: { $not: DEVICE[devColl] } });
-    const total = await devs.estimatedDocumentCount();
-    console.log(`  ${devColl}: ${total} dòng, ${multi.length} mã máy thuộc nhiều tài khoản, ${badId} mã sai dạng`);
-    if (badId) warn(`${devColl}: ${badId} dòng có deviceId không đúng dạng ${DEVICE[devColl]}`);
+    // Mã theo hãng (tiền tố riêng) là hợp lệ; chỉ để biết.
+    const otherPrefix = await allDevs.countDocuments({ kind, deviceId: { $not: DEVICE[kind] } });
+    const total = await allDevs.countDocuments({ kind });
+    console.log(`  ${kind.padEnd(9)} ${total} dòng, ${multi.length} mã máy thuộc nhiều tài khoản, ${otherPrefix} mã tiền tố khác (theo hãng?)`);
 
-    const owned = new Set((await devs.find({}, { projection: { userId: 1, deviceId: 1 } }).toArray()).map((d) => `${d.userId}|${d.deviceId}`));
+    const owned = new Set((await allDevs.find({ kind }, { projection: { userId: 1, deviceId: 1 } }).toArray()).map((d) => `${d.userId}|${d.deviceId}`));
     for (const ch of children) {
       if (!existing.includes(ch)) continue;
       const pairs = await db
@@ -155,14 +163,14 @@ async function main() {
       const orphan = pairs.filter((p) => !owned.has(`${p._id.u}|${p._id.d}`));
       const docs = orphan.reduce((s, p) => s + p.n, 0);
       console.log(`    ${ch.padEnd(20)} ${pairs.length} máy, ${orphan.length} máy mồ côi (${docs} doc)`);
-      if (orphan.length) warn(`${ch}: ${orphan.length} cặp (userId, deviceId) không còn trong ${devColl} (${docs} doc) — máy đã xoá / đổi chủ`);
+      if (orphan.length) warn(`${ch}: ${orphan.length} cặp (userId, deviceId) không còn trong devices[${kind}] (${docs} doc) — máy đã xoá / đổi chủ`);
     }
   }
   // Máy có mặt ở 2 loại (vd inverter đã chuyển hybrid còn dòng cũ)
   const num = (s) => s.replace(/\D/g, '').replace(/^0+/, '');
-  if (existing.includes('inverterdevices') && existing.includes('hybriddevices')) {
-    const inv = new Set((await db.collection('inverterdevices').distinct('deviceId')).map(num));
-    const hyb = (await db.collection('hybriddevices').distinct('deviceId')).filter((id) => inv.has(num(id)));
+  {
+    const inv = new Set((await allDevs.distinct('deviceId', { kind: 'inverter' })).map(num));
+    const hyb = (await allDevs.distinct('deviceId', { kind: 'hybrid' })).filter((id) => inv.has(num(id)));
     if (hyb.length) console.log(`  Số máy trùng giữa inverter và hybrid (có thể đã chuyển loại): ${hyb.slice(0, 20).join(', ')}${hyb.length > 20 ? '…' : ''}`);
   }
 

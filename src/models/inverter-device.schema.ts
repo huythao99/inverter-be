@@ -4,9 +4,14 @@ import { StmDeviceBase } from './device-base.schema';
 
 export type InverterDeviceDocument = InverterDevice & Document;
 
-/** Grid-tie inverter (GTIControl<N>): base + STM32 fields in device-base. */
-@Schema({ timestamps: true, collection: 'inverterdevices' })
+/**
+ * Grid-tie inverter (GTIControl<N>): base + STM32 fields in device-base.
+ * Discriminator of Device, kind "inverter", collection "devices".
+ */
+@Schema({ timestamps: true })
 export class InverterDevice extends StmDeviceBase {
+  readonly kind?: 'inverter';
+
   // True once the device has reported the 12-number (pre-calculated daily
   // totals) format at least once. Marks it as an autoCalculate device.
   @Prop({ type: Boolean, default: false })
@@ -23,5 +28,3 @@ export class InverterDevice extends StmDeviceBase {
 
 export const InverterDeviceSchema =
   SchemaFactory.createForClass(InverterDevice);
-
-InverterDeviceSchema.index({ userId: 1, deviceId: 1 }, { unique: true });

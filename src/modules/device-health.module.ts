@@ -4,10 +4,6 @@ import {
   DeviceHealth,
   DeviceHealthSchema,
 } from '../models/device-health.schema';
-import {
-  InverterDevice,
-  InverterDeviceSchema,
-} from '../models/inverter-device.schema';
 import { DeviceHealthService } from '../services/device-health.service';
 
 @Global()
@@ -15,7 +11,6 @@ import { DeviceHealthService } from '../services/device-health.service';
   imports: [
     MongooseModule.forFeature([
       { name: DeviceHealth.name, schema: DeviceHealthSchema },
-      { name: InverterDevice.name, schema: InverterDeviceSchema },
     ]),
   ],
   providers: [DeviceHealthService],
