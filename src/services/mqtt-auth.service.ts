@@ -207,8 +207,16 @@ export class MqttAuthService implements OnModuleInit {
       await this.mqttCredentialModel
         .updateMany({ kind: { $exists: false } }, { $set: { kind: 'ha' } })
         .exec();
-      await this.mqttCredentialModel.collection.dropIndex('userId_1');
-      this.logger.log('Dropped old unique index userId_1 on MQTT credentials');
+      // Only the old UNIQUE one: the schema declares a plain userId_1 index
+      // (same name), which must survive restarts.
+      const idx = await this.mqttCredentialModel.collection.indexes();
+      if (idx.find((i) => i.name === 'userId_1')?.unique) {
+        await this.mqttCredentialModel.collection.dropIndex('userId_1');
+        await this.mqttCredentialModel.createIndexes();
+        this.logger.log(
+          'Dropped old unique index userId_1 on MQTT credentials',
+        );
+      }
     } catch {
       // index already gone (fresh install / already migrated)
     }

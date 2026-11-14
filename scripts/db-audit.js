@@ -26,17 +26,24 @@ const DIST = path.join(__dirname, '..', 'dist', 'models');
 function loadSchemas() {
   if (!fs.existsSync(DIST)) throw new Error('Chưa build: chạy "npm run build" trước');
   const out = new Map(); // collection -> { name, indexes, paths }
+  const kindPaths = [];
   for (const f of fs.readdirSync(DIST).filter((x) => x.endsWith('.schema.js'))) {
     const mod = require(path.join(DIST, f));
     for (const [name, s] of Object.entries(mod)) {
       if (!name.endsWith('Schema') || !s || typeof s.indexes !== 'function') continue;
       const coll = s.get('collection');
-      if (!coll) continue; // subdocument (vd ShareMember)
+      if (!coll) {
+        // Schema con theo kind (InverterDevice/ChargerDevice/HybridDevice) dùng chung bảng devices.
+        if (/DeviceSchema$/.test(name) && s.path('deviceId')) kindPaths.push(s);
+        continue; // còn lại là subdocument (vd ShareMember)
+      }
       const paths = new Set(['_id', '__v', 'createdAt', 'updatedAt']);
       s.eachPath((p) => paths.add(p.split('.')[0]));
       out.set(coll, { name: name.replace(/Schema$/, ''), indexes: s.indexes(), paths });
     }
   }
+  const dev = out.get('devices');
+  if (dev) for (const s of kindPaths) s.eachPath((p) => dev.paths.add(p.split('.')[0]));
   return out;
 }
 
