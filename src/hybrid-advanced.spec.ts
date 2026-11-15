@@ -279,6 +279,27 @@ describe('HybridDataService: frames of the advanced menu', () => {
     expect(model.doc.advUnsupportedFw).toBeUndefined();
   });
 
+  it('$INFO (STM32 rebooted / re-flashed) drops the stored $ADV: no stale LF / CF', async () => {
+    const { frame, model, ctrl, user } = stack();
+    await frame('$ADV,LF=2.0,CF=30.0*00');
+    expect(model.doc.adv).toEqual({ LF: '2.0', CF: '30.0' });
+    await frame('$INFO,DEV=HINVLF,PROTO=1,FW=5.4.27,HW=F303CB-LF*00');
+    expect(model.doc.adv).toBeUndefined();
+    expect(model.doc.advAt).toBeUndefined();
+    expect((await ctrl.advanced(user, 'H1')).adv).toBeNull();
+    await frame('$ADV,LF=1.0,CF=30.0,LFRAW=0.0,LFVS=0.0*00');
+    expect(model.doc.adv.LF).toBe('1.0');
+  });
+
+  it('$NAK of $CMD,LFMEAS is the reason shown to the user (advanced().lastNak)', async () => {
+    const { frame, ctrl, user } = stack();
+    await frame('$NAK,CMD,ERR=MODE*00');
+    expect((await ctrl.advanced(user, 'H1')).lastNak).toMatchObject({
+      of: 'CMD',
+      err: 'MODE',
+    });
+  });
+
   it('a NAK of SET / CMD still goes to lastNak (settings banner), not advResult', async () => {
     const { frame, model } = stack();
     await frame('$NAK,SET,ERR=LOCAL*C0');

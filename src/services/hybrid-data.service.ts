@@ -208,6 +208,11 @@ export class HybridDataService implements OnModuleInit, OnModuleDestroy {
     } else if (frame.type === 'INFO') {
       set.info = frame.items;
       set.infoAt = now;
+      // STM32 (re)booted / re-flashed: the stored $ADV may no longer be what
+      // the machine runs (e.g. factory LF after a flash). Drop it so no client
+      // shows or reuses stale advanced values; the next $GET,ADV refills it.
+      unset.adv = '';
+      unset.advAt = '';
     } else if (frame.type === 'ADV') {
       set.adv = frame.items;
       set.advAt = now;
