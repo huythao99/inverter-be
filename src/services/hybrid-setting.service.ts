@@ -105,6 +105,7 @@ export class HybridSettingService {
     input: Record<string, unknown>,
     cfg: Record<string, string> | null | undefined,
     ctx?: AuditContext,
+    fw?: string | null,
   ): Promise<HybridSettingView> {
     const { patch, errors: parseErrors } = parseHybridPatch(input);
     if (parseErrors.length) {
@@ -120,7 +121,7 @@ export class HybridSettingService {
     // The machine's $CFG is the truth (it can be changed on the machine);
     // the stored config only when no $CFG has been seen yet.
     const base = cfg ? hybridConfigFromCfg(cfg) : { ...before.config };
-    const limits = { VCV: num(cfg?.VCV), VBMAX: num(cfg?.VBMAX) };
+    const limits = { VCV: num(cfg?.VCV), VBMAX: num(cfg?.VBMAX), fw };
     const { changes, errors } = mergeHybridConfig(base, patch, limits);
     if (errors.length) {
       throw new BadRequestException({

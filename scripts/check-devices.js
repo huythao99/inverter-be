@@ -55,6 +55,10 @@ async function main() {
     }
     const noKind = devs.filter((d) => !Object.values(SOURCES).includes(d.kind));
     const fresh = devs.filter((d) => !old.has(key(d)));
+    // Mã máy mới thêm ở tài khoản khác trong khi tài khoản cũ vẫn giữ: với hybrid,
+    // lần cài đặt (provision) sau cùng nhận dữ liệu, các tài khoản kia thấy máy offline.
+    const ownersOf = (id) => devs.filter((d) => d.deviceId === id).map((d) => d.userId);
+    const freshShared = fresh.filter((d) => ownersOf(d.deviceId).length > 1);
     const freshOdd = fresh.filter((d) => guess(d.deviceId) !== '?' && guess(d.deviceId) !== d.kind);
 
     const show = (title, rows, fmt) => {
@@ -67,6 +71,9 @@ async function main() {
     show('3. devices thiếu kind / kind lạ', noKind, (d) => `${key(d)}  kind=${d.kind}`);
     show('4a. Dòng mới sau deploy (không có ở bảng cũ)', fresh, (d) => `${key(d)}  kind=${d.kind}  tạo ${d.createdAt?.toISOString?.() ?? '?'}`);
     show('4b. Trong đó kind lệch tiền tố mã máy', freshOdd, (d) => `${key(d)}  kind=${d.kind}  mã gợi ý=${guess(d.deviceId)}`);
+
+    show('4c. Mã máy mới thêm vào tài khoản khác (máy có nhiều chủ)', freshShared, (d) =>
+      `${d.deviceId}  mới: ${d.userId} (${d.createdAt?.toISOString?.() ?? '?'})  chủ khác: ${ownersOf(d.deviceId).filter((u) => u !== d.userId).join(', ')}`);
 
     if (arg) {
       console.log('\n== Chi tiết');

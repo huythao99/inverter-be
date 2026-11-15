@@ -34,6 +34,44 @@ import {
  */
 export type StmDeviceKind = 'inverter' | 'hybrid';
 
+/** STM32 $INFO HW of the hybrid board with the UCC21550 gate driver (5.4.20+). */
+export const HYBRID_UCC_HW = 'F303CB-LF-UCC';
+/** Product code in the image tail (byte 6) / app.json product_code. */
+const STM_PRODUCT_CODE: Partial<Record<StmProduct, number>> = {
+  hybrid: 0x03,
+  'hybrid-ucc': 0x04,
+};
+
+/**
+ * Image family a board takes: hybrid boards report HW in $INFO, UCC21550
+ * boards get "hybrid-ucc", every other (and unknown) hybrid the Infineon
+ * "hybrid" images (as the protocol says: anything but F303CB-LF-UCC -> 0x03).
+ */
+export function stmProductFor(
+  kind: StmDeviceKind,
+  hw?: string | null,
+): StmProduct {
+  if (kind !== 'hybrid') return kind;
+  return String(hw ?? '')
+    .trim()
+    .toUpperCase() === HYBRID_UCC_HW
+    ? 'hybrid-ucc'
+    : 'hybrid';
+}
+
+/** Product byte of the 16-byte image tail (0xFF / no tail -> null). */
+export function stmImageTailProduct(bin: Buffer): number | null {
+  if (bin.length < 16) return null;
+  const t = bin.length - 16;
+  const w0 = bin.readUInt32LE(t);
+  const w1 = bin.readUInt32LE(t + 4);
+  const w2 = bin.readUInt32LE(t + 8);
+  if (w0 !== 0x56495447) return null;
+  if (bin.readUInt32LE(t + 12) !== ~(w0 + w1 + w2) >>> 0) return null;
+  const p = bin[t + 6];
+  return p === 0xff ? null : p;
+}
+
 /** The STM32 fields of an inverter / hybrid device document. */
 export type StmDeviceDoc = Pick<
   InverterDevice,
@@ -42,6 +80,7 @@ export type StmDeviceDoc = Pick<
   | 'firmwareVersion'
   | 'stmFwVersion'
   | 'stmFwCrc'
+  | 'stmHw'
   | 'stmInfoAt'
   | 'stmOta'
 >;
@@ -154,6 +193,10 @@ export interface StmTarget {
 }
 
 export interface DeviceStmInfo {
+  /** Image family this board takes (hybrid vs hybrid-ucc by $INFO HW). */
+  product: StmProduct;
+  /** STM32 $INFO HW, when known. */
+  hw: string | null;
   version: string | null;
   major: number | null;
   chip: string | null;
@@ -282,7 +325,7 @@ export class StmFirmwareService {
       manifestUrl,
       !!dto.manifestUrl?.trim(),
     );
-    const checked = this.checkImage(bin, manifest, parsed);
+    const checked = this.checkImage(bin, manifest, parsed, dto.product);
     return this.saveImage(dto, parsed, binUrl, bin.length, checked);
   }
 
@@ -320,7 +363,7 @@ export class StmFirmwareService {
       );
     }
     const parsed = this.requireVersion(rawVersion);
-    const checked = this.checkImage(bin, manifest, parsed);
+    const checked = this.checkImage(bin, manifest, parsed, dto.product);
 
     // One file per product + version, whatever the channel.
     const existing = await this.stmFirmwareModel
@@ -386,8 +429,10 @@ export class StmFirmwareService {
     bin: Buffer,
     manifest: Record<string, unknown> | null,
     parsed: StmVersion,
+    product?: StmProduct,
   ): { crc: string; appBase: string | null; built: string | null } {
     const crc = normalizeCrc32(zlib.crc32(bin) >>> 0)!;
+    if (product) this.checkProduct(bin, manifest, product);
     if (manifest) {
       if (manifest.size !== undefined && Number(manifest.size) !== bin.length) {
         throw new BadRequestException(
@@ -440,6 +485,51 @@ export class StmFirmwareService {
       built:
         manifest && typeof manifest.built === 'string' ? manifest.built : null,
     };
+  }
+
+  /**
+   * Hybrid boards (5.4.20+): Infineon (0x03, "hybrid") and UCC21550 (0x04,
+   * "hybrid-ucc") images can't be swapped. Check the image's own product code
+   * (tail byte 6) and app.json against the product it is registered under.
+   */
+  private checkProduct(
+    bin: Buffer,
+    manifest: Record<string, unknown> | null,
+    product: StmProduct,
+  ): void {
+    const want = STM_PRODUCT_CODE[product];
+    if (want === undefined) return;
+    const fail = (what: string) => {
+      throw new BadRequestException(
+        `Wrong board type: ${what}, registering as "${product}" (product code 0x0${want})`,
+      );
+    };
+    const mProduct = manifest ? asText(manifest.product) : null;
+    if (mProduct && mProduct.trim() !== product) {
+      fail(`app.json says product "${mProduct.trim()}"`);
+    }
+    const mCodeRaw = manifest ? manifest.product_code : undefined;
+    if (mCodeRaw !== undefined && mCodeRaw !== null && mCodeRaw !== '') {
+      const code =
+        typeof mCodeRaw === 'number'
+          ? mCodeRaw
+          : parseInt(asText(mCodeRaw) ?? '', 16);
+      if (Number.isFinite(code) && code !== want) {
+        fail(
+          `app.json says product_code 0x${code.toString(16).padStart(2, '0')}`,
+        );
+      }
+    }
+    const tail = stmImageTailProduct(bin);
+    if (tail !== null && tail !== want) {
+      fail(
+        `the image itself is for product 0x${tail.toString(16).padStart(2, '0')}`,
+      );
+    }
+    // A UCC image must say so: before 5.4.20 the UCC build still carried 0x03.
+    if (product === 'hybrid-ucc' && tail === null) {
+      fail('the image carries no product code (UCC images need 0x04)');
+    }
   }
 
   private async saveImage(
@@ -680,7 +770,7 @@ export class StmFirmwareService {
       reason = 'version_unknown';
     } else {
       target = await this.findTarget(
-        kind,
+        stmProductFor(kind, device.stmHw),
         current.major,
         current.voltageCode,
         this.betaFirmwareDeviceService.isBeta(device.deviceId, device.userId),
@@ -688,6 +778,8 @@ export class StmFirmwareService {
       if (!target) reason = 'no_firmware';
     }
     return {
+      product: stmProductFor(kind, device.stmHw),
+      hw: device.stmHw ?? null,
       version: current?.version ?? device.stmFwVersion ?? null,
       major: current?.major ?? null,
       chip: chipLabel(current?.major),
@@ -718,7 +810,7 @@ export class StmFirmwareService {
     const channels: StmChannel[] = beta ? ['stable', 'beta'] : ['stable'];
     const docs = await this.stmFirmwareModel
       .find({
-        product: kind,
+        product: info.product ?? kind,
         major: info.major,
         voltageCode: info.voltageCode,
         enabled: true,
@@ -862,6 +954,22 @@ export class StmFirmwareService {
   }) {
     const d = payload.data ?? {};
     if (typeof d.type !== 'string' || d.type.toUpperCase() !== 'INFO') return;
+    // Board type (5.4.20+: Infineon "F303CB-LF" / UCC21550 "F303CB-LF-UCC"):
+    // decides which image family the device is offered.
+    const hw = typeof d.HW === 'string' ? d.HW.trim().slice(0, 32) : '';
+    if (hw) {
+      await this.hybridDeviceModel
+        .updateOne(
+          {
+            userId: payload.userId,
+            deviceId: payload.deviceId,
+            stmHw: { $ne: hw },
+          },
+          { $set: { stmHw: hw } },
+        )
+        .exec()
+        .catch(() => undefined);
+    }
     if (!d.FW) return;
     try {
       await this.reportInfo(

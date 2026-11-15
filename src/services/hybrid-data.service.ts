@@ -255,7 +255,9 @@ export class HybridDataService implements OnModuleInit, OnModuleDestroy {
   async advanced(userId: string, deviceId: string) {
     const doc = (await this.model
       .findOne({ userId, deviceId })
-      .select('adv advAt advUnsupportedFw advRequestAt advResult info cfg tlm')
+      .select(
+        'adv advAt advUnsupportedFw advRequestAt advResult info cfg tlm lastNak',
+      )
       .lean()
       .exec()) as HybridData | null;
     const fw = doc?.info?.FW;
@@ -277,6 +279,10 @@ export class HybridDataService implements OnModuleInit, OnModuleDestroy {
       src: doc?.tlm?.SRC ?? doc?.cfg?.SRC ?? null,
       mode: doc?.cfg?.MODE ?? doc?.tlm?.MODE ?? null,
       ist: doc?.tlm?.IST ?? null,
+      st: doc?.tlm?.ST ?? null,
+      fw: fw ?? null,
+      // Last refusal ($NAK) of any command, e.g. "CMD LFMEAS" ERR=MODE.
+      lastNak: doc?.lastNak ?? null,
     };
   }
 

@@ -24,7 +24,7 @@ const STATUS_LABEL: Record<string, string> = {
 const REASON_TEXT: Record<string, string> = {
   esp_firmware_too_old: 'ESP32 firmware too old for STM32 FOTA',
   version_unknown: 'STM32 has not reported its version yet',
-  no_firmware: 'No STM32 image registered for this chip / voltage',
+  no_firmware: 'No STM32 image registered for this chip / voltage / board type',
 };
 
 /** STM32 power-board firmware of one inverter / hybrid (CMS device detail). */
@@ -113,6 +113,15 @@ const StmFirmwareCard: React.FC<{
                 {info.chip ?? '—'} / {info.voltage ?? '—'}
               </span>
             </div>
+            {kind === 'hybrid' && (
+              <div>
+                <label>Board (HW)</label>
+                <span>
+                  {info.hw ?? 'chưa báo'}
+                  {info.product === 'hybrid-ucc' ? ' · UCC21550' : ' · Infineon'}
+                </span>
+              </div>
+            )}
             <div>
               <label>Running</label>
               <span className="monospace">{info.version ?? info.crc32 ?? '—'}</span>

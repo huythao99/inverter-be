@@ -54,6 +54,11 @@ export abstract class StmDeviceBase extends DeviceBase {
   @Prop({ type: String, default: null })
   stmFwCrc: string | null; // "0xXXXXXXXX"
 
+  // STM32 board type from $INFO HW (hybrid: "F303CB-LF" Infineon gate driver,
+  // "F303CB-LF-UCC" UCC21550 from 5.4.20): picks the FOTA image family.
+  @Prop({ type: String, default: null })
+  stmHw: string | null;
+
   @Prop({ type: Date, default: null })
   stmInfoAt: Date | null;
 

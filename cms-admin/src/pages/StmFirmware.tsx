@@ -47,7 +47,8 @@ const StmFirmware: React.FC = () => {
   // Shared with the ESP32 page through ?product=.
   const [params, setParams] = useSearchParams();
   const qp = params.get('product');
-  const product: StmProduct = qp === 'charger' || qp === 'hybrid' ? qp : 'inverter';
+  const product: StmProduct =
+    qp === 'charger' || qp === 'hybrid' || qp === 'hybrid-ucc' ? qp : 'inverter';
   const setProduct = (p: StmProduct) =>
     setParams(
       (prev) => {
@@ -283,7 +284,8 @@ const StmFirmware: React.FC = () => {
                 >
                   <option value="inverter">Inverter (hoà lưới)</option>
                   <option value="charger">Charger (bộ sạc)</option>
-                  <option value="hybrid">Hybrid (HINVLF, ESP32 ≥ 1.1.0)</option>
+                  <option value="hybrid">Hybrid – mạch Infineon (HW F303CB-LF, mã 0x03)</option>
+                  <option value="hybrid-ucc">Hybrid – mạch UCC21550 (HW F303CB-LF-UCC, mã 0x04, từ 5.4.20)</option>
                 </select>
               </div>
               <div className="form-group">
@@ -442,6 +444,7 @@ const StmFirmware: React.FC = () => {
             { value: 'inverter', label: 'Inverter', icon: Cpu },
             { value: 'charger', label: 'Charger', icon: BatteryCharging },
             { value: 'hybrid', label: 'Hybrid', icon: Shuffle },
+            { value: 'hybrid-ucc', label: 'Hybrid UCC', icon: Shuffle },
           ]}
         />
       </div>

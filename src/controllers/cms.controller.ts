@@ -1,3 +1,4 @@
+import { STM_PRODUCTS, StmProduct } from '../models/stm-firmware.schema';
 import { HassBridgeService } from '../hass/hass-bridge.service';
 import {
   Controller,
@@ -400,9 +401,11 @@ export class CmsController {
   // ---- STM32 firmware (static images registered from the CMS) ----
   @Get('stm-firmwares')
   @UseGuards(AdminGuard)
-  listStmFirmwares(@Query('product') product?: 'inverter' | 'charger') {
+  listStmFirmwares(@Query('product') product?: string) {
     return this.stmFirmwareService.list(
-      product === 'inverter' || product === 'charger' ? product : undefined,
+      (STM_PRODUCTS as readonly string[]).includes(product ?? '')
+        ? (product as StmProduct)
+        : undefined,
     );
   }
 

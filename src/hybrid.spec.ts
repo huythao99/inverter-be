@@ -10,6 +10,7 @@ import {
   hybridPendingKeys,
   hybridSetBody,
   mergeHybridConfig,
+  hybridVexpFloorKey,
   parseHybridAdvSet,
   parseHybridPatch,
   vnDay,
@@ -24,7 +25,11 @@ import {
 import { AUDIT_EVENT } from './utils/audit-context';
 import { buildAuditSummary } from './services/audit-log.service';
 import { HybridDeviceAuthGuard } from './auth/guards/hybrid-device-auth.guard';
-import { StmFirmwareService } from './services/stm-firmware.service';
+import {
+  StmFirmwareService,
+  stmImageTailProduct,
+  stmProductFor,
+} from './services/stm-firmware.service';
 import * as crypto from 'crypto';
 
 const chain = (v: unknown) => ({
@@ -82,11 +87,11 @@ describe('hybrid config rules', () => {
     }
   });
 
-  it('pull-along: lower PMAX drags PEXP, PCMAX drags PCHG, VRES drags VEXP', () => {
+  it('pull-along (STM32 < 5.4.19): lower PMAX drags PEXP, PCMAX drags PCHG, VRES drags VEXP', () => {
     const r = mergeHybridConfig(
       base,
       { PMAX: 1200, PCMAX: 800, VRES: 51 },
-      LIMITS,
+      { ...LIMITS, fw: '5.4.18' },
     );
     expect(r.errors).toEqual([]);
     expect(r.changes).toEqual({
@@ -97,6 +102,24 @@ describe('hybrid config rules', () => {
       PCHG: 800,
       VEXP: 51,
     });
+  });
+
+  it('STM32 >= 5.4.19: VEXP floor is VCUT; VRES no longer drags VEXP, VCUT does', () => {
+    const fw = { ...LIMITS, fw: '5.4.21' };
+    expect(mergeHybridConfig(base, { VRES: 51 }, fw).changes).toEqual({
+      VRES: 51,
+    });
+    const up = mergeHybridConfig(base, { VCUT: 51, VRES: 52 }, fw);
+    expect(up.errors).toEqual([]);
+    expect(up.changes).toEqual({ VCUT: 51, VRES: 52, VEXP: 51 });
+    const keys = (p: object, f = fw) =>
+      mergeHybridConfig(base, p, f).errors.map((e) => e.key);
+    expect(keys({ VEXP: 43 })).toEqual([]); // between VCUT and VRES: OK now
+    expect(keys({ VEXP: 41 })).toEqual(['VEXP']); // < VCUT
+    expect(keys({ VEXP: 43 }, { ...LIMITS, fw: '5.4.18' })).toEqual(['VEXP']);
+    expect(hybridVexpFloorKey('5.4.10')).toBe('VRES');
+    expect(hybridVexpFloorKey('5.4.19')).toBe('VCUT');
+    expect(hybridVexpFloorKey(null)).toBe('VCUT');
   });
 
   it('no pull-along for a key sent in the same patch: validated instead', () => {
@@ -114,7 +137,7 @@ describe('hybrid config rules', () => {
     expect(keys({ VCUT: 43.5 })).toEqual([]);
     expect(keys({ VRES: 56.1 })).toContain('VRES'); // > VCV - 0.5
     expect(keys({ VEXP: 57 })).toEqual(['VEXP']); // > VCV
-    expect(keys({ VEXP: 43 })).toEqual(['VEXP']); // < VRES
+    expect(keys({ VEXP: 41 })).toEqual(['VEXP']); // < VCUT (STM32 >= 5.4.19)
     // Moving both thresholds together is fine.
     expect(keys({ VCUT: 46, VRES: 48 })).toEqual([]);
   });
@@ -651,6 +674,128 @@ describe('StmFirmwareService for hybrids', () => {
     expect(updates[0][0]).toMatchObject({ stmFwVersion: { $ne: '5.4.3' } });
     expect(updates[1][1].$set.stmFwVersion).toBe('5.4.3');
     expect(updates[1][1].$set.stmFwCrc).toBeUndefined();
+  });
+});
+
+describe('hybrid board types (STM32 5.4.20+: Infineon 0x03 / UCC21550 0x04)', () => {
+  const q = (v: unknown) => {
+    const c: any = { lean: () => c, exec: () => Promise.resolve(v) };
+    return c;
+  };
+  const images = [
+    { product: 'hybrid', version: '5.4.21', crc: '0x00000001' },
+    { product: 'hybrid-ucc', version: '5.4.21', crc: '0x00000002' },
+  ].map((i) => ({
+    _id: i.product,
+    product: i.product,
+    channel: 'stable',
+    enabled: true,
+    major: 5,
+    voltageCode: 4,
+    version: i.version,
+    url: `https://x/${i.product}/app.bin`,
+    size: 1000,
+    crc32: i.crc,
+  }));
+  function svcFor(device: any, updates: any[] = []) {
+    const stmModel = {
+      find: (f: any) =>
+        q(images.filter((i) => i.product === f.product && i.major === f.major)),
+    };
+    const hybModel = {
+      findOne: () => q(device),
+      updateOne: (f: any, u: any) => {
+        updates.push([f, u]);
+        return q({});
+      },
+    };
+    const config = { get: (_k: string, d?: unknown) => d };
+    return new StmFirmwareService(
+      stmModel as any,
+      { findOne: () => q(null) } as any,
+      hybModel as any,
+      {} as any,
+      { isBeta: () => false } as any,
+      {} as any,
+      {} as any,
+      config as any,
+    );
+  }
+  const dev = {
+    userId: 'u1',
+    deviceId: 'H1',
+    firmwareVersion: '1.3.8',
+    stmFwVersion: '5.4.20',
+  };
+
+  it('picks the image family from $INFO HW (unknown HW -> Infineon)', async () => {
+    expect(stmProductFor('hybrid', 'F303CB-LF-UCC')).toBe('hybrid-ucc');
+    expect(stmProductFor('hybrid', 'F303CB-LF')).toBe('hybrid');
+    expect(stmProductFor('hybrid', null)).toBe('hybrid');
+    expect(stmProductFor('inverter', 'F303CB-LF-UCC')).toBe('inverter');
+    const ucc = await svcFor({
+      ...dev,
+      stmHw: 'F303CB-LF-UCC',
+    }).describeByUserDevice('u1', 'H1', 'hybrid');
+    expect(ucc.product).toBe('hybrid-ucc');
+    expect(ucc.target?.crc32).toBe('0x00000002');
+    const inf = await svcFor(dev).describeByUserDevice('u1', 'H1', 'hybrid');
+    expect(inf.target?.crc32).toBe('0x00000001');
+  });
+
+  it('$INFO HW is stored on the device', async () => {
+    const updates: any[] = [];
+    await svcFor(dev, updates).onHybridFrame({
+      userId: 'u1',
+      deviceId: 'H1',
+      data: { type: 'INFO', FW: '5.4.21', HW: 'F303CB-LF-UCC' },
+    });
+    expect(updates[0][0]).toMatchObject({
+      deviceId: 'H1',
+      stmHw: { $ne: 'F303CB-LF-UCC' },
+    });
+    expect(updates[0][1]).toEqual({ $set: { stmHw: 'F303CB-LF-UCC' } });
+  });
+
+  // Minimal STM32 image: vector table + 16-byte tail ("GTIV", variant,
+  // family, product, 0xFF, version 0x00MMmmpp, checksum).
+  const image = (product: number | null) => {
+    const b = Buffer.alloc(64);
+    b.writeUInt32LE(0x20004000, 0);
+    b.writeUInt32LE(0x08004009, 4);
+    const t = b.length - 16;
+    b.writeUInt32LE(0x56495447, t);
+    b[t + 4] = 0x04;
+    b[t + 5] = 0x03;
+    b[t + 6] = product ?? 0xff;
+    b[t + 7] = 0xff;
+    b.writeUInt32LE((5 << 16) | (4 << 8) | 21, t + 8);
+    const w0 = b.readUInt32LE(t);
+    const w1 = b.readUInt32LE(t + 4);
+    const w2 = b.readUInt32LE(t + 8);
+    b.writeUInt32LE(~(w0 + w1 + w2) >>> 0, t + 12);
+    return b;
+  };
+  const parsed = { version: '5.4.21', major: 5, voltageCode: 4 } as any;
+  const check = (bin: Buffer, product: string, manifest: any = null) =>
+    (svcFor(dev) as any).checkImage(bin, manifest, parsed, product);
+
+  it('refuses an image of the other board type', () => {
+    expect(stmImageTailProduct(image(0x04))).toBe(4);
+    expect(stmImageTailProduct(image(null))).toBeNull();
+    expect(() => check(image(0x03), 'hybrid')).not.toThrow();
+    expect(() => check(image(0x04), 'hybrid-ucc')).not.toThrow();
+    expect(() => check(image(0x04), 'hybrid')).toThrow(/Wrong board type/);
+    expect(() => check(image(0x03), 'hybrid-ucc')).toThrow(/Wrong board type/);
+    // Old images without a product code: Infineon only.
+    expect(() => check(image(null), 'hybrid')).not.toThrow();
+    expect(() => check(image(null), 'hybrid-ucc')).toThrow(/no product code/);
+    expect(() =>
+      check(image(0x03), 'hybrid', { product: 'hybrid-ucc' }),
+    ).toThrow(/app.json says product/);
+    expect(() =>
+      check(image(0x04), 'hybrid-ucc', { product_code: '0x03' }),
+    ).toThrow(/product_code 0x03/);
   });
 });
 

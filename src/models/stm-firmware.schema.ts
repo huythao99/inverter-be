@@ -3,7 +3,15 @@ import { Document, Types } from 'mongoose';
 
 export type StmFirmwareDocument = StmFirmware & Document;
 
-export type StmProduct = 'inverter' | 'charger' | 'hybrid';
+export type StmProduct = 'inverter' | 'charger' | 'hybrid' | 'hybrid-ucc';
+export const STM_PRODUCTS = [
+  'inverter',
+  'charger',
+  'hybrid',
+  // Hybrid board with the UCC21550 gate driver ($INFO HW=F303CB-LF-UCC,
+  // image product code 0x04). Never flashable on an Infineon board (0x03).
+  'hybrid-ucc',
+] as const;
 export type StmChannel = 'stable' | 'beta';
 
 /**
@@ -17,7 +25,7 @@ export class StmFirmware {
   _id: Types.ObjectId;
 
   // Which product's STM32 this image is for (inverter vs charger boards).
-  @Prop({ required: true, enum: ['inverter', 'charger', 'hybrid'] })
+  @Prop({ required: true, enum: STM_PRODUCTS })
   product: StmProduct;
 
   // stable = everyone; beta = devices on the CMS beta list only.

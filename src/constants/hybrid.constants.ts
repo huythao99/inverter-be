@@ -45,7 +45,15 @@ export const HYBRID_READONLY_KEYS = [
  * Commands the app may send (cmd/action). SAVE: "Lưu" after an advanced
  * change (§13; a normal change is saved by the ESP32 itself). FWU: never.
  */
-export const HYBRID_COMMANDS = ['FAULT_RST', 'STOP', 'RUN', 'SAVE'] as const;
+export const HYBRID_COMMANDS = [
+  'FAULT_RST',
+  'STOP',
+  'RUN',
+  'SAVE',
+  // STM32 >= 5.4.23: measure the transformer leakage inductance (result in
+  // $ADV LFST / LFID). The app warns the user (AC input off, no load) first.
+  'LFMEAS',
+] as const;
 export type HybridCommand = (typeof HYBRID_COMMANDS)[number];
 
 export type HybridConfig = Partial<{
@@ -120,6 +128,24 @@ export function parseHybridPatch(input: Record<string, unknown>): {
 export interface HybridLimits {
   VCV?: number;
   VBMAX?: number;
+  /** STM32 firmware ($INFO FW): decides the lower bound of VEXP. */
+  fw?: string | null;
+}
+
+/**
+ * Lower bound of VEXP: VCUT from STM32 5.4.19 (raising VRES no longer pulls
+ * VEXP), VRES before. Unknown firmware: the current rule (VCUT); an older
+ * machine answers NAK RANGE, which the app shows.
+ */
+export function hybridVexpFloorKey(fw?: string | null): 'VCUT' | 'VRES' {
+  const m = /^(\d+)\.(\d+)\.(\d+)/.exec(String(fw ?? '').trim());
+  if (!m) return 'VCUT';
+  const v = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const min = [5, 4, 19];
+  for (let i = 0; i < 3; i++) {
+    if (v[i] !== min[i]) return v[i] > min[i] ? 'VCUT' : 'VRES';
+  }
+  return 'VCUT';
 }
 
 /**
@@ -158,13 +184,15 @@ export function mergeHybridConfig(
   ) {
     merged.PCHG = changes.PCHG = merged.PCMAX;
   }
+  const floorKey = hybridVexpFloorKey(limits.fw);
+  const floor = merged[floorKey];
   if (
     !has('VEXP') &&
-    merged.VRES !== undefined &&
+    floor !== undefined &&
     merged.VEXP !== undefined &&
-    merged.VEXP < merged.VRES
+    merged.VEXP < floor
   ) {
-    merged.VEXP = changes.VEXP = merged.VRES;
+    merged.VEXP = changes.VEXP = floor;
   }
 
   return { changes, merged, errors: validateHybridConfig(merged, limits) };
@@ -216,13 +244,14 @@ export function validateHybridConfig(
     }
   }
   if (c.VEXP !== undefined) {
+    const lo = c[hybridVexpFloorKey(limits.fw)];
     if (
-      (c.VRES !== undefined && c.VEXP < c.VRES) ||
+      (lo !== undefined && c.VEXP < lo) ||
       (vcv !== undefined && c.VEXP > vcv)
     ) {
       e.push({
         key: 'VEXP',
-        message: `Áp ngừng đẩy ${c.VRES ?? '?'} – ${vcv ?? '?'} V`,
+        message: `Áp dừng xả ${lo ?? '?'} – ${vcv ?? '?'} V`,
       });
     }
   }

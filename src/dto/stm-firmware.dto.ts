@@ -1,3 +1,4 @@
+import { STM_PRODUCTS, StmProduct } from '../models/stm-firmware.schema';
 import {
   IsBoolean,
   IsIn,
@@ -9,8 +10,8 @@ import {
 } from 'class-validator';
 
 export class RegisterStmFirmwareDto {
-  @IsIn(['inverter', 'charger', 'hybrid'])
-  product: 'inverter' | 'charger' | 'hybrid';
+  @IsIn(STM_PRODUCTS)
+  product: StmProduct;
 
   @IsIn(['stable', 'beta'])
   channel: 'stable' | 'beta';
@@ -61,8 +62,8 @@ export class StmUpdateDto {
 // multipart/form-data fields of POST /api/cms/stm-firmwares/upload
 // (files: "bin" = app.bin, "manifest" = app.json).
 export class UploadStmFirmwareDto {
-  @IsIn(['inverter', 'charger', 'hybrid'])
-  product: 'inverter' | 'charger' | 'hybrid';
+  @IsIn(STM_PRODUCTS)
+  product: StmProduct;
 
   @IsIn(['stable', 'beta'])
   channel: 'stable' | 'beta';

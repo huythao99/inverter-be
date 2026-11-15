@@ -199,6 +199,7 @@ export class UserHybridController {
       input,
       d?.cfg,
       this.ctx(req, user),
+      d?.info?.FW ?? null,
     );
     return this.settingsView(s, d);
   }
@@ -230,7 +231,7 @@ export class UserHybridController {
     };
   }
 
-  // { cmd: "FAULT_RST" | "STOP" | "RUN" } -> hybrid/{uid}/{dev}/cmd/action.
+  // { cmd: "FAULT_RST" | "STOP" | "RUN" | "SAVE" | "LFMEAS" } -> hybrid/{uid}/{dev}/cmd/action.
   @Post(':deviceId/command')
   @HttpCode(HttpStatus.OK)
   async command(

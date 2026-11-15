@@ -97,7 +97,7 @@ export const setUartDebug = (id: string, minutes: number) =>
   );
 
 // ---- STM32 firmware (FOTA through the ESP32) ----
-export type StmProduct = 'inverter' | 'charger' | 'hybrid';
+export type StmProduct = 'inverter' | 'charger' | 'hybrid' | 'hybrid-ucc';
 export type StmChannel = 'stable' | 'beta';
 
 export interface StmFirmware {
@@ -134,6 +134,10 @@ export interface StmTarget {
 export interface DeviceStmInfo {
   userId?: string;
   deviceId?: string;
+  /** Image family (hybrid boards: "hybrid" Infineon / "hybrid-ucc" UCC21550). */
+  product?: StmProduct;
+  /** STM32 $INFO HW, when known. */
+  hw?: string | null;
   version: string | null;
   major: number | null;
   chip: string | null;
