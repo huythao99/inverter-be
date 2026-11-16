@@ -8,6 +8,8 @@ import {
   BLACKLIST_OFF_VALUE,
 } from '../constants/grid-tie.constants';
 import { BlacklistDeviceService } from '../services/blacklist-device.service';
+import { InverterSettingService } from '../services/inverter-setting.service';
+import { repairSchedule } from '../utils/schedule-value';
 
 @Controller('api/inverter-schedule')
 export class InverterScheduleController {
@@ -16,6 +18,7 @@ export class InverterScheduleController {
     private readonly gridTieService: GridTieService,
     private readonly shareService: ShareService,
     private readonly blacklistDeviceService: BlacklistDeviceService,
+    private readonly inverterSettingService: InverterSettingService,
   ) {}
 
   @Get('data/:userId/:deviceId')
@@ -63,17 +66,25 @@ export class InverterScheduleController {
         };
       }
 
-      // For ESP32 calls, apply the share cap to each segment's value (last 4
-      // digits). App calls get the raw stored schedule.
+      // For ESP32 calls: values saved unpadded by older app builds ("01000",
+      // blank = use the setting) are filled from the setting (the ESP32 skips
+      // a slot that is not 8 digits), then the share cap is applied to each
+      // segment's value (last 4 digits). App calls get the stored schedule.
       if (source === 'hardware' && result?.schedule) {
+        const setting = await this.inverterSettingService
+          .findByUserIdAndDeviceId(userId, deviceId)
+          .catch(() => null);
+        const repaired = repairSchedule(result.schedule, setting?.value);
+        const schedule = repaired.schedule;
         const shared = await this.shareService.getHardwareScheduleValue(
           userId,
           deviceId,
-          result.schedule,
+          schedule,
         );
         if (shared !== null) {
           return { ...result, schedule: shared, shared: true };
         }
+        if (repaired.fixed) return { ...result, schedule };
       }
 
       return (

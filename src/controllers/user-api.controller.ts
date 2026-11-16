@@ -25,6 +25,7 @@ import { InverterDeviceService } from '../services/inverter-device.service';
 import { InverterDataService } from '../services/inverter-data.service';
 import { InverterSettingService } from '../services/inverter-setting.service';
 import { InverterScheduleService } from '../services/inverter-schedule.service';
+import { repairSchedule } from '../utils/schedule-value';
 import { GridTieService } from '../services/grid-tie.service';
 import { ShareService } from '../services/share.service';
 import { DailyTotalsService } from '../services/daily-totals.service';
@@ -486,12 +487,20 @@ export class UserApiController {
       throw new NotFoundException(`Device ${deviceId} not found`);
     }
 
+    // Older app builds send blank fields as an unpadded "01000": fill them
+    // from the device setting like the fixed app does (the ESP32 skips a slot
+    // whose value is not 8 digits).
+    const setting = await this.inverterSettingService
+      .findByUserIdAndDeviceId(user.uid, deviceId)
+      .catch(() => null);
+    const repaired = repairSchedule(schedule, setting?.value).schedule;
+
     const normalizedSchedule = this.blacklistDeviceService.isBlacklisted(
       deviceId,
       user.uid,
     )
-      ? schedule.replace(/value=[^&#]*/g, `value=${BLACKLIST_OFF_VALUE}`)
-      : schedule;
+      ? repaired.replace(/value=[^&#]*/g, `value=${BLACKLIST_OFF_VALUE}`)
+      : repaired;
 
     const updatedSchedule =
       await this.inverterScheduleService.updateScheduleByUserIdAndDeviceId(
