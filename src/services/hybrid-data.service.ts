@@ -103,6 +103,26 @@ export function activeHybridNak(
   return now - at < maxAge ? nak : null;
 }
 
+/** A $TLM older than this no longer proves the machine is still testing. */
+export const HWTEST_FRESH_MS = 30 * 1000;
+
+/**
+ * STM32 >= 5.4.30: IST=HWTEST = hardware self-test started from the
+ * machine's keys (ends by itself within ~150 s). Nothing may be sent to it
+ * meanwhile. Only a recent $TLM counts (a device that went offline mid-test
+ * is not locked).
+ */
+export function hybridHwTestActive(
+  doc:
+    | { tlm?: Record<string, string> | null; tlmAt?: Date | string | null }
+    | null
+    | undefined,
+  now = Date.now(),
+): boolean {
+  const at = doc?.tlmAt ? new Date(doc.tlmAt).getTime() : 0;
+  return doc?.tlm?.IST === 'HWTEST' && now - at < HWTEST_FRESH_MS;
+}
+
 @Injectable()
 export class HybridDataService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(HybridDataService.name);
@@ -284,6 +304,8 @@ export class HybridDataService implements OnModuleInit, OnModuleDestroy {
       src: doc?.tlm?.SRC ?? doc?.cfg?.SRC ?? null,
       mode: doc?.cfg?.MODE ?? doc?.tlm?.MODE ?? null,
       ist: doc?.tlm?.IST ?? null,
+      // STM32 >= 5.4.30: hardware test running on the machine (read-only).
+      hwTest: hybridHwTestActive(doc),
       st: doc?.tlm?.ST ?? null,
       fw: fw ?? null,
       // Last refusal ($NAK) of any command, e.g. "CMD LFMEAS" ERR=MODE.

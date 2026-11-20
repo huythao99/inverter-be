@@ -21,6 +21,7 @@ import {
   HybridDataService,
   parseHinvlfFrame,
   activeHybridNak,
+  hybridHwTestActive,
 } from './services/hybrid-data.service';
 import { AUDIT_EVENT } from './utils/audit-context';
 import { buildAuditSummary } from './services/audit-log.service';
@@ -422,6 +423,42 @@ describe('HybridSettingService', () => {
     ]);
   });
 
+  it('per-row apply: a change the machine has not confirmed stays in the request', async () => {
+    const at = new Date(Date.now() - 5_000);
+    const { svc, log } = setup({
+      config: { MODE: 'EXPORT', PIMP: 50 },
+      request: { config: { PIMP: 50 }, set: 'PIMP=50', at },
+    });
+    const r = await svc.update(
+      'u1',
+      'H1',
+      { PMAX: 1000 },
+      CFG,
+      undefined,
+      null,
+      new Date(at.getTime() - 1000),
+    );
+    expect(r.request).toMatchObject({
+      config: { PIMP: 50, PMAX: 1000, PEXP: 1000 },
+    });
+    expect(log).toContain('set:H1:PEXP=1000,PIMP=50,PMAX=1000');
+    // Machine already reported a newer $CFG: the old request is done.
+    const b = setup({
+      config: {},
+      request: { config: { PIMP: 50 }, set: 'PIMP=50', at },
+    });
+    const r2 = await b.svc.update(
+      'u1',
+      'H1',
+      { PMAX: 1000 },
+      CFG,
+      undefined,
+      null,
+      new Date(),
+    );
+    expect(r2.request?.config).toEqual({ PMAX: 1000, PEXP: 1000 });
+  });
+
   it('open request: until a newer $CFG or 3 minutes', () => {
     const at = new Date('2026-10-24T10:00:00Z');
     const t0 = at.getTime();
@@ -796,6 +833,28 @@ describe('hybrid board types (STM32 5.4.20+: Infineon 0x03 / UCC21550 0x04)', ()
     expect(() =>
       check(image(0x04), 'hybrid-ucc', { product_code: '0x03' }),
     ).toThrow(/product_code 0x03/);
+  });
+});
+
+describe('IST=HWTEST (STM32 5.4.30)', () => {
+  it('read-only only while a recent $TLM says so', () => {
+    const now = Date.now();
+    expect(
+      hybridHwTestActive(
+        { tlm: { IST: 'HWTEST' }, tlmAt: new Date(now - 2000) },
+        now,
+      ),
+    ).toBe(true);
+    expect(
+      hybridHwTestActive(
+        { tlm: { IST: 'HWTEST' }, tlmAt: new Date(now - 60_000) },
+        now,
+      ),
+    ).toBe(false);
+    expect(
+      hybridHwTestActive({ tlm: { IST: 'GRID' }, tlmAt: new Date(now) }, now),
+    ).toBe(false);
+    expect(hybridHwTestActive(null)).toBe(false);
   });
 });
 

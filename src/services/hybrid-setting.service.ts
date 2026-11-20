@@ -106,6 +106,7 @@ export class HybridSettingService {
     cfg: Record<string, string> | null | undefined,
     ctx?: AuditContext,
     fw?: string | null,
+    cfgAt?: Date | string | null,
   ): Promise<HybridSettingView> {
     const { patch, errors: parseErrors } = parseHybridPatch(input);
     if (parseErrors.length) {
@@ -120,7 +121,13 @@ export class HybridSettingService {
     const before = await this.get(userId, deviceId);
     // The machine's $CFG is the truth (it can be changed on the machine);
     // the stored config only when no $CFG has been seen yet.
-    const base = cfg ? hybridConfigFromCfg(cfg) : { ...before.config };
+    // Per-parameter "Áp dụng" (STM32 5.4.30 UI): a change the machine has not
+    // confirmed yet stays part of the request, so a second row applied right
+    // after does not drop the first (the device replaces its pending $SET).
+    const open = cfg ? hybridOpenRequest(before.request, cfgAt) : null;
+    const base = cfg
+      ? { ...hybridConfigFromCfg(cfg), ...(open?.config ?? {}) }
+      : { ...before.config };
     const limits = { VCV: num(cfg?.VCV), VBMAX: num(cfg?.VBMAX), fw };
     const { changes, errors } = mergeHybridConfig(base, patch, limits);
     if (errors.length) {
@@ -131,9 +138,10 @@ export class HybridSettingService {
     }
     const config: HybridConfig = { ...before.config, ...changes };
     const now = new Date();
+    const pendingAll: HybridConfig = { ...(open?.config ?? {}), ...changes };
     const request: HybridSetRequest = {
-      config: changes,
-      set: hybridSetBody(changes),
+      config: pendingAll,
+      set: hybridSetBody(pendingAll),
       at: now,
     };
     await this.model

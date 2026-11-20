@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Body,
   Controller,
   Delete,
@@ -28,7 +29,10 @@ import {
   HybridSettingService,
   hybridOpenRequest,
 } from '../services/hybrid-setting.service';
-import { HybridDataService } from '../services/hybrid-data.service';
+import {
+  HybridDataService,
+  hybridHwTestActive,
+} from '../services/hybrid-data.service';
 import { HybridFirmwareService } from '../services/hybrid-firmware.service';
 import { AuditLogService } from '../services/audit-log.service';
 import { EspFirmwareService } from '../services/esp-firmware.service';
@@ -199,11 +203,12 @@ export class UserHybridController {
     @Req() req: Request,
   ) {
     await this.assertOwned(user.uid, deviceId);
+    const d = await this.data.findLatest(user.uid, deviceId);
+    this.assertNotHwTest(d);
     const input =
       body && typeof body.config === 'object' && body.config !== null
         ? (body.config as Record<string, unknown>)
         : (body ?? {});
-    const d = await this.data.findLatest(user.uid, deviceId);
     const s = await this.settings.update(
       user.uid,
       deviceId,
@@ -211,6 +216,7 @@ export class UserHybridController {
       d?.cfg,
       this.ctx(req, user),
       d?.info?.FW ?? null,
+      d?.cfgAt ?? null,
     );
     return this.settingsView(s, d);
   }
@@ -239,7 +245,28 @@ export class UserHybridController {
       status: d?.status ?? 'offline',
       // STM32 firmware ($INFO FW): app greys out modes it can't run.
       fw: d?.info?.FW ?? null,
+      // STM32 >= 5.4.30: "HWTEST" = hardware test on the machine (read-only).
+      ist: hybridHwTestActive(d) ? 'HWTEST' : (d?.tlm?.IST ?? null),
+      hwTest: hybridHwTestActive(d),
     };
+  }
+
+  /**
+   * STM32 >= 5.4.30: while the machine runs its hardware test (IST=HWTEST,
+   * started from its keys, ends by itself within ~150 s) nothing is sent to
+   * it. Only a recent $TLM counts, so a device that went offline mid-test is
+   * not locked.
+   */
+  private assertNotHwTest(
+    d: Awaited<ReturnType<HybridDataService['findLatest']>>,
+  ) {
+    if (hybridHwTestActive(d)) {
+      throw new ConflictException({
+        statusCode: 409,
+        code: 'HWTEST',
+        message: 'Máy đang test phần cứng, thử lại khi test xong',
+      });
+    }
   }
 
   // { cmd: "FAULT_RST" | "STOP" | "RUN" | "SAVE" | "LFMEAS" } -> hybrid/{uid}/{dev}/cmd/action.
@@ -252,6 +279,7 @@ export class UserHybridController {
     @Req() req: Request,
   ) {
     await this.assertOwned(user.uid, deviceId);
+    this.assertNotHwTest(await this.data.findLatest(user.uid, deviceId));
     return this.settings.command(user.uid, deviceId, cmd, this.ctx(req, user));
   }
 
@@ -295,6 +323,7 @@ export class UserHybridController {
     @Req() req: Request,
   ) {
     await this.assertOwned(user.uid, deviceId);
+    this.assertNotHwTest(await this.data.findLatest(user.uid, deviceId));
     // Taken before sending: a reply stored before markAdvRequest still counts.
     const requestAt = new Date();
     const r = await this.settings.advSet(
