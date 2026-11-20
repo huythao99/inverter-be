@@ -53,6 +53,9 @@ export const HYBRID_COMMANDS = [
   // STM32 >= 5.4.23: measure the transformer leakage inductance (result in
   // $ADV LFST / LFID). The app warns the user (AC input off, no load) first.
   'LFMEAS',
+  // STM32 >= 5.4.29: wake a machine held off by the LCD power button. The
+  // ESP32 (>= 1.3.9) re-sends $SET,MODE=<current mode>; $CMD,RUN doesn't.
+  'POWERON',
 ] as const;
 export type HybridCommand = (typeof HYBRID_COMMANDS)[number];
 

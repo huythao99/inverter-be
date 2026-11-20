@@ -9,6 +9,7 @@ import {
   HttpCode,
   HttpException,
   HttpStatus,
+  Logger,
   NotFoundException,
   Param,
   Patch,
@@ -62,6 +63,7 @@ export class UserHybridController {
   ) {}
 
   private readonly espUpdateAt = new Map<string, number>();
+  private readonly listLogger = new Logger('UserHybrid');
 
   private async assertOwned(userId: string, deviceId: string) {
     const device = await this.devices.findByUserIdAndDeviceId(userId, deviceId);
@@ -75,8 +77,17 @@ export class UserHybridController {
 
   @Get()
   @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
-  async list(@CurrentFirebaseUser() user: FirebaseUser) {
-    return { hybrids: await this.devices.findByUserId(user.uid) };
+  async list(
+    @CurrentFirebaseUser() user: FirebaseUser,
+    @Headers('x-client') client?: string,
+  ) {
+    const hybrids = await this.devices.findByUserId(user.uid);
+    // Support: "tab Hybrid trống trên app nhưng web có" -> grep uid / email
+    // trong log (pm2 logs | grep HybridList) để biết app đăng nhập ai.
+    this.listLogger.log(
+      `HybridList uid=${user.uid} email=${user.email ?? '-'} client=${client ?? 'web'} n=${hybrids.length}`,
+    );
+    return { hybrids };
   }
 
   // One-time code passed to the device during setup (valid 30 min).

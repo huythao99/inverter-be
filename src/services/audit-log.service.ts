@@ -133,6 +133,7 @@ const HYBRID_CMD_LABEL: Record<string, string> = {
   RUN: 'Chạy máy',
   SAVE: 'Lưu cài đặt vào máy',
   LFMEAS: 'Đo điện cảm rò Lf',
+  POWERON: 'Bật máy (sau khi tắt bằng nút trên máy)',
 };
 
 function hybridSettingsSummary(before: string | null, after: string | null) {
